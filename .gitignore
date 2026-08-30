@@ -1,0 +1,51 @@
+# ══════════════════════════════════════════════════════════════
+# 智选情报官（deep_search_pro）· .gitignore
+# 原则：不上传向量库、数据库等大型文件 + 账号数据、用户产出；
+#       保留快速重建脚本（tools/schema_personal.py 重建库、api/account.py 建账号）。
+# ══════════════════════════════════════════════════════════════
+
+# ── Python 生成文件 ──
+__pycache__/
+*.py[oc]
+*.pyc
+build/
+dist/
+wheels/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── 虚拟环境 / 编辑器 / 系统 ──
+.venv/
+venv/
+.env
+.env.*
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ── 数据库（账号/订阅/模型配置等，由 tools/schema_personal.py 一键重建）──
+data/
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# ── 账号数据（按账号隔离：SOUL 人格 / MEMORY 记忆画像 / ACTIVE 状态）──
+agents_docs/
+
+# ── 用户产出（周报 output/{user}/、语音合成音频、参考音频）──
+output/
+pic/
+
+# ── 日志与临时文件 ──
+*.log
+logs/
+*.tmp
+_tmp/
+_chk.js
+_resp.json
+# Windows 保留设备名误创建防护（git-bash 的 > nul 会生成真文件）
+nul
