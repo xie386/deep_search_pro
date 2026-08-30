@@ -1,105 +1,44 @@
-"""思考内容旁路捕获（方案 B：底层 openai client 直读 reasoning_content）。
+"""思考内容捕获（A+ 方案：ReasoningChatOpenAI 透传 + invoke 后提取）。
 
 背景：
-  langchain-openai 1.4.1/1.6.0 明确丢弃第三方 base_url 的非标准字段
-  （reasoning_content 不提取不保留），所以拿不到模型的思考过程。
-  本模块绕开 langchain 解析层：用底层 openai client 对同一组消息发流式请求，
-  逐 token 读取 choices[0].delta.reasoning_content，通过 monitor.report_thinking
-  实时推给前端（右栏「实时过程监控」）。
+  项目模型已换成 agent.reasoning_model.ReasoningChatOpenAI（继承 ChatOpenAI），
+  第三方模型的 reasoning_content（思考过程）会进每轮 AIMessage 的 additional_kwargs。
+  本模块提供 report_thinking_from_messages()：agent.invoke 完成后遍历结果消息，
+  提取各轮 AIMessage 的 reasoning_content，经 monitor.report_thinking 推送前端。
 
-用法（在 agent.invoke 前调用）：
-  from agent.thinking_capture import stream_thinking
-  stream_thinking(messages, thread_id)   # 阻塞直到 reasoning 流结束或超时
+用法（agent.invoke 后调用）：
+  from agent.thinking_capture import report_thinking_from_messages
+  result = agent.invoke({"messages": [...]}, cfg)
+  report_thinking_from_messages(result["messages"])
 
-注意：
-  - 依赖 .env 的 OPENAI_API_KEY / OPENAI_BASE_URL / LLM_MODEL_MAX（与主模型同配置）。
-  - 旁路请求与主 agent 请求消息序列一致，保证思考内容贴合实际任务。
-  - 免费模型无 token 顾虑；本模块专为本项目「智选情报官」设计。
+为什么不是 on_chat_model_end 回调（实时）：
+  deepagents 底层用 langchain.agents.create_agent，其模型执行节点
+  `_execute_model_sync` 只 `model_.invoke(messages)`——**不传 RunnableConfig**，
+  因此 config 里注入的 callbacks 不会触发；而 `model.with_config(callbacks=...)`
+  返回 RunnableBinding，会被 deepagents 的 resolve_model 当成字符串 spec 报错。
+  故实时回调在 deepagents 层不可行，改在 invoke 完成后一次性提取（覆盖所有轮次）。
+
+相比旧旁路方案：
+  - 单请求（省一半 token）；不弃 langchain；
+  - 覆盖所有轮次（旁路只覆盖首轮，工具调用后的思考拿不到）。
+  代价：thinking 从「逐 token 实时流」降级为「回答完成后一次性全量」。
 """
-import os
-import sys
-import threading
-import time
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-sys.path = [p for p in sys.path if "hermes-agent" not in p and "hermes_agent" not in p]
-
-from dotenv import load_dotenv, find_dotenv
-from openai import OpenAI
+from langchain_core.messages import AIMessage
 
 from api.monitor import monitor
 
-load_dotenv(find_dotenv())
 
+def report_thinking_from_messages(messages: list) -> list[str]:
+    """从 agent 结果消息列表提取各轮 AIMessage 的 reasoning_content 并推送。
 
-def _raw_client() -> OpenAI:
-    return OpenAI(
-        api_key=os.getenv("OPENAI_API_KEY"),
-        base_url=os.getenv("OPENAI_BASE_URL"),
-    )
-
-
-def stream_thinking(
-    messages: list,
-    thread_id: str,
-    timeout: float = 60.0,
-    max_think_chars: int = 4000,
-) -> str:
-    """对 messages 发流式请求，抓取并推送 reasoning_content 思考过程。
-
-    与主 agent 使用同一模型（LLM_MODEL_MAX），消息序列一致；
-    思考内容逐段经 monitor.report_thinking 推送到 thread_id 的 WS。
-    返回捕获到的完整 thinking 文本（供调用方记录/调试）。
-
-    :param messages: OpenAI 格式消息列表（含 system + user，与主 agent 一致）
-    :param thread_id: WS 目标线程（monitor 定向推送用）
-    :param timeout: 最长等待秒数（旁路不应阻塞主流程过久）
-    :param max_think_chars: 思考内容累计上限，防止无限输出
+    :param messages: agent.invoke 返回的 result["messages"]（含所有轮次消息）
+    :return: 捕获到的思考片段列表（供调用方记录/调试）
     """
-    monitor.set_current_thread(thread_id)
-    thinking_parts: list[str] = []
-    start = time.time()
-    try:
-        client = _raw_client()
-        stream = client.chat.completions.create(
-            model=os.getenv("LLM_MODEL_MAX"),
-            messages=messages,
-            stream=True,
-            temperature=0.7,
-        )
-        for chunk in stream:
-            if time.time() - start > timeout:
-                break
-            if not chunk.choices:
-                continue
-            delta = chunk.choices[0].delta
-            rc = getattr(delta, "reasoning_content", None)
+    captured: list[str] = []
+    for m in messages:
+        if isinstance(m, AIMessage):
+            rc = m.additional_kwargs.get("reasoning_content")
             if rc:
-                thinking_parts.append(rc)
-                monitor.report_thinking(rc)  # 逐段推送
-                if sum(len(p) for p in thinking_parts) >= max_think_chars:
-                    break
-    except Exception as e:
-        # 旁路失败不影响主流程：只打印，不抛
-        print(f"[thinking] 旁路捕获异常（忽略）: {type(e).__name__}: {e}")
-    finally:
-        monitor.clear_current_thread()
-    return "".join(thinking_parts)
-
-
-def start_thinking_thread(
-    messages: list,
-    thread_id: str,
-    timeout: float = 60.0,
-) -> threading.Thread:
-    """在后台线程启动旁路捕获（不阻塞主 agent 执行）。
-
-    agent.invoke 前调用；返回线程句柄（无需 join，旁路自行超时结束）。
-    """
-    t = threading.Thread(
-        target=stream_thinking,
-        args=(messages, thread_id, timeout),
-        daemon=True,
-    )
-    t.start()
-    return t
+                captured.append(rc)
+                monitor.report_thinking(rc)
+    return captured

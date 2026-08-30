@@ -19,7 +19,7 @@
   - 📚 **RAGFlow 助手**：对接 RAGFlow 知识库做私有文档检索（**v2.0 接入，当前未装配**）。
 - 每个子智能体都挂载自己的 **工具（Tools）**，由大模型按需调用；
 - 整个过程通过 **监控埋点 + WebSocket** 把「当前在做什么」实时推送给前端，方便观察 Agent 的思考与执行链路；
-- **思考过程可视化**：模型推理时（reasoning_content）经旁路捕获实时推给前端右栏「🤔 模型思考过程」折叠区，肉眼可见 Agent 在想什么；
+- **思考过程可视化**：模型推理内容（reasoning_content）经 ReasoningChatOpenAI 透传后推给前端右栏「🤔 模型思考过程」折叠区，肉眼可见 Agent 在想什么；
 - **可定制**：模型选型（自带免费模型或自填 OpenAI 兼容接口）+ 助手人格（SOUL.md 注入系统提示词，可 AI 生成人格一键导入）。
 
 > 一句话总结：把「一个会自己调用工具的 AI」升级成「一个会指挥多个专家 AI 协同工作的 AI」。
@@ -37,7 +37,7 @@
 | 个人库查询 | 通过本地 SQLite 工具读取个人收藏 / 兴趣 / 关注清单，支撑选购决策（已装配，M1.5） |
 | 知识库检索 | 预留 RAGFlow 知识库接入（v2.0 接入，当前未装配） |
 | 可观测性 | `ToolMonitor` 单例在每次工具调用时上报进度，支持控制台 / WebSocket 双通道 |
-| 思考过程可视化 | 底层 client 旁路捕获模型 `reasoning_content`，实时推前端右栏折叠区（langchain 丢弃非标准字段，故旁路直读原始流） |
+| 思考过程可视化 | 自定义 `ReasoningChatOpenAI`（继承 ChatOpenAI）透传模型 `reasoning_content`，回答后推前端右栏折叠区（langchain 丢弃非标准字段，官方建议 provider 子类） |
 | 背景图持久化 | `pic/{username}/` 目录存储 + 上传/列表/删除 API + 前端图库网格选择 + 透明度调节（按账号隔离，刷新不丢） |
 | 定制助手·模型选型 | `llm_providers` 表（按账号）存模型名/base_url/api_key，前端可选启用；启用后该账号对话走自定义模型，默认 .env 免费模型 |
 | 定制助手·助手人格 | `agents_docs/{username}/SOUL.md` 按账号存储人格，注入 system_prompt（对话+周报措辞均体现）；`soul_writer` 独立段 AI 生成人格（如「活泼女仆」「稳重管家」）一键导入 |
@@ -63,7 +63,8 @@ deep_search_pro/
 │
 ├── agent/                      # ★ 智能体核心
 │   ├── llm.py                  #   初始化大模型（从 .env 读取 LLM_MODEL_MAX）
-│   ├── thinking_capture.py     #   思考过程旁路捕获（底层 client 流式抓 reasoning_content 推前端）
+│   ├── reasoning_model.py     #   ReasoningChatOpenAI：继承 ChatOpenAI，透传第三方 reasoning_content（A+ 方案）
+│   ├── thinking_capture.py     #   思考捕获：invoke 后遍历消息提取 reasoning_content 推前端
 │   ├── prompts.py              #   加载 prompt/prompts.yml 为字典，供主/子 Agent 使用
 │   └── subagents/
 │       ├── network_search_agent.py   # 网络搜索子 Agent 装配（范本）
@@ -155,7 +156,7 @@ deep_search_pro/
 | 1️⃣6️⃣ | `api/me_user_data.py` | **用户数据自主管理**（M4 前置）：`/api/me/*` 全套 CRUD，全部按 session 的 account_id 隔离。思考：为什么「增删改走 REST、Agent 工具只读」的读写分离能同时保住数据安全与 Agent 可靠性？ |
 | 1️⃣7️⃣ | `agent/digest_engine.py` + `agent/subagents/digest_agent.py` + `api/digest_scheduler.py` | **Digest 定期推送**（M4，回归主智能体编排）：① 为什么 digest 不自己写检索代码、而是让主 Agent 调度【网络搜索助手】？② 查询批次为何硬上限 ≤8？③ 候选不足 15 条时筛选门槛为何放宽（禁止空周报）？④ APScheduler 为何内嵌 FastAPI 进程而非外部 cron？⑤（时效性修复）`build_batches` 为何弃用「关键词+修饰词」拼接、改用关键词原文？——实测 Tavily 对带修饰词的中文长查询相关性崩坏（返回无关金融/加密货币新闻），且修饰词无法跨领域通用。 |
 | 1️⃣8️⃣ | `docs/` | **设计文档与里程碑**：`M1_*~M4_*` 是各里程碑的实现与实测记录；`里程碑计划.md` 是后续开发顺序的准绳，开新功能前先对齐里程碑。 |
-| 1️⃣9️⃣ | `agent/thinking_capture.py` + `api/monitor.py`(report_thinking) | **思考过程可视化**：langchain-openai 1.4.1/1.6.0 明确丢弃第三方 base_url 的非标准字段 `reasoning_content`（文档实证），所以思考内容拿不到。方案：用底层 openai client 对「同一组消息（system_prompt+用户问题）」发流式请求，逐 token 抓 `delta.reasoning_content` 经 monitor 推前端。思考：为什么旁路请求要和主 Agent 用同一组消息？为什么用后台线程（daemon）不阻塞主流程？旁路失败为何静默不抛？ |
+| 1️⃣9️⃣ | `agent/reasoning_model.py` + `agent/thinking_capture.py` + `api/monitor.py` | **思考过程可视化（A+ 方案）**：langchain-openai 明确丢弃第三方 base_url 的非标准字段 `reasoning_content`（源码 `_convert_delta_to_message_chunk` 只读 content/function_call/tool_calls，文档明言「Use a provider-specific subclass」）。方案：自定义 `ReasoningChatOpenAI(BaseChatOpenAI)` 重写 `_create_chat_result`（非流式）把 `reasoning_content` 塞进 `additional_kwargs`；`thinking_capture.py` 在 `agent.invoke` 完成后遍历 `result["messages"]` 提取各轮 AIMessage 的思考推前端。思考：为什么不用 `on_chat_model_end` 回调做实时？（deepagents 底层 `langchain.agents.create_agent` 的模型节点 `_execute_model_sync` 只 `model_.invoke(messages)` 不传 config，回调不触发；`model.with_config(callbacks=...)` 返回 RunnableBinding 会被 resolve_model 当字符串报错）。为什么这样比旧「双请求旁路」好？（单请求省 token + 覆盖所有轮次，旁路只覆盖首轮）。 |
 | 2️⃣0️⃣ | `api/customize.py` + `tools/schema_personal.py`(llm_providers 表) | **定制助手后端**：五组 API 按账号隔离——① 背景图 `/api/bg/*`（multipart 上传存 `pic/{username}/`、列表、删除，uuid 前缀防重名）；② 模型选型 `/api/llm/providers`（CRUD + activate，**api_key 列表时掩码 `****后4位`，编辑留空=不改**）；③ 人格 `/api/soul`（默认 `SOUL.md` + 多人格集 `SOUL/{name}.md`，`ACTIVE_SOUL` 文件记录当前激活，list/create/delete/set_active/named 路由）；④ 记忆画像 `/api/memory`（读写 `MEMORY.md` + 一次性初始化 `/api/memory/init`）；⑤ 批量导入 `/api/me/*/batch`（竞品/收藏剪贴板粘贴，一行一个，去空去重 ≤50 条）。思考：`_get_agent_for()` 为什么「有人格/自定义模型/记忆画像就按账号缓存独立 agent」而不是复用全局 AGENT？（全局 AGENT 的 system_prompt 在构建时固定，无法注入动态内容；缓存 key 含 soul+memory 哈希，人格/记忆变化自动重建） |
 | 2️⃣1️⃣ | `agent/digest_engine.py`(任务指令) + `tools/tavily_tool.py`(strict_days/bilingual) | **周报时效性修复**：① `strict_days=True` 在代码层解析每条 `published_date`（RFC822 格式）剔除超窗旧闻——为什么不能只靠模型自觉？（Tavily 的 days 只是硬上限不保证排序时效，旧闻常排前面）② `bilingual=True` 用 LLM 把中文关键词翻译成英文做中英双语检索合并——为什么单中文查询会漏？（实测 Tavily 对中文实体词相关性差，英文召回更精准）③ 订阅级 `lang` 字段（zh/en/both）控制是否双语。思考：无日期的结果为什么「宁可保留不误杀」？ |
 | 2️⃣2️⃣ | `tools/readtofile.py` + `tools/writetofile.py` | **agents_docs 文档读写工具**：主智能体可读/写 `agents_docs/` 下的 .md/.txt（路径穿越防护：归一化后强制前缀校验；扩展名白名单）。端到端验证：`tests/tool_agent_e2e_test.py` 把工具挂到全局 AGENT 后由 Agent 实际完成写文件+读回任务。思考：为什么这类「越权敏感」工具要同时在路径与扩展名两层设防？ |
@@ -272,7 +273,7 @@ python main.py
   - **前端体验（M3）**：简报卡片分块渲染、左栏竞品清单、回答导出 MD/PDF；
   - **用户数据自主管理（M4 前置）**：`/api/me/*` 全套 CRUD（公司资料/我司产品/关注竞品/兴趣/关注/收藏），按账号隔离、空置起步；公司侧数据已迁 SQLite（MySQL 转 legacy 演示源）；产品支持描述/卖点/目标客户等 attributes 扩展字段供 Agent 评估；
   - **Digest 定期推送（M4）**：订阅管理（默认订阅按角色自动生成，关键词≤8）+ Tavily/HN 双通道检索（近7天时间窗）+ LLM 三关筛选（编造 URL 直接丢弃）+ 周报模板生成 + APScheduler 定时调度（daily@9:00/weekly@周一）+ WS 实时提醒 + 报告列表页与下载；
-  - **思考过程可视化**：`agent/thinking_capture.py` 旁路捕获模型 reasoning_content，前端右栏折叠展示（langchain 丢弃非标准字段，用底层 client 直读原始流）；
+  - **思考过程可视化**：`agent/reasoning_model.py` 的 ReasoningChatOpenAI 透传 reasoning_content + `agent/thinking_capture.py` 在 invoke 后遍历消息提取，前端右栏折叠展示（langchain 丢弃非标准字段 → 官方 provider 子类方案，单请求不旁路）；
   - **定制助手**：模型选型（`llm_providers` 表按账号存 base_url/api_key，**列表掩码显示**，动态构建 agent）+ 多人格集（`SOUL/` 子目录 + 下拉切换）+ 助手人格（SOUL.md 注入 system_prompt，`soul_writer` 独立段 AI 生成人格一键导入）；
   - **记忆白盒化**：账号级 `MEMORY.md`（注册自动生成 + Agent 对话中自行读写维护 + 前端可视化编辑 + 一次性 AI 初始化画像 + digest 画像驱动情报权重 + 回复末尾画像变更提示）；
   - **批量导入**：竞品/收藏剪贴板粘贴（一行一个，去空去重 ≤50 条）；

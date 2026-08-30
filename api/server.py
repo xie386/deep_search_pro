@@ -58,7 +58,7 @@ import api.voice_tts as vtts
 from deepagents import create_deep_agent
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.messages import HumanMessage
-from langchain_openai import ChatOpenAI
+from agent.reasoning_model import ReasoningChatOpenAI
 from deepagents.middleware._tool_exclusion import _ToolExclusionMiddleware
 
 load_dotenv()
@@ -76,7 +76,7 @@ AGENT = create_deep_agent(
     system_prompt=main_agent_content["system_prompt"],
     subagents=[network_search_agent, db_agent, personal_agent],
     tools=[read_agent_doc, write_agent_doc, list_agent_docs],
-    middleware=[_ToolExclusionMiddleware(excluded=_EXCLUDED_FS_TOOLS)],
+    middleware=[_ToolExclusionMiddleware(excluded=_EXCLUDED_FS_TOOLS)],#去除deepagents内置的filesystem工具，只保留项目自定义的
     checkpointer=MemorySaver(),
 )
 
@@ -93,7 +93,7 @@ _custom_agents: dict = {}
 def _build_custom_agent(provider: dict, soul_text: str, memory_text: str = "", username: str = ""):
     """用用户自定义模型（若有）+ SOUL.md 人格 + 记忆画像构建一个独立主 Agent"""
     if provider:
-        custom_model = ChatOpenAI(
+        custom_model = ReasoningChatOpenAI(
             model=provider["model_name"],
             api_key=provider["api_key"],
             base_url=provider["base_url"],
@@ -138,10 +138,9 @@ def _get_memory_text(account_id: int):
 
 def _get_agent_for(account_id: int | None):
     """按账号选择 agent：有自定义模型/人格/记忆画像则用（缓存），否则全局 AGENT。
-    同时返回注入后的 system_prompt（供旁路思考捕获使用）。
     缓存 key 含 soul+memory 哈希：人格或记忆变化时自动重建 agent。"""
     if account_id is None:
-        return AGENT, main_agent_content["system_prompt"]
+        return AGENT
     try:
         provider = cust.get_active_provider(account_id)
     except Exception:
@@ -154,14 +153,8 @@ def _get_agent_for(account_id: int | None):
         key = (account_id, hash((soul_text or "", memory_text or "")))
         if key not in _custom_agents:
             _custom_agents[key] = _build_custom_agent(provider, soul_text, memory_text, username)
-        sys_prompt = main_agent_content["system_prompt"]
-        if soul_text:
-            sys_prompt = f"{soul_text}\n\n——\n\n{sys_prompt}"
-        if memory_text:
-            mem_hint = f"（记忆文件：agents_docs/{username}/MEMORY.md，可用读取/写入文档工具维护）" if username else ""
-            sys_prompt = f"{sys_prompt}\n\n——\n\n【你的用户记忆画像】{mem_hint}\n{memory_text}"
-        return _custom_agents[key], sys_prompt
-    return AGENT, main_agent_content["system_prompt"]
+        return _custom_agents[key]
+    return AGENT
 
 
 def _run_agent(question: str, thread_id: str, account_id: int | None = None) -> str:
@@ -172,27 +165,17 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None) -> 
     if account_id is not None:
         set_owner_context(account_id)  # 数据归属权：Agent 只能读到该用户的数据
 
-    agent, sys_prompt = _get_agent_for(account_id)
-
-    # 旁路思考捕获（方案 B）：langchain 丢弃 reasoning_content，用底层 client
-    # 对同一组消息（system_prompt + 用户问题）发流式请求，逐 token 抓 thinking
-    # 推给前端右栏；后台线程运行，不阻塞主 agent。
-    try:
-        from agent.thinking_capture import start_thinking_thread
-        start_thinking_thread(
-            [
-                {"role": "system", "content": sys_prompt},
-                {"role": "user", "content": question},
-            ],
-            thread_id,
-        )
-    except Exception as e:
-        print(f"[thinking] 旁路启动失败（忽略）: {e}")
+    agent = _get_agent_for(account_id)
 
     cfg = {"configurable": {"thread_id": thread_id}}
     result = agent.invoke(
         {"messages": [HumanMessage(content=question)]}, cfg
     )
+    # 思考捕获（A+ 方案）：ReasoningChatOpenAI 保留 reasoning_content 到每轮
+    # AIMessage 的 additional_kwargs，invoke 完成后遍历提取并推给前端右栏——
+    # 单请求（省 token）、不弃 langchain、覆盖所有轮次（含工具调用后的思考）。
+    from agent.thinking_capture import report_thinking_from_messages
+    report_thinking_from_messages(result["messages"])
     return result["messages"][-1].content
 
 
