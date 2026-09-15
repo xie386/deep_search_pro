@@ -20,12 +20,37 @@ scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
 
 
 def _notify_ws(username: str, title: str):
-    """WS 实时提醒：复用 monitor 的跨线程推送通道。"""
+    """WS 实时提醒（M1 多会话适配）：推给 username 通道 + 该账号所有会话通道。
+
+    v1.0 前端 WS 固定连 /ws/{username}，只推 username 即可收到；
+    v2.0 M1 前端 WS 动态连当前会话（UUID）——若用户停在某会话视图，
+    只推 username 会收不到。故遍历该账号全部 thread_id 逐个推送。
+    """
     try:
         from api.monitor import monitor
-        monitor.set_current_thread(username)
-        monitor._emit("report_ready", f"📰 新报告已生成：{title}",
-                      {"title": title})
+        # 目标 thread 集合：username（v1.0 直发通道）+ 该账号所有会话 UUID
+        targets = [username]
+        try:
+            conn = get_personal_conn()
+            row = conn.execute(
+                "SELECT id FROM accounts WHERE username=?", (username,)
+            ).fetchone()
+            if row:
+                tids = conn.execute(
+                    "SELECT thread_id FROM conversations WHERE account_id=?",
+                    (row["id"],),
+                ).fetchall()
+                targets += [r["thread_id"] for r in tids]
+            conn.close()
+        except Exception as e:
+            print(f"[digest-sched] 查询会话列表失败（仅推 username）: {e}")
+        for tid in targets:
+            try:
+                monitor.set_current_thread(tid)
+                monitor._emit("report_ready", f"📰 新报告已生成：{title}",
+                              {"title": title})
+            except Exception:
+                pass  # 单个目标失败不影响其他
         monitor.clear_current_thread()
     except Exception as e:
         print(f"[digest-sched] WS 通知失败（不影响报告生成）: {e}")

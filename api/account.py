@@ -115,10 +115,19 @@ def register(req: RegisterReq) -> AccountResp:
 
 
 def login(req: LoginReq) -> LoginResp:
+    """登录校验。
+
+    ⚠️ 语义（2026-09-16 用户拍板变更）：**账号不存在 → 404；密码错误 → 401**，两者文案不同。
+    代价是理论上可被用来枚举账号（本地单机个人应用，无此风险）；收益是前端能给出
+    「该账号不存在，是否去注册？」的引导，而不是把「打错用户名」和「密码错」混为一谈
+    —— 之前前端把登录失败一律当成「新用户」自动建号，导致错别字直接建成账号（如「尼姑喵喵」）。
+    """
     _ensure_accounts_table()
     acc = _get_account(req.username.strip())
-    if not acc or acc["password_hash"] != _hash_pwd(req.password):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "用户名或密码错误")
+    if not acc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "账号不存在")
+    if acc["password_hash"] != _hash_pwd(req.password):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "密码错误")
     token = secrets.token_hex(16)
     _SESSIONS[token] = {
         "account_id": acc["id"],

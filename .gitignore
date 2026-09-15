@@ -49,3 +49,6 @@ _chk.js
 _resp.json
 # Windows 保留设备名误创建防护（git-bash 的 > nul 会生成真文件）
 nul
+
+# ── RAG 知识库（M3：每用户向量库 + 入库记录，用户数据）──
+rag_knowledge/db/

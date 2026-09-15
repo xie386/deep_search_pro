@@ -10,6 +10,7 @@
 import os
 import re
 import shutil
+import time
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -325,6 +326,44 @@ def get_soul_content(aid: int) -> str:
     return p.read_text(encoding="utf-8").strip() if p.exists() else ""
 
 
+# ============================ CLI 能力描述生成 AI（M5）============================
+def cli_ability_generate(name: str, bin_name: str, rules_text: str) -> dict:
+    """按「CLI 名称 + 只读命令清单」生成一段能力描述草稿（用户语言）。
+
+    用途：M5 工具智能路由第一层——这段描述会进主 Agent 的系统提示词，
+    让它在用户说人话时想起该用这个 CLI。**只生成草稿，不落库**：用户在表单里改完再保存
+    （与 M4c「只读清单必须人给」的边界一致：能力描述影响"路由"，不影响"放行"）。
+    """
+    import yaml
+    from langchain_core.messages import HumanMessage
+    from agent.llm import model as default_model
+
+    name = (name or "").strip() or "该 CLI"
+    rules_text = (rules_text or "").strip()
+    if not rules_text:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "请先填好「只读命令清单」再生成能力描述——描述里的命令必须来自这份清单")
+    try:
+        yml_path = _PROJECT_ROOT / "prompt" / "prompts.yml"
+        cfg = yaml.safe_load(yml_path.read_text(encoding="utf-8"))
+        sys_prompt = cfg["ability_writer"]["system_prompt"]
+    except Exception as e:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"读取能力描述提示词失败：{e}")
+    user_msg = (f"CLI 名称：{name}\n可执行名：{bin_name or name}\n"
+                f"只读命令清单（只能从这里挑命令）：\n{rules_text}\n\n请为它生成能力描述。")
+    try:
+        resp = default_model.invoke(
+            [{"role": "system", "content": sys_prompt},
+             {"role": "user", "content": user_msg}]
+        )
+        text = (resp.content or "").strip()
+    except Exception as e:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"生成失败：{type(e).__name__}: {e}")
+    if not text:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "模型没有返回内容，请重试")
+    return {"content": text}
+
+
 # ============================ 人格生成 AI ============================
 def soul_generate(req_text: str) -> dict:
     """人格撰写 AI：按用户需求（如「活泼女仆」）生成一段 SOUL.md 人格提示词。
@@ -476,6 +515,165 @@ def get_soul_content(aid: int) -> str:
     else:
         p = _soul_abs_path(user, active[len("SOUL/"):-3] if active.startswith("SOUL/") else active)
     return p.read_text(encoding="utf-8").strip() if p.exists() else ""
+
+
+# ============================ 技能 SKILL.md（M4a）============================
+# 技能 = 一段可复用的任务说明书（Markdown），存在 agents_docs/{username}/skills/{name}.md；
+# 用户在输入框用 / 唤出、可多选叠加，作为 user message 前缀注入本轮（一次性，发完即清）。
+SKILL_MAX_LEN = 4000   # 单个技能正文字数上限（前后端一致硬校验）
+SKILL_NAME_MAX = 30    # 技能名长度上限
+SKILL_MAX_PICK = 5     # 单轮最多叠加技能数（防提示词爆炸）
+# Windows 保留设备名：即使带扩展名（nul.md）仍被系统当设备，写入会静默失败
+_SKILL_RESERVED = {
+    "con", "prn", "aux", "nul",
+    *(f"com{i}" for i in range(1, 10)),
+    *(f"lpt{i}" for i in range(1, 10)),
+}
+
+
+def _user_skill_dir(username: str) -> Path:
+    """技能目录：agents_docs/{username}/skills/"""
+    d = _user_doc_dir(username) / "skills"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def skill_safe_name(name: str) -> str:
+    """技能名 → 安全文件名（不含扩展名）；非法直接抛 400。
+
+    注意：只做 basename 不足以防穿越（'..' 也能通过 basename），
+    故叠加「. / .. 黑名单 + 字符白名单 + Windows 保留名」三层校验。
+    """
+    raw = (name or "").strip()
+    if raw.lower().endswith(".md"):
+        raw = raw[:-3]
+    raw = os.path.basename(raw.replace("\\", "/")).strip()
+    if not raw or raw in (".", ".."):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "技能名不能为空，也不能是 . 或 ..")
+    if len(raw) > SKILL_NAME_MAX:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"技能名过长（≤{SKILL_NAME_MAX} 字）")
+    if raw.lower() in _SKILL_RESERVED:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"「{raw}」是系统保留名，请换一个")
+    safe = re.sub(r"[^\w.\-]", "_", raw)   # \w 在 Python3 str 下含中文，中文技能名可保留
+    safe = safe.strip("._") or "skill"
+    if safe.lower() in _SKILL_RESERVED:    # 清洗后再次命中保留名（如 "nul!" → "nul"）
+        safe = f"skill_{safe}"
+    return safe
+
+
+def _skill_path(username: str, name: str) -> Path:
+    return _user_skill_dir(username) / f"{skill_safe_name(name)}.md"
+
+
+class SkillReq(BaseModel):
+    name: str
+    content: str = ""
+
+
+def _skill_check_content(content: str) -> str:
+    content = content or ""
+    if len(content) > SKILL_MAX_LEN:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"技能内容过长（≤{SKILL_MAX_LEN} 字）")
+    return content
+
+
+def _skill_desc(content: str) -> str:
+    """取正文首个非空行（去 # 标题符）作为列表简介"""
+    for line in (content or "").splitlines():
+        s = line.strip().lstrip("#").strip()
+        if s:
+            return s[:60]
+    return ""
+
+
+def skills_list(token: str) -> dict:
+    """列出该账号全部技能（含简介/字数/更新时间）"""
+    user = _username_by_token(token)
+    items = []
+    for f in sorted(_user_skill_dir(user).glob("*.md")):
+        try:
+            content = f.read_text(encoding="utf-8")
+        except Exception:
+            content = ""
+        items.append({
+            "name": f.stem,
+            "chars": len(content),
+            "desc": _skill_desc(content),
+            "updated": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(f.stat().st_mtime)),
+        })
+    return {"skills": items}
+
+
+def skill_get(token: str, name: str) -> dict:
+    """读取单个技能正文"""
+    user = _username_by_token(token)
+    p = _skill_path(user, name)
+    return {"name": p.stem, "content": p.read_text(encoding="utf-8") if p.exists() else ""}
+
+
+def skill_create(token: str, req: SkillReq) -> dict:
+    """新建技能（重名 409，不覆盖）"""
+    user = _username_by_token(token)
+    content = _skill_check_content(req.content)
+    p = _skill_path(user, req.name)
+    if p.exists():
+        raise HTTPException(status.HTTP_409_CONFLICT, f"技能「{p.stem}」已存在")
+    p.write_text(content, encoding="utf-8")
+    return {"ok": True, "name": p.stem}
+
+
+def skill_save(token: str, req: SkillReq) -> dict:
+    """保存技能正文（不存在则创建）"""
+    user = _username_by_token(token)
+    content = _skill_check_content(req.content)
+    p = _skill_path(user, req.name)
+    p.write_text(content, encoding="utf-8")
+    return {"ok": True, "name": p.stem}
+
+
+def skill_delete(token: str, name: str) -> dict:
+    user = _username_by_token(token)
+    p = _skill_path(user, name)
+    if not p.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"技能「{name}」不存在")
+    p.unlink()
+    return {"ok": True}
+
+
+def get_skills_text(aid: int, names: list[str] | None) -> str:
+    """按账号 + 技能名列表读取正文，拼成注入 user message 的**前缀文本**。
+
+    供 server 层调用后经 build_context 装配（本模块不 import agent.*，
+    保持「装配管线不反向依赖 API 层」的分层）。
+    单个技能缺失/非法名静默跳过——不让一个坏技能拖垮整轮对话。
+    """
+    picked = [n for n in (names or []) if (n or "").strip()][:SKILL_MAX_PICK]
+    if not picked:
+        return ""
+    ensure_tables()
+    conn = get_personal_conn()
+    try:
+        row = conn.execute("SELECT username FROM accounts WHERE id=?", (aid,)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return ""
+    user = row["username"]
+    parts: list[str] = []
+    for n in picked:
+        try:
+            p = _skill_path(user, n)
+        except HTTPException:
+            continue
+        if p.exists():
+            parts.append(f"### 技能：{p.stem}\n{p.read_text(encoding='utf-8').strip()}")
+    if not parts:
+        return ""
+    return (
+        "【本轮启用技能】用户为本轮对话显式选择了以下技能说明书，"
+        "请严格按其中的步骤与口径执行；与默认回答风格冲突时以技能为准。\n\n"
+        + "\n\n".join(parts)
+    )
 
 
 # ============================ 记忆画像 MEMORY.md ============================

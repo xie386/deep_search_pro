@@ -37,50 +37,181 @@
     ::-webkit-scrollbar { width: 8px; height: 8px; }
     ::-webkit-scrollbar-thumb { background: rgba(148,163,184,.25); border-radius: 8px; }
 
-    /* ================= 登录页 ================= */
+    /* ================= 登录页（007 brutalist-login 适配） ================= */
     .login-wrap { height: 100vh; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
-    .login-card {
-      position: relative; width: 380px; padding: 40px 42px 34px;
-      background: var(--panel); backdrop-filter: blur(14px);
-      border: 1px solid var(--line); border-radius: 22px;
-      box-shadow: 0 24px 70px rgba(0,0,0,.5);
+    /* 背景装饰层 */
+    .login-decor { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+    .login-decor .float-emoji {
+      position: absolute; font-size: 40px; opacity: .18;
+      animation: floatUp 12s ease-in-out infinite;
     }
-    .login-card h1 {
-      margin: 0 0 6px; font-size: 26px; letter-spacing: 1px;
-      background: linear-gradient(90deg, var(--accent), var(--accent2));
+    .login-decor .float-emoji:nth-child(1) { left: 8%; bottom: -50px; animation-delay: 0s; font-size: 50px; }
+    .login-decor .float-emoji:nth-child(2) { left: 18%; bottom: -50px; animation-delay: 2s; font-size: 35px; }
+    .login-decor .float-emoji:nth-child(3) { left: 30%; bottom: -50px; animation-delay: 4s; font-size: 45px; }
+    .login-decor .float-emoji:nth-child(4) { left: 45%; bottom: -50px; animation-delay: 1s; font-size: 38px; }
+    .login-decor .float-emoji:nth-child(5) { left: 58%; bottom: -50px; animation-delay: 3s; font-size: 42px; }
+    .login-decor .float-emoji:nth-child(6) { left: 70%; bottom: -50px; animation-delay: 5s; font-size: 36px; }
+    .login-decor .float-emoji:nth-child(7) { left: 82%; bottom: -50px; animation-delay: 2.5s; font-size: 48px; }
+    .login-decor .float-emoji:nth-child(8) { left: 92%; bottom: -50px; animation-delay: 4.5s; font-size: 32px; }
+    @keyframes floatUp {
+      0% { transform: translateY(0) rotate(0deg); opacity: 0; }
+      10% { opacity: .18; }
+      90% { opacity: .18; }
+      100% { transform: translateY(-110vh) rotate(360deg); opacity: 0; }
+    }
+    .login-decor .welcome-text {
+      position: absolute; top: 12%; left: 50%; transform: translateX(-50%);
+      text-align: center; color: var(--text);
+    }
+    .login-decor .welcome-text .main {
+      font-size: 28px; font-weight: 800; letter-spacing: 2px;
+      background: linear-gradient(90deg, var(--accent), #f5c542);
       -webkit-background-clip: text; background-clip: text; color: transparent;
     }
-    .login-card .sub { color: var(--muted); font-size: 13px; margin-bottom: 26px; line-height: 1.6; }
-    .field { margin-bottom: 18px; }
-    .field > label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 8px; letter-spacing: 1px; }
+    .login-decor .welcome-text .sub {
+      font-size: 14px; color: var(--muted); margin-top: 8px; letter-spacing: 1px;
+    }
+    .login-decor .kaomoji { position: absolute; font-size: 24px; color: var(--muted); opacity: .6; }
+    .login-decor .kaomoji.k1 { top: 22%; left: 15%; }
+    .login-decor .kaomoji.k2 { top: 35%; right: 12%; font-size: 20px; }
+    .login-decor .kaomoji.k3 { bottom: 25%; left: 20%; font-size: 22px; }
+    .login-decor .kaomoji.k4 { bottom: 18%; right: 18%; font-size: 26px; }
+    /* SVG 装饰圆环 */
+    .login-decor .ring {
+      position: absolute; border-radius: 50%; border: 2px solid rgba(84,170,105,.12);
+      animation: ringPulse 8s ease-in-out infinite;
+    }
+    .login-decor .ring:nth-child(7) { width: 300px; height: 300px; top: -80px; right: -80px; animation-delay: 0s; }
+    .login-decor .ring:nth-child(8) { width: 200px; height: 200px; bottom: -60px; left: -60px; animation-delay: 2s; }
+    .login-decor .ring:nth-child(9) { width: 150px; height: 150px; top: 40%; right: 8%; animation-delay: 4s; border-color: rgba(245,197,66,.15); }
+    @keyframes ringPulse {
+      0%, 100% { transform: scale(1); opacity: .5; }
+      50% { transform: scale(1.15); opacity: 1; }
+    }
+    /* 卡片容器 */
+    .login-container { position: relative; perspective: 1000px; width: 380px; z-index: 1; }
+    /* 悬浮热区：收起时=卡片本身（80px），展开后=展开足迹（380px）。
+       卡片 height 是带动画生长的，若热区跟着卡片走，鼠标下移快于生长速度就会掉 hover → 卡片缩回，
+       够不到表单。热区改成「瞬时到位」（无过渡）+ 由容器承载，鼠标就能安全下移。 */
+    .login-container::after {
+      content: ""; position: absolute; left: -14px; right: -14px; top: 0; height: 80px; z-index: -1;
+    }
+    .login-container:hover::after { height: 460px; }
+    /* 注册卡字段更多，展开足迹要更高（两张卡共用同一元素，用容器类区分高度） */
+    .login-container.auth-reg::after { height: 580px; }
+    .login-container.auth-reg:hover .login-card,
+    .login-container.auth-reg .login-card:hover { height: 580px; }
+    .login-container:hover .login-card {
+      height: 460px;
+      transform: translateZ(20px) rotateX(3deg) rotateY(-3deg);
+      box-shadow: 0 20px 60px rgba(84,170,105,.25), 0 8px 24px rgba(0,0,0,.12);
+      border-color: var(--accent);
+    }
+    .login-container:hover .login-text { opacity: 0; transform: translateY(-20px) scale(.8); }
+    .login-container:hover .login-form { opacity: 1; transform: translateY(0) scale(1); }
+    .login-card {
+      position: relative; width: 100%; height: 80px;
+      background: linear-gradient(135deg, #fefefe, #f0f8f0);
+      border: 2px solid rgba(84,170,105,.3); border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(84,170,105,.15), 0 2px 8px rgba(0,0,0,.08);
+      cursor: pointer; overflow: hidden;
+      transition: all .5s cubic-bezier(.68,-.55,.265,1.55);
+    }
+    .login-card:hover {
+      height: 460px;
+      transform: translateZ(20px) rotateX(3deg) rotateY(-3deg);
+      box-shadow: 0 20px 60px rgba(84,170,105,.25), 0 8px 24px rgba(0,0,0,.12);
+      border-color: var(--accent);
+    }
+    /* 登录 / 注册 两个 tab（卡片顶部） */
+    .auth-tabs { display: flex; gap: 8px; width: 100%; margin-bottom: 18px; }
+    .auth-tab {
+      flex: 1; padding: 8px 0; border-radius: 10px; cursor: pointer;
+      font-family: inherit; font-size: 13px; font-weight: 700; letter-spacing: 1px;
+      border: 2px solid rgba(84,170,105,.25); background: rgba(255,255,255,.7);
+      color: var(--muted); transition: all .25s;
+    }
+    .auth-tab:hover { border-color: var(--accent); color: var(--text); }
+    .auth-tab.on { background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 4px 14px rgba(84,170,105,.35); }
+    .auth-switch {
+      display: flex; gap: 6px; align-items: center; justify-content: center; flex-wrap: wrap;
+      font-size: 12.5px; color: var(--muted); margin-top: 12px;
+    }
+    .auth-switch .link-btn {
+      background: none; border: none; padding: 0; cursor: pointer;
+      font-family: inherit; font-size: 12.5px; font-weight: 600; color: var(--accent);
+      text-decoration: underline; text-underline-offset: 3px;
+    }
+    .auth-switch .link-btn:hover { color: #3d8a52; }
+    /* 注册卡的「即将创建」实时回显（专治错别字账号） */
+    .reg-hint { width: 100%; font-size: 12px; color: var(--muted); margin: -6px 0 12px; min-height: 17px; line-height: 1.4; }
+    .reg-hint.ready { color: var(--accent); font-weight: 600; }
+    .role-pick label.on { border-color: var(--accent); color: var(--text); background: rgba(84,170,105,.12); }
+    .login-title {
+      position: absolute; top: 0; left: 0; width: 100%; height: 80px;
+      display: flex; align-items: center; justify-content: center;
+      background: inherit; transition: all .4s ease;
+    }
+    .login-text {
+      color: var(--accent); font-weight: 700; font-size: 18px;
+      letter-spacing: 4px; text-transform: uppercase;
+      transition: all .4s ease;
+    }
+    .login-card:hover .login-text { opacity: 0; transform: translateY(-20px) scale(.8); }
+    .login-form {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 30px 40px; box-sizing: border-box;
+      opacity: 0; transform: translateY(20px) scale(.95);
+      transition: all .5s cubic-bezier(.175,.885,.32,1.275);
+    }
+    .login-card:hover .login-form { opacity: 1; transform: translateY(0) scale(1); }
+    .field { position: relative; width: 100%; margin-bottom: 16px; }
+    .field > label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; letter-spacing: 1px; font-weight: 600; }
     .input-container { position: relative; }
-    .input {
-      width: 100%; padding: 10px 12px; height: 44px;
-      border: 2px solid rgba(84,170,105,.55); border-top: none; border-bottom: none;
-      font-size: 14px; font-family: inherit; background: rgba(255,255,255,.75); color: var(--text);
-      outline: none; box-shadow: 7px 7px 0 0 rgba(84,170,105,.25); transition: box-shadow .5s, border-color .5s;
+    .login-card .input {
+      width: 100%; padding: 10px 14px; height: 42px;
+      border: 2px solid rgba(84,170,105,.3); border-radius: 10px;
+      font-size: 14px; font-family: inherit; background: rgba(255,255,255,.85); color: var(--text);
+      outline: none; box-shadow: 0 2px 8px rgba(0,0,0,.04); transition: all .3s;
     }
-    .input:focus { box-shadow: none; border-color: var(--accent); }
-    .input-container .topline, .input-container .underline {
-      position: absolute; right: 0; width: 0%; height: 2px; background: var(--accent); transition: width .5s;
-    }
-    .input-container .topline { top: 0; } .input-container .underline { bottom: 0; }
-    .input-container .input:focus ~ .topline { width: 35%; }
-    .input-container .input:focus ~ .underline { width: 100%; }
+    .login-card .input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(84,170,105,.15); }
+    .login-card .input::placeholder { color: #999; }
     .role-pick { display: flex; gap: 10px; }
     .role-pick label {
-      flex: 1; text-align: center; padding: 10px 0; border-radius: 10px; cursor: pointer;
-      border: 1px solid rgba(84,170,105,.35); color: var(--muted);
-      transition: all .25s; background: rgba(255,255,255,.6);
+      flex: 1; text-align: center; padding: 8px 0; border-radius: 8px; cursor: pointer;
+      border: 2px solid rgba(84,170,105,.25); color: var(--muted);
+      transition: all .25s; background: rgba(255,255,255,.7);
+      font-size: 13px;
     }
     .role-pick input { display: none; }
-    .role-pick label:hover { border-color: var(--line); color: var(--text); }
-    .role-pick input:checked + span { color: #14381f; font-weight: 700; }
+    .role-pick label:hover { border-color: var(--accent); color: var(--text); }
+    .role-pick input:checked + span { color: var(--accent); font-weight: 700; }
     .role-pick label:has(input:checked) {
-      background: linear-gradient(90deg, var(--accent), var(--accent2));
-      border-color: transparent; transform: translateY(-1px);
-      box-shadow: 0 6px 18px rgba(56,189,248,.35);
+      background: rgba(84,170,105,.1); border-color: var(--accent);
     }
+    .login-card .bubbles { --c1: #fff; --c2: var(--accent); --size-letter: 14px; padding: .7em 1em; }
+    .login-card .bubbles > .text { color: var(--accent); }
+    .login-card .bubbles:hover > .text { color: #fff; }
+    .err { color: var(--warn); font-size: 13px; margin-top: 10px; min-height: 18px; }
+    /* 卡片顶部渐变条 */
+    .login-card::before {
+      content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 4px;
+      background: linear-gradient(90deg, var(--accent), #f5c542, var(--accent));
+      background-size: 200% 100%; animation: gradientSlide 3s ease infinite;
+    }
+    @keyframes gradientSlide {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    /* 卡片底部装饰 */
+    .login-card::after {
+      content: ""; position: absolute; bottom: 0; left: 0; width: 100%; height: 3px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0; transition: opacity .4s;
+    }
+    .login-card:hover::after { opacity: .5; }
     .bubbles {
       --c1: #1d3a24; --c2: #54aa69; --size-letter: 15px;
       padding: .7em 1em; font-size: var(--size-letter); font-family: inherit;
@@ -101,7 +232,128 @@
     .bubbles:hover::before, .bubbles:hover::after { scale: 1; }
     .bubbles:active { scale: .98; filter: brightness(.9); }
     .bubbles:disabled { opacity: .55; cursor: not-allowed; filter: grayscale(.4); }
-    .err { color: var(--warn); font-size: 13px; margin-top: 12px; min-height: 18px; }
+    .login-card .bubbles { --c1: #f5c542; --c2: #1a1a1a; }
+    .login-card .bubbles > .text { color: #f5c542; }
+    .login-card .bubbles:hover > .text { color: #f5c542; }
+    /* ================= 006 下载按钮（快报下载） ================= */
+    .dl-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 14px; border-radius: 50px; cursor: pointer;
+      border: 2px solid var(--accent); background: transparent;
+      color: var(--accent); font-size: 13px; font-weight: 600;
+      position: relative; overflow: hidden;
+      transition: all .4s ease;
+      text-decoration: none;
+    }
+    .dl-btn::before {
+      content: ""; position: absolute; inset: 0;
+      background: var(--accent); border-radius: 50%;
+      transform: scale(0); transition: transform .4s ease;
+    }
+    .dl-btn:hover::before { transform: scale(1); }
+    .dl-btn:hover { color: #fff; box-shadow: 0 0 12px rgba(84,170,105,.4); }
+    .dl-btn .dl-text { position: relative; z-index: 1; }
+    .dl-btn .dl-icon {
+      width: 18px; height: 18px; position: relative; z-index: 1;
+      transition: transform .4s ease;
+    }
+    .dl-btn:hover .dl-icon { transform: translateY(2px); }
+    .dl-btn .dl-circle {
+      position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+      width: 22px; height: 22px; border-radius: 50%;
+      background: rgba(84,170,105,.15);
+      animation: dlPulse 2s infinite;
+    }
+    @keyframes dlPulse {
+      0% { box-shadow: 0 0 0 0 rgba(84,170,105,.4); }
+      70% { box-shadow: 0 0 0 8px rgba(84,170,105,0); }
+      100% { box-shadow: 0 0 0 0 rgba(84,170,105,0); }
+    }
+
+    /* ================= 008 Brutalist 勾选框 ================= */
+    .brut-chk {
+      display: inline-flex; align-items: center; cursor: pointer;
+      user-select: none; position: relative;
+      width: 1.4em; height: 1.4em; font-size: 16px;
+    }
+    .brut-chk input {
+      position: absolute; opacity: 0; cursor: pointer; width: 0; height: 0;
+    }
+    .brut-chk .brut-mark {
+      position: absolute; top: 0; left: 0;
+      height: 1.4em; width: 1.4em;
+      background-color: #fdfcf0;
+      border: 3px solid #1a1a1a;
+      border-radius: 8% 92% 12% 88% / 87% 11% 89% 13%;
+      box-shadow: 4px 4px 0 #1a1a1a;
+      transition: transform .2s cubic-bezier(.175,.885,.32,1.275), box-shadow .2s, background-color .2s;
+    }
+    .brut-chk:hover .brut-mark {
+      transform: scale(1.05) rotate(2deg);
+    }
+    .brut-chk input:checked ~ .brut-mark {
+      background-color: #54aa69;
+      border-radius: 92% 8% 88% 12% / 11% 87% 13% 89%;
+      transform: scale(1.1) rotate(-2deg);
+    }
+    .brut-chk .brut-mark::after {
+      content: ""; position: absolute; display: none;
+      left: 0.32em; top: 0.06em;
+      width: 0.28em; height: 0.65em;
+      border: solid #1a1a1a; border-width: 0 0.22em 0.22em 0;
+      border-radius: 2px;
+      transform: rotate(40deg);
+    }
+    .brut-chk input:checked ~ .brut-mark::after {
+      display: block; animation: brutSplash .3s forwards;
+    }
+    .brut-chk:active .brut-mark {
+      transform: scale(.9) translateY(3px);
+      box-shadow: 0 0 0 #1a1a1a;
+    }
+    @keyframes brutSplash {
+      0% { transform: scale(0) rotate(40deg); opacity: 0; }
+      70% { transform: scale(1.3) rotate(40deg); opacity: 1; }
+      100% { transform: scale(1) rotate(40deg); opacity: 1; }
+    }
+    /* 勾选框容器（替换原有 .chk / .sub-ck / .sub-en）*/
+    .chk, .sub-ck, .sub-en {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 13px; cursor: pointer;
+    }
+    .chk input, .sub-ck input, .sub-en input { display: none; }
+    .chk .brut-mark, .sub-ck .brut-mark, .sub-en .brut-mark {
+      position: relative; display: inline-block;
+      width: 1.2em; height: 1.2em; font-size: 14px;
+      background-color: #fdfcf0;
+      border: 2px solid #1a1a1a;
+      border-radius: 8% 92% 12% 88% / 87% 11% 89% 13%;
+      box-shadow: 3px 3px 0 #1a1a1a;
+      transition: all .2s;
+    }
+    .chk input:checked ~ .brut-mark,
+    .sub-ck input:checked ~ .brut-mark,
+    .sub-en input:checked ~ .brut-mark {
+      background-color: #54aa69;
+      border-radius: 92% 8% 88% 12% / 11% 87% 13% 89%;
+    }
+    .chk .brut-mark::after,
+    .sub-ck .brut-mark::after,
+    .sub-en .brut-mark::after {
+      content: ""; position: absolute; display: none;
+      left: 0.28em; top: 0.04em;
+      width: 0.24em; height: 0.55em;
+      border: solid #1a1a1a; border-width: 0 0.18em 0.18em 0;
+      border-radius: 1px; transform: rotate(40deg);
+    }
+    .chk input:checked ~ .brut-mark::after,
+    .sub-ck input:checked ~ .brut-mark::after,
+    .sub-en input:checked ~ .brut-mark::after {
+      display: block; animation: brutSplash .3s forwards;
+    }
+    .chk:hover .brut-mark, .sub-ck:hover .brut-mark, .sub-en:hover .brut-mark {
+      transform: scale(1.08) rotate(2deg);
+    }
 
     /* ================= 应用框架 ================= */
     #app-view { height: 100vh; display: flex; flex-direction: column; }
@@ -142,13 +394,12 @@
       background: linear-gradient(120deg, rgba(84,170,105,.18), rgba(245,197,66,.14));
       border: 1px solid var(--line); border-radius: 20px; padding: 28px 32px; margin-bottom: 26px;
       display: flex; align-items: center; gap: 20px;
-      position: relative; overflow: hidden;
+      position: relative; overflow: visible;   /* 放开裁切：天气卡要展开到 hero 之外 */
     }
-    .hero::after {
-      content: ""; position: absolute; width: 220px; height: 220px; right: -60px; top: -90px;
-      background: radial-gradient(circle, rgba(245,197,66,.35), transparent 65%);
-      pointer-events: none;
-    }
+    /* 原本裁切靠 .hero 的 overflow:hidden；现在改成「装饰层自己裁」，光晕照样只在圆角内 */
+    .hero-clip { position: absolute; inset: 0; overflow: hidden; border-radius: 20px; pointer-events: none; z-index: 0; }
+    .hero-glow { display: block; position: absolute; width: 220px; height: 220px; right: -60px; top: -90px;
+                 background: radial-gradient(circle, rgba(245,197,66,.35), transparent 65%); }
     .hero .emoji { font-size: 44px; }
     .hero h2 { margin: 0 0 6px; font-size: 21px; }
     .hero p { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.7; }
@@ -198,6 +449,63 @@
     .quick-card::after { bottom: 0; right: 0; translate: 50% 50%; }
     .quick-card:hover { transform: translateY(-4px); border-color: transparent; box-shadow: 0 14px 34px rgba(0,0,0,.45); }
     .quick-card:hover::before, .quick-card:hover::after { scale: 1; }
+
+    /* ================= 情报面板 ================= */
+    .dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 40px; }
+    .dash-card {
+      background: linear-gradient(150deg, rgba(255,255,255,.96), rgba(240,248,241,.88));
+      border: 1px solid rgba(84,170,105,.3); border-radius: 16px;
+      padding: 18px; box-shadow: var(--shadow);
+      transition: transform .3s, box-shadow .3s;
+    }
+    .dash-card:hover { transform: translateY(-3px); box-shadow: 0 12px 32px rgba(45,110,60,.15); }
+    .dash-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .dash-card-head > span:first-child { font-weight: 700; font-size: 14px; }
+    .dash-card-sub { font-size: 11px; color: var(--muted); }
+    .dash-card-link { font-size: 12px; color: var(--accent); text-decoration: none; }
+    .dash-card-link:hover { text-decoration: underline; }
+
+    /* 活动趋势 */
+    .trend-bars { display: flex; align-items: flex-end; gap: 6px; height: 100px; padding-top: 10px; }
+    .trend-bar { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; }
+    .trend-bar-fill {
+      width: 100%; border-radius: 4px 4px 0 0; min-height: 4px;
+      background: linear-gradient(180deg, var(--accent), var(--accent2));
+      transition: height .6s cubic-bezier(.175,.885,.32,1.275);
+    }
+    .trend-bar-lbl { font-size: 10px; color: var(--muted); margin-top: 6px; }
+
+    /* 知识库环形图 */
+    .dash-kb-body { display: flex; align-items: center; gap: 20px; }
+    .dash-kb-ring { position: relative; width: 72px; height: 72px; flex-shrink: 0; }
+    .dash-kb-svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+    .dash-kb-bg { fill: none; stroke: rgba(84,170,105,.15); stroke-width: 2.5; }
+    .dash-kb-fg { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; transition: stroke-dasharray .8s; }
+    .dash-kb-num { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 800; color: var(--accent); }
+    .dash-kb-info { flex: 1; }
+    .dash-kb-stat { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+    .dash-kb-stat .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+    .dash-kb-stat .dot.s2 { background: var(--accent2); }
+    .dash-kb-stat .dot.s3 { background: var(--kb); }
+
+    /* 订阅状态 */
+    .dash-subs-list { display: flex; flex-direction: column; gap: 10px; }
+    .dash-sub-row { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+    .dash-sub-dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; }
+    .dash-sub-dot.on { background: var(--accent); box-shadow: 0 0 6px rgba(84,170,105,.4); }
+    .dash-sub-name { flex: 1; color: var(--text); }
+    .dash-sub-schedule { font-size: 11px; color: var(--muted); }
+    .dash-sub-empty, .dash-tl-empty { font-size: 12px; color: var(--muted); text-align: center; padding: 12px; }
+
+    /* 时间线 */
+    .dash-tl-list { display: flex; flex-direction: column; gap: 10px; }
+    .dash-tl-item { display: flex; align-items: flex-start; gap: 10px; }
+    .dash-tl-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 4px; flex-shrink: 0; background: var(--accent); }
+    .dash-tl-dot.kb { background: var(--kb); }
+    .dash-tl-dot.report { background: var(--accent2); }
+    .dash-tl-content { flex: 1; }
+    .dash-tl-text { font-size: 12.5px; color: var(--text); line-height: 1.5; }
+    .dash-tl-time { font-size: 11px; color: var(--muted); margin-top: 2px; }
     .quick-card .qc-icon { font-size: 34px; flex-shrink: 0; transition: transform .3s; }
     .quick-card:hover .qc-icon { transform: scale(1.18) rotate(-6deg); }
     .quick-card .qc-name { font-weight: 700; font-size: 15.5px; transition: color .4s; }
@@ -212,6 +520,325 @@
     .qc-sky { --qc-c: #54aa69; } .qc-indigo { --qc-c: #818cf8; } .qc-yellow { --qc-c: #fbbf24; }
     .qc-green { --qc-c: #34d399; } .qc-gold { --qc-c: #fbbf24; }
     .qc-pink { --qc-c: #f472b6; } .qc-red { --qc-c: #f87171; }
+    .qc-teal { --qc-c: #2dd4bf; }
+
+    /* ---- 技能与工具视图（M4a）---- */
+    .sk-wrap { padding: 24px; max-width: 1080px; margin: 0 auto; width: 100%; overflow-y: auto; }
+    .sk-head h2 { margin: 0 0 6px; font-size: 18px; }
+    .sk-sub { color: var(--muted); font-size: 13px; margin: 0 0 14px; line-height: 1.6; }
+    .sk-tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+    .sk-tab { padding: 7px 14px; border-radius: 999px; font-size: 12.5px; cursor: pointer;
+              background: rgba(84,170,105,.14); border: 1px solid rgba(84,170,105,.28); color: var(--muted);
+              transition: background .25s, color .25s; }
+    .sk-tab:hover { color: var(--text); background: rgba(84,170,105,.24); }
+    .sk-tab.on { background: rgba(84,170,105,.45); color: #14381f; font-weight: 700; }
+    .sk-card { background: var(--panel2); border: 1px solid rgba(84,170,105,.28); border-radius: 12px;
+               padding: 14px 16px; margin-bottom: 14px; }
+    .sk-card h3 { margin: 0 0 8px; font-size: 15px; }
+    .sk-tip { font-size: 12px; color: var(--muted); line-height: 1.65; margin-bottom: 10px; }
+    .sk-grid { display: grid; grid-template-columns: 250px 1fr; gap: 14px; align-items: start; }
+    .sk-list { max-height: 430px; overflow-y: auto; }
+    .sk-item { padding: 9px 11px; border-radius: 10px; background: rgba(84,170,105,.12);
+               border: 1px solid rgba(84,170,105,.22); margin-bottom: 7px; cursor: pointer;
+               transition: transform .2s, border-color .2s; }
+    .sk-item:hover { transform: translateY(-1px); border-color: rgba(84,170,105,.5); }
+    .sk-item.on { background: rgba(84,170,105,.36); border-color: rgba(84,170,105,.7); }
+    .sk-item .n { font-size: 13px; font-weight: 700; }
+    .sk-item .d { font-size: 11.5px; color: var(--muted); margin-top: 3px; display: -webkit-box;
+                  -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .sk-item .m { font-size: 10.5px; color: var(--muted); margin-top: 4px; }
+    .sk-ta { width: 100%; min-height: 250px; font-family: ui-monospace, Consolas, monospace;
+             font-size: 12.5px; line-height: 1.6; resize: vertical; }
+    .sk-cnt { font-size: 11px; color: var(--muted); }
+    .sk-cnt.over { color: #e5484d; font-weight: 700; }
+    .sk-empty { color: var(--muted); font-size: 12.5px; padding: 20px 6px; text-align: center; line-height: 1.7; }
+    .sk-ph { border-style: dashed !important; }
+    .sk-cmd { font-family: ui-monospace, Consolas, monospace; font-size: 12px; background: rgba(0,0,0,.26);
+              border-radius: 8px; padding: 7px 10px; margin: 6px 0; word-break: break-all; color: var(--net); }
+    .sk-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+    /* ---- 011 terminal-cli：终端窗口卡片（M4b/M4c 命令行 UI 主视觉）---- */
+    .term {
+      background-color: #101729; border-radius: 10px; border: 1px solid #1a222f;
+      display: flex; flex-direction: column; padding: 14px 16px; margin: 10px 0 12px;
+      font-family: "Courier New", ui-monospace, Consolas, monospace;
+      box-shadow: 0 12px 28px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.04);
+      animation: term-in .45s cubic-bezier(.16,1,.3,1) both;
+    }
+    @keyframes term-in { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: none; } }
+    .term-top {
+      display: flex; flex-direction: row; align-items: center;
+      border-bottom: 1px solid #212b3f; padding-bottom: 9px; margin-bottom: 13px;
+    }
+    .tdot { width: 12px; height: 12px; border-radius: 50%; margin-right: 7px; flex: 0 0 auto; }
+    .tdot.red { background-color: #ef4444; }
+    .tdot.yellow { background-color: #eab308; }
+    .tdot.green { background-color: #22c55e; margin-right: 15px; }
+    .term-title { color: #fff; margin: 0; font-size: 12px; opacity: .82; letter-spacing: .3px; }
+    .term-line { color: #fff; font-size: 12.5px; line-height: 1.7; word-break: break-all; }
+    .term-line:not(:last-child) { margin-bottom: 9px; }
+    .term-line .dollar { color: #2282f4; margin-right: 13px; font-weight: 700; }
+    .term-line.green-line { color: #46cf79; margin-bottom: 10px; }
+    .term-line.l1 { animation: green-color 3s infinite; }
+    .term-line.l2 { animation: green-color 3.5s infinite; }
+    .term-line.l3 { animation: green-color 2s infinite; }
+    @keyframes green-color {
+      0% { color: #2a7151; }
+      50% { color: #46cf79; }
+      100% { color: #2a7151; }
+    }
+    .term-cmd { cursor: copy; transition: color .2s; }
+    .term-cmd:hover { color: #9fd4ff; }
+    .term-line.warn-line { color: #f5c542; margin-bottom: 10px; }
+    /* ---- 011 终端卡扩展：CLI 面板（M4b） ---- */
+    .term.out-wrap { min-height: 340px; }
+    .term-out { flex: 1 1 auto; min-height: 240px; max-height: 460px; overflow-y: auto;
+                padding-right: 4px; scroll-behavior: smooth; }
+    .term-out::-webkit-scrollbar { width: 8px; }
+    .term-out::-webkit-scrollbar-thumb { background: #26314a; border-radius: 999px; }
+    .cli-line { white-space: pre-wrap; word-break: break-all; margin-bottom: 3px; }
+    .cli-line.cmd { color: #9fd4ff; }
+    .cli-line.cmd .dollar { color: #2282f4; font-weight: 700; margin-right: 8px; }
+    .cli-line.out { color: #cfe3d6; }
+    .cli-line.err { color: #f5c542; }
+    .cli-line.ok { color: #46cf79; }
+    .cli-line.dim { color: #7d8aa3; }
+    .term-input-row { display: flex; align-items: center; gap: 8px; margin-top: 12px;
+                      border-top: 1px solid #212b3f; padding-top: 11px; }
+    .term-input-row .dollar { color: #2282f4; font-weight: 700; }
+    .term-in { flex: 1 1 auto; min-width: 0; background: #0b1220; border: 1px solid #26314a;
+               border-radius: 7px; color: #fff; font-family: inherit; font-size: 12.5px;
+               padding: 8px 10px; outline: none; transition: border-color .2s, box-shadow .2s; }
+    .term-in:focus { border-color: #2282f4; box-shadow: 0 0 0 3px rgba(34,130,244,.16); }
+    .term-in:disabled { opacity: .6; }
+    .term-go { background: #2282f4; color: #fff; border: 0; border-radius: 7px;
+               padding: 8px 14px; font-size: 12.5px; cursor: pointer; font-family: inherit;
+               transition: background .2s, transform .12s; }
+    .term-go:hover:not(:disabled) { background: #3a92f7; transform: translateY(-1px); }
+    .term-go:disabled { opacity: .5; cursor: not-allowed; }
+    .term-go.ghost { background: transparent; border: 1px solid #26314a; color: #9fd4ff; }
+    .term-go.ghost:hover:not(:disabled) { background: #0b1220; border-color: #2282f4; color: #fff; }
+    .term-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
+    .term-chip { font-size: 11px; padding: 3px 9px; border-radius: 6px; cursor: pointer;
+                 background: #0b1220; border: 1px solid #26314a; color: #9fd4ff;
+                 font-family: inherit; transition: border-color .2s, color .2s; }
+    .term-chip:hover { border-color: #2282f4; color: #fff; }
+
+    /* ---- M4c 第三方 CLI 卡：状态徽章 / 只读命令区 / 备注 ---- */
+    .sk-badge.st-none { background: rgba(120,132,150,.22); border-color: rgba(120,132,150,.5); }
+    .sk-badge.st-installed { background: rgba(245,197,66,.32); border-color: rgba(245,197,66,.6); }
+    .sk-badge.st-authed { background: rgba(84,170,105,.32); border-color: rgba(84,170,105,.6); color: #14381f; }
+    .sk-badge.st-ok { background: rgba(84,170,105,.22); border-color: rgba(84,170,105,.45); }
+    .sk-badge.st-warn { background: rgba(224,101,63,.2); border-color: rgba(224,101,63,.45); }
+    .cli-agent { margin-top: 12px; padding: 11px 13px; border-radius: 10px;
+                 background: rgba(11,18,32,.045); border: 1px dashed rgba(11,18,32,.18); }
+    .cli-agent-h { font-size: 12.5px; font-weight: 600; margin-bottom: 8px; }
+    .cli-agent-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 7px; }
+    .cli-note-row { gap: 10px; align-items: center; }
+    .cli-note { flex: 1 1 260px; min-width: 170px; font-size: 12.5px; padding: 7px 11px;
+                border-radius: 8px; border: 1px solid var(--line);
+                background: rgba(255,255,255,.85); color: var(--text); font-family: inherit; }
+    .cli-note:focus { outline: none; border-color: #2282f4; }
+    /* M5：能力描述（工具智能路由——决定 AI 何时想起用这个 CLI） */
+    .cli-ability-help { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+    .cli-ability-help .sk-tip { flex: 1 1 320px; margin: 0; line-height: 1.6; }
+    .cli-ability { white-space: pre-wrap; font-size: 12px; line-height: 1.65; color: var(--text);
+                   background: rgba(34,130,244,.06); border-left: 3px solid #2282f4;
+                   border-radius: 0 8px 8px 0; padding: 8px 12px; margin-top: 6px; }
+
+    /* ---- M4c 配置导向版：新建表单 / 只读命令 chip / 试跑输出 ---- */
+    /* ==== 012 号设计（cards/weather-gradient）：工作台 时钟 + 天气卡 ==== */
+    .wx-dock { position: relative; margin-left: auto; align-self: center; z-index: 40;
+               --wx-c1: #4fae6b; --wx-c2: #1f5c37; --wx-accent: #ffe27a; --wx-sh: 35, 104, 63; }   /* 默认：松绿（项目主色系） */
+    .wx-dock[data-wx="amber"]  { --wx-c1: #e2ab34; --wx-c2: #8a5a08; --wx-accent: #fff4d1; --wx-sh: 138, 90, 8; }   /* 暖阳 */
+    .wx-dock[data-wx="indigo"] { --wx-c1: #4f6bd8; --wx-c2: #23306f; --wx-accent: #cfe0ff; --wx-sh: 35, 48, 111; }   /* 靛蓝 */
+    .wx-dock[data-wx="violet"] { --wx-c1: #5936b4; --wx-c2: #362a84; --wx-accent: #ffe9a8; --wx-sh: 54, 42, 132; }   /* 紫罗兰（012 原味） */
+    .wx-mini { display: flex; align-items: center; gap: 9px; padding: 9px 15px; border-radius: 999px;
+               background: linear-gradient(120deg, var(--wx-c1) 0%, var(--wx-c2) 100%);
+               border: 1px solid rgba(255, 255, 255, .28); color: #fff; cursor: pointer;
+               box-shadow: 0 10px 24px rgba(var(--wx-sh), .28); font-variant-numeric: tabular-nums;
+               transition: transform .4s cubic-bezier(.83, 0, .17, 1), opacity .28s ease, box-shadow .3s; }
+    .wx-mini:hover { box-shadow: 0 14px 32px rgba(var(--wx-sh), .38); transform: translateY(-2px); }
+    .wx-mini-ic { font-size: 17px; }
+    .wx-mini-t { font-size: 18px; font-weight: 800; letter-spacing: .3px; }
+    .wx-mini-city { font-size: 12.5px; color: rgba(255, 255, 255, .82); max-width: 104px;
+                    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .wx-mini-clock { font-size: 13.5px; font-weight: 700; color: var(--wx-accent); }
+    .wx-dock:hover .wx-mini, .wx-dock.open .wx-mini { opacity: 0; transform: scale(.95); pointer-events: none; }
+    .wx-card { position: absolute; right: 0; top: calc(100% - 2px); width: 342px; height: 336px; padding: 20px 22px 46px;
+               transform: translateY(-8px) scale(.94); transform-origin: right top;
+               opacity: 0; pointer-events: none; color: #fff;
+               transition: opacity .28s ease, transform .45s cubic-bezier(.83, 0, .17, 1); }
+    .wx-dock:hover .wx-card, .wx-dock.open .wx-card { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+    .wx-card .background { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0;
+                           filter: drop-shadow(0 18px 40px rgba(var(--wx-sh), .38)); }
+    .wx-card > * { position: relative; z-index: 1; }
+    /* 卡片在 .hero 内 → .hero p 的 color/margin/line-height 会污染卡片文字，这里恢复继承 */
+    .wx-card p { color: inherit; margin: 0; }
+    .wx-card .main-text { color: #fff; }
+    .wx-card .info-left p { line-height: 1.35; }
+    /* 渐变通过 CSS 变量喂给 SVG（CSS 规则优先级高于 stop-color 属性），换主题无需改标记 */
+    .wx-card .background stop:first-of-type { stop-color: var(--wx-c1); }
+    .wx-card .background stop:last-of-type { stop-color: var(--wx-c2); }
+    .wx-card .cloud { position: absolute; right: 18px; top: -16px; width: 76px; z-index: 2;
+                      filter: drop-shadow(0 8px 14px rgba(0, 0, 0, .25)); }
+    .wx-clock { font-size: 34px; font-weight: 800; letter-spacing: 1px; line-height: 1.1;
+                font-variant-numeric: tabular-nums; text-shadow: 0 4px 14px rgba(0, 0, 0, .28); }
+    .wx-date { font-size: 12px; color: rgba(255, 255, 255, .72); margin-top: 2px; }
+    .wx-card .main-text { display: flex; align-items: flex-end; gap: 8px; font-size: 42px; font-weight: 800;
+                          margin: 6px 0 0; line-height: 1.05; letter-spacing: -1px; }
+    .wx-cond { font-size: 13px; font-weight: 600; color: rgba(255, 255, 255, .9); margin-bottom: 8px; letter-spacing: 0; }
+    .wx-card .info { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 4px; }
+    .wx-card .info-left p, .wx-card .info-right { margin: 0; font-size: 12.5px; }
+    .wx-card .text-gray { color: rgba(255, 255, 255, .62); }
+    .wx-card .info-right { color: var(--wx-accent); font-weight: 600; }
+    .wx-meta { display: flex; gap: 12px; font-size: 12px; color: rgba(255, 255, 255, .85); margin-top: 7px; }
+    .wx-days { display: flex; gap: 8px; margin-top: 8px; }
+    .wx-day { flex: 1; background: rgba(255, 255, 255, .13); border: 1px solid rgba(255, 255, 255, .16);
+              border-radius: 10px; padding: 5px 4px; text-align: center; font-size: 11px; }
+    .wx-day-lbl { display: block; color: rgba(255, 255, 255, .68); }
+    .wx-day-ic { display: block; font-size: 15px; margin: 1px 0; }
+    .wx-day-t { display: block; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .wx-foot { position: absolute; left: 22px; right: 22px; bottom: 12px; display: flex;
+               justify-content: space-between; align-items: center; gap: 8px;
+               font-size: 10.5px; color: rgba(255, 255, 255, .6); white-space: nowrap; }
+    .wx-foot > span { overflow: hidden; text-overflow: ellipsis; }
+    .wx-city-btn { cursor: pointer; color: var(--wx-accent); flex: 0 0 auto; }
+    .wx-city-btn:hover { text-decoration: underline; }
+    .wx-skins { display: inline-flex; gap: 3px; margin-right: 8px; vertical-align: middle; flex: 0 0 auto; }
+    .wx-skin { width: 10px; height: 10px; border-radius: 50%; cursor: pointer; display: inline-block;
+               border: 1.5px solid rgba(255, 255, 255, .55); transition: transform .25s, box-shadow .25s; }
+    .wx-skin:hover { transform: scale(1.22); }
+    .wx-skin.on { box-shadow: 0 0 0 2px rgba(255, 255, 255, .9); transform: scale(1.1); }
+    .wx-card-load { height: 208px; }   /* 兜底卡内容少，别留半张空卡 */
+    .wx-load-tip { font-size: 13px; color: rgba(255, 255, 255, .85); margin: 14px 0 12px; }
+    .wx-retry { display: inline-block; padding: 6px 12px; border-radius: 9px; cursor: pointer; font-size: 12px;
+                font-weight: 700; background: var(--wx-accent); color: var(--wx-c2); }
+    .wx-retry:hover { filter: brightness(1.06); }
+    .wx-city-form { position: absolute; right: 0; top: calc(100% - 2px); z-index: 60; width: 342px;
+                    display: flex; gap: 8px; align-items: center; padding: 14px 16px; border-radius: 16px;
+                    background: linear-gradient(120deg, var(--wx-c1) 0%, var(--wx-c2) 100%);
+                    border: 1px solid rgba(255, 255, 255, .25); box-shadow: 0 18px 40px rgba(var(--wx-sh), .42); }
+    .wx-city-form input { flex: 1; min-width: 0; border: none; border-radius: 9px; padding: 8px 10px;
+                          font-size: 12.5px; font-family: inherit; background: rgba(255, 255, 255, .93);
+                          color: #2b2350; outline: none; }
+    .wx-city-form button { border: none; border-radius: 9px; padding: 8px 12px; font-family: inherit; font-size: 12.5px;
+                           font-weight: 700; cursor: pointer; background: var(--wx-accent); color: var(--wx-c2); }
+    .wx-city-form button.ghost { background: rgba(255, 255, 255, .18); color: #fff; }
+    .wx-city-form button:hover { filter: brightness(1.06); }
+    @media (max-width: 1080px) { .wx-dock { display: none; } }   /* 窄屏让位给欢迎语 */
+    /* ---- 003 号设计（buttons/bubbles）：教程指导 / 返回 按钮（气泡填充动效）---- */
+    .bubbles { --c2: #2282f4;
+               padding: .42em 1.05em; font-size: 13.5px; font-family: inherit; line-height: 1.2;
+               background-color: transparent; border: 2.5px solid var(--c2); border-radius: .35em;
+               cursor: pointer; overflow: hidden; position: relative;
+               transition: 300ms cubic-bezier(.83, 0, .17, 1); }
+    .bubbles > .text { font-weight: 700; color: var(--c2); position: relative; z-index: 1;
+                       transition: color 700ms cubic-bezier(.83, 0, .17, 1); }
+    .bubbles::before, .bubbles::after {
+      content: ""; width: 150%; aspect-ratio: 1 / 1; scale: 0;
+      transition: 1000ms cubic-bezier(.76, 0, .24, 1);
+      background-color: var(--c2); border-radius: 50%; position: absolute; translate: -50% -50%; }
+    .bubbles::before { top: 0; left: 0; }
+    .bubbles::after { top: 100%; left: 100%; }
+    .bubbles:hover > .text { color: #fff; }
+    .bubbles:hover::before, .bubbles:hover::after { scale: 1; }
+    .bubbles:active { scale: .97; filter: brightness(.92); }
+    .tut-entry { margin-left: 12px; vertical-align: middle; }
+    .tut-back { --c2: #54aa69; }
+    .tut-reload { --c2: #8a7ef0; }
+
+    /* ---- M4 收尾：教程只读阅读页 ---- */
+    .tutorial-view { padding: 22px 26px 44px; }
+    .tut-wrap { max-width: 1060px; margin: 0 auto; }
+    .tut-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+    .tut-title { flex: 1 1 320px; }
+    .tut-title h2 { margin: 0; font-size: 21px; }
+    .tut-sub { margin: 5px 0 0; font-size: 12px; color: var(--muted); }
+    .tut-sub code { background: rgba(11,18,32,.07); padding: 1px 6px; border-radius: 5px; }
+    .tut-tip { color: var(--muted); font-size: 13px; }
+    .tut-body { background: rgba(255,255,255,.88); border: 1px solid var(--line); border-radius: 14px;
+                padding: 22px 28px; box-shadow: 0 10px 30px rgba(20,30,50,.06); }
+    .md-doc { font-size: 14px; line-height: 1.78; color: var(--text); }
+    .md-doc .md-h { margin: 24px 0 10px; line-height: 1.35; }
+    .md-doc h1.md-h { font-size: 24px; padding-bottom: 10px; border-bottom: 2px solid var(--line); }
+    .md-doc h2.md-h { font-size: 19px; padding-bottom: 7px; border-bottom: 1px solid var(--line); }
+    .md-doc h3.md-h { font-size: 16px; }
+    .md-doc h4.md-h { font-size: 14.5px; }
+    .md-doc p { margin: 9px 0; }
+    .md-doc img { max-width: 100%; display: block; margin: 12px 0; border-radius: 10px;
+                  border: 1px solid var(--line); box-shadow: 0 6px 18px rgba(20,30,50,.1); }
+    .md-doc .md-table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
+    .md-doc .md-table td { border: 1px solid var(--line); padding: 7px 10px; vertical-align: top; }
+    .md-doc .md-table tr:first-child td { background: rgba(34,130,244,.07); font-weight: 600; }
+    .md-doc .md-pre { background: #0b1220; color: #cfe3d6; border-radius: 10px; padding: 14px 16px;
+                      overflow-x: auto; font-size: 12.5px; line-height: 1.55; margin: 12px 0; }
+    .md-doc .md-pre code { white-space: pre; background: none; padding: 0; color: inherit; }
+    .md-doc code { background: rgba(11,18,32,.07); padding: 1.5px 6px; border-radius: 5px; font-size: 12.5px; }
+    .md-doc .md-ul, .md-doc .md-ol { margin: 8px 0 8px 24px; }
+    .md-doc .md-ul li, .md-doc .md-ol li { margin: 4px 0; }
+    .md-doc .md-quote { margin: 10px 0; padding: 8px 14px; border-left: 4px solid #2282f4;
+                        background: rgba(34,130,244,.06); border-radius: 0 8px 8px 0; }
+    .md-doc .md-det { margin: 12px 0; padding: 8px 14px; border: 1px dashed var(--line);
+                      border-radius: 10px; background: rgba(11,18,32,.03); }
+    .md-doc .md-det summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+    .md-doc a { color: #2282f4; }
+    .md-doc hr { border: none; border-top: 1px solid var(--line); margin: 22px 0; }
+
+
+    .terminline { height: 9px; }
+    .cli-form { display: flex; flex-wrap: wrap; gap: 10px 14px; margin: 4px 0 12px; }
+    .cli-form label { display: flex; flex-direction: column; gap: 4px; flex: 1 1 240px;
+                      font-size: 12px; color: var(--muted); }
+    .cli-form label.wide { flex: 1 1 100%; }
+    .cli-form input, .cli-form select, .cli-form textarea {
+      font-family: inherit; font-size: 12.5px; color: var(--text);
+      padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line);
+      background: rgba(255,255,255,.9); }
+    .cli-form textarea { resize: vertical; line-height: 1.5; }
+    .cli-form input:focus, .cli-form select:focus, .cli-form textarea:focus {
+      outline: none; border-color: #2282f4; }
+    .cli-bin { font-size: 11.5px; padding: 2px 7px; border-radius: 6px; margin-left: 4px;
+               background: rgba(11,18,32,.07); border: 1px solid rgba(11,18,32,.14); }
+    .cli-cmd { font-size: 11px; padding: 3px 9px; border-radius: 6px; cursor: pointer;
+               background: #0b1220; border: 1px solid #26314a; color: #9fd4ff;
+               font-family: inherit; transition: border-color .2s, color .2s; }
+    .cli-cmd:hover { border-color: #2282f4; color: #fff; }
+    .cli-run { font-size: 11px; padding: 3px 10px; border-radius: 6px; cursor: pointer;
+               background: rgba(84,170,105,.28); border: 1px solid rgba(84,170,105,.6);
+               color: #14381f; font-family: inherit; }
+    .cli-run:disabled { opacity: .55; cursor: default; }
+    .cli-out { margin-top: 9px; padding: 8px 11px; border-radius: 8px; background: #0b1220;
+               border: 1px solid #26314a; }
+    .cli-out .cli-line { font-size: 11.5px; }
+    .cli-err { font-size: 12.5px; color: #b3402a; align-self: center; }
+    .cli-notes { flex: 1 1 100%; margin-top: 6px; padding: 8px 11px; border-radius: 8px;
+                 background: rgba(11,18,32,.06); border: 1px dashed rgba(11,18,32,.2); }
+    .term-foot { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px;
+                 color: #7d8aa3; font-size: 11.5px; }
+    .term-foot b { color: #cfe3d6; font-weight: 600; }
+    .skill-pill.mini { font-size: 11px; padding: 2px 8px; }
+    .bubble .skill-bar { padding: 0; margin-bottom: 6px; }
+    .sk-badge { font-size: 10.5px; padding: 2px 8px; border-radius: 999px;
+                background: rgba(245,197,66,.3); border: 1px solid rgba(245,197,66,.55); color: var(--text); }
+
+    /* ---- 输入区：技能标签 + / 唤出菜单（M4a）---- */
+    .input-area { position: relative; border-top: 1px solid var(--line); background: rgba(255,255,255,.7); backdrop-filter: blur(10px); padding-top: 10px; }
+    .input-area .input-bar { border-top: none; background: transparent; backdrop-filter: none; padding: 4px 18px 14px; }
+    .skill-bar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 0 18px 8px; }
+    .skill-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 10px;
+                  border-radius: 999px; background: rgba(84,170,105,.32); border: 1px solid rgba(84,170,105,.6); color: #14381f; }
+    .skill-pill .x { cursor: pointer; font-weight: 700; opacity: .65; }
+    .skill-pill .x:hover { opacity: 1; }
+    .skill-hint { font-size: 11.5px; color: var(--muted); }
+    .skill-menu { position: absolute; bottom: 100%; left: 18px; right: 18px; max-height: 215px; overflow-y: auto;
+                  background: var(--panel-solid); border: 1px solid rgba(84,170,105,.5); border-radius: 10px;
+                  margin-bottom: 6px; z-index: 60; box-shadow: 0 14px 34px rgba(0,0,0,.28); }
+    .skill-menu .mi { padding: 8px 12px; font-size: 12.5px; cursor: pointer; display: flex;
+                      justify-content: space-between; gap: 10px; align-items: baseline; }
+    .skill-menu .mi.on { background: rgba(84,170,105,.35); }
+    .skill-menu .mi .sub { color: var(--muted); font-size: 11px; flex-shrink: 0; }
+    .skill-menu .mi.dis { opacity: .45; }
 
     /* ---- 报告视图（M4）---- */
     .reports-wrap { padding: 24px; max-width: 900px; margin: 0 auto; width:100%; overflow-y:auto; }
@@ -251,6 +878,59 @@
     .example { font-size: 12.5px; color: var(--muted); cursor: pointer; padding: 8px 10px; border-radius: 9px; transition: all .2s; line-height: 1.5; }
     .example:hover { color: var(--accent); background: rgba(56,189,248,.07); transform: translateX(2px); }
     .thinking { color: var(--muted); font-size: 13px; }
+    /* M1 会话管理 */
+    .session-panel { margin-bottom: 4px; }
+    .session-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .session-title { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; }
+    .session-list { max-height: 220px; overflow-y: auto; }
+    .session-item {
+      background: var(--panel2); border: 1px solid rgba(84,170,105,.25); border-radius: 10px;
+      padding: 7px 9px; margin-bottom: 6px; cursor: pointer; transition: all .18s;
+    }
+    .session-item:hover { border-color: rgba(84,170,105,.45); transform: translateX(2px); }
+    .session-item.active { border-color: var(--accent); background: rgba(84,170,105,.18); box-shadow: inset 2px 0 0 var(--accent); }
+    .s-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+    .s-title {
+      font-size: 12.5px; font-weight: 600; color: var(--fg); white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0;
+    }
+    .s-ops { display: flex; gap: 2px; flex-shrink: 0; opacity: 0; transition: opacity .15s; }
+    .session-item:hover .s-ops { opacity: 1; }
+    .s-op { padding: 1px 5px; font-size: 11px; }
+    .s-meta { font-size: 10.5px; color: var(--muted); margin-top: 3px; }
+    .s-empty { font-size: 11.5px; color: var(--muted); padding: 4px 2px; line-height: 1.6; }
+    /* M3 知识库页 */
+    .qc-purple { --q: 139,92,246; }
+    .kb-wrap { max-width: 860px; margin: 0 auto; padding: 20px 24px; }
+    .kb-empty { background: var(--panel2); border: 1px dashed rgba(139,92,246,.4); border-radius: 14px;
+                padding: 22px 20px; margin: 14px 0; font-size: 13.5px; line-height: 1.7; }
+    .kb-sub { font-size: 13px; color: var(--muted); margin: 14px 0 8px; letter-spacing: 1px; }
+    .kb-doc { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+              background: var(--panel2); border: 1px solid rgba(139,92,246,.2); border-radius: 12px;
+              padding: 10px 12px; margin-bottom: 8px; }
+    .kb-doc-title { font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .kb-doc-meta { font-size: 11px; color: var(--muted); margin-top: 3px; }
+    .kb-modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex;
+                align-items: center; justify-content: center; z-index: 9999; }
+    .kb-modal-box { width: min(560px, 92vw); background: #1e2a38; border: 1px solid rgba(255,255,255,.12);
+                    border-radius: 16px; padding: 20px; color: #e5e7eb; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+    .kb-modal-box * { color: #e5e7eb; }
+    .kb-modal-box h3 { margin: 0 0 12px; font-size: 16px; color: #f3f4f6; font-weight: 600; }
+    .kb-modal-box .kb-meta-line { color: #cbd5e1; }
+    .kb-modal-box .kb-meta-line b { color: #f3f4f6; }
+    .kb-eval { background: rgba(99,102,241,.15); border-radius: 10px; padding: 10px 12px;
+               font-size: 12.5px; line-height: 1.7; margin-top: 4px; color: #f3f4f6; }
+    .kb-eval b { color: #fef3c7; }
+    .kb-eval .thinking { color: #cbd5e1; }
+    .kb-preview { background: rgba(0,0,0,.35); border-radius: 8px; padding: 10px; font-size: 12px;
+                  max-height: 160px; overflow: auto; white-space: pre-wrap; margin-top: 6px;
+                  color: #e5e7eb; border: 1px solid rgba(255,255,255,.08); }
+    .kb-hits { margin-top: 10px; }
+    .kb-hit { border-left: 2px solid var(--accent); padding: 6px 12px; margin-bottom: 8px;
+              background: var(--panel2); border-radius: 0 10px 10px 0; }
+    .kb-hit-title { font-size: 12px; color: var(--accent); font-weight: 600; }
+    .kb-hit-text { font-size: 12.5px; color: var(--fg); line-height: 1.6; margin-top: 4px;
+                   display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
     .edit-link { font-size: 11px; color: var(--accent); cursor: pointer; letter-spacing: 0; text-transform: none; font-weight: 400; }
     .edit-link:hover { text-decoration: underline; }
     .del-x { margin-left: auto; color: var(--muted); cursor: pointer; font-size: 13px; padding: 0 4px; border-radius: 5px; line-height: 1; }
@@ -351,6 +1031,15 @@
     .send-bubbles:hover::before, .send-bubbles:hover::after { scale: 1; }
     .send-bubbles:active { scale: .97; filter: brightness(.9); }
     .send-bubbles:disabled { opacity: .55; cursor: not-allowed; filter: grayscale(.4); }
+    /* 中断态：AI 正在回答时，发送按钮变红「中断」，呼吸灯提示可强停 */
+    .send-bubbles.stop { --c1: #2a1410; --c2: #e0653f; animation: stop-pulse 1.6s ease-in-out infinite; }
+    .send-bubbles.stop:disabled { opacity: 1; filter: none; cursor: progress; }  /* 已点中断：保持红色，只转光标 */
+    @keyframes stop-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(224,101,63,0); }
+      50% { box-shadow: 0 0 0 5px rgba(224,101,63,.18); }
+    }
+    .mini-btn.danger { border-color: rgba(224,101,63,.45); }
+    .mini-btn.danger:hover { border-color: #e0653f; color: #e0653f; box-shadow: 0 0 0 3px rgba(224,101,63,.18); }
 
     .mon-title { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 2px; margin: 6px 2px 12px; }
     .mon-item { font-size: 12.5px; padding: 9px 11px; border-radius: 10px; background: var(--panel2);
@@ -471,34 +1160,102 @@
 </head>
 <body>
 <div id="app">
+  <!-- 全局提示条：必须放在 #app 根层、且在 login-wrap 的 v-if 之前（原来在 <template v-else> 里，登录页看不到 -> 注册成功提示消失；夹在 v-if 与 v-else 之间会编译报错） -->
+    <div class="toast" v-if="toast" :class="{err: toastErr}">{{ toast }}</div>
   <!-- ============ 登录页 ============ -->
   <div class="login-wrap" v-if="!token">
-    <div class="login-card">
-      <h1>智选情报官</h1>
-      <div class="sub">本地 AI 情报助手 · 公司竞品分析 / 个人选购决策</div>
-      <div class="field">
-        <label>用户名</label>
-        <div class="input-container">
-          <input class="input" v-model="username" placeholder="如 alice / 你的账号" />
-          <span class="topline"></span><span class="underline"></span>
+    <div class="login-decor">
+      <div class="float-emoji">🔍</div>
+      <div class="float-emoji">📊</div>
+      <div class="float-emoji">💡</div>
+      <div class="float-emoji">🚀</div>
+      <div class="float-emoji">📈</div>
+      <div class="float-emoji">🎯</div>
+      <div class="float-emoji">💬</div>
+      <div class="float-emoji">✨</div>
+      <div class="welcome-text">
+        <div class="main">智选情报官</div>
+        <div class="sub">本地 AI 情报助手 · 让信息为你所用</div>
+      </div>
+      <span class="kaomoji k1">(≧∇≦)ﾉ</span>
+      <span class="kaomoji k2">♪(´▽｀)</span>
+      <span class="kaomoji k3">ヾ(•ω•`)o</span>
+      <span class="kaomoji k4">٩(◕‿◕｡)۶</span>
+      <div class="ring"></div>
+      <div class="ring"></div>
+      <div class="ring"></div>
+    </div>
+    <div class="login-container" :class="authMode === 'register' ? 'auth-reg' : ''">
+      <div class="login-card">
+        <div class="login-title">
+          <span class="login-text">登录</span>
+        </div>
+        <div class="login-form">
+          <!-- 2026-09-16 收尾：登录卡与注册卡彻底分开。
+               旧版是「输入不存在就直接注册」，错别字会静默建成账号（如「尼姑喵喵」）——已移除该逻辑。 -->
+          <div class="auth-tabs">
+            <button class="auth-tab" :class="{ on: authMode === 'login' }" @click="switchAuth('login')">登录</button>
+            <button class="auth-tab" :class="{ on: authMode === 'register' }" @click="switchAuth('register')">注册</button>
+          </div>
+
+          <!-- ① 登录卡（只认已存在的账号） -->
+          <template v-if="authMode === 'login'">
+            <div class="field">
+              <label>用户名</label>
+              <div class="input-container">
+                <input class="input" v-model="username" placeholder="如 alice / 你的账号" @keyup.enter="doLogin" />
+              </div>
+            </div>
+            <div class="field">
+              <label>密码</label>
+              <div class="input-container">
+                <input class="input" v-model="password" type="password" placeholder="密码" @keyup.enter="doLogin" />
+              </div>
+            </div>
+            <button class="bubbles full" @click="doLogin" :disabled="busy"><span class="text">{{ busy ? '登录中…' : '登录' }}</span></button>
+            <div class="err">{{ errMsg }}</div>
+            <div class="auth-switch" v-if="notExist">
+              <button class="link-btn" @click="goRegister">没有「{{ (username || '').trim() }}」这个账号？去注册 →</button>
+            </div>
+            <div class="auth-switch" v-else>
+              <span>还没有账号？</span><button class="link-btn" @click="goRegister">注册新账号</button>
+            </div>
+          </template>
+
+          <!-- ② 注册卡（要填确认密码 + 账号类型，且实时回显「即将创建」） -->
+          <template v-if="authMode === 'register'">
+            <div class="field">
+              <label>用户名</label>
+              <div class="input-container">
+                <input class="input" v-model="username" placeholder="给自己起个账号名（别写错别字）" />
+              </div>
+            </div>
+            <div class="field">
+              <label>密码</label>
+              <div class="input-container">
+                <input class="input" v-model="password" type="password" placeholder="至少 6 位" />
+              </div>
+            </div>
+            <div class="field">
+              <label>确认密码</label>
+              <div class="input-container">
+                <input class="input" v-model="regPwd2" type="password" placeholder="再输一次" @keyup.enter="doRegister" />
+              </div>
+            </div>
+            <div class="field">
+              <label>账号类型</label>
+              <div class="role-pick">
+                <label :class="{ on: regRole === 'personal' }"><input type="radio" value="personal" v-model="regRole" /><span>个人账号</span></label>
+                <label :class="{ on: regRole === 'company' }"><input type="radio" value="company" v-model="regRole" /><span>公司账号</span></label>
+              </div>
+            </div>
+            <div class="reg-hint" :class="{ ready: regReady }">{{ regHint }}</div>
+            <button class="bubbles full" @click="doRegister" :disabled="busy"><span class="text">{{ busy ? '创建中…' : '创建账号' }}</span></button>
+            <div class="err">{{ errMsg }}</div>
+            <div class="auth-switch"><span>已有账号？</span><button class="link-btn" @click="switchAuth('login')">去登录</button></div>
+          </template>
         </div>
       </div>
-      <div class="field">
-        <label>密码</label>
-        <div class="input-container">
-          <input class="input" v-model="password" type="password" placeholder="密码" @keyup.enter="doLogin" />
-          <span class="topline"></span><span class="underline"></span>
-        </div>
-      </div>
-      <div class="field">
-        <label>账号类型</label>
-        <div class="role-pick">
-          <label><input type="radio" value="company" v-model="regRole" /><span>公司账号</span></label>
-          <label><input type="radio" value="personal" v-model="regRole" /><span>个人账号</span></label>
-        </div>
-      </div>
-      <button class="bubbles full" @click="doLogin" :disabled="busy"><span class="text">{{ busy ? '登录中…' : '登录 / 自动注册' }}</span></button>
-      <div class="err">{{ errMsg }}</div>
     </div>
   </div>
 
@@ -512,9 +1269,11 @@
           <a class="nav-tab" :class="{active: view==='home'}" href="#/home">🏠 工作台</a>
           <a class="nav-tab" :class="{active: view==='profile'}" href="#/profile">{{ role === 'company' ? '🏢 公司信息' : '👤 个人信息' }}</a>
           <a class="nav-tab" :class="{active: view==='chat'}" href="#/chat">🤖 AI 助手</a>
+          <a class="nav-tab" :class="{active: view==='kb'}" href="#/kb">📚 知识库</a>
 
           <a class="nav-tab" :class="{active: view==='reports'}" href="#/reports">📰 报告<span class="reddot" v-if="newReports">NEW</span></a>
           <a class="nav-tab" :class="{active: view==='customize'}" href="#/customize">🎛️ 定制助手</a>
+          <a class="nav-tab" :class="{active: view==='skills'}" href="#/skills">🧩 技能与工具</a>
         </nav>
         <span class="spacer"></span>
         <span class="who">{{ username }}</span>
@@ -552,12 +1311,119 @@
       <div class="view" v-show="view === 'home'">
         <div class="home">
           <div class="hero">
+            <span class="hero-clip"><i class="hero-glow"></i></span>
             <span class="emoji">{{ role === 'company' ? '🏢' : '👋' }}</span>
             <div>
               <h2>{{ greeting }}，{{ displayName }}</h2>
               <p v-if="role === 'company'">这里是你的竞品情报工作台。维护好公司资料与关注竞品后，AI 助手可产出「我们 vs 竞品」的对比简报。</p>
               <p v-else>这里是你的选购决策工作台。添加兴趣与关注后，AI 助手为你做性价比分析与快讯解读。</p>
               <p v-if="!myData.setup_done" style="color:var(--kb)">⚠️ 资料还未完善，建议先到信息页填写基础数据。</p>
+            </div>
+
+            <!-- 时钟 + 天气（012 号 cards/weather-gradient：收起为药丸，悬浮/点击展开） -->
+            <div class="wx-dock" :class="{open: wxOpen}" :data-wx="wxSkin" @click="wxToggleDock($event)"
+                 @mouseenter="wxOpen = true" @mouseleave="wxOpen = false">
+              <div class="wx-mini" title="悬浮展开：时钟 · 天气 · 3 天预报">
+                <span class="wx-mini-ic">{{ wx && wx.now ? wx.now.icon : '🌤️' }}</span>
+                <span class="wx-mini-t">{{ wx && wx.now ? wx.now.temp : '--' }}°</span>
+                <span class="wx-mini-city">{{ wx ? wx.city : (wxLoading ? '定位中…' : '天气') }}</span>
+                <span class="wx-mini-clock">{{ clockTime }}</span>
+              </div>
+
+              <div class="wx-card" v-if="wx && !wxCityEdit">
+                <svg class="background" fill="none" viewBox="0 0 342 300" preserveAspectRatio="none"
+                     xmlns="http://www.w3.org/2000/svg">
+                  <path fill="url(#wxgrad)" d="M0 66.4396C0 31.6455 0 14.2484 11.326 5.24044C22.6519 -3.76754 39.6026 0.147978 73.5041 7.97901L307.903 62.1238C324.259 65.9018 332.436 67.7909 337.218 73.8031C342 79.8154 342 88.2086 342 104.995V256C342 276.742 342 287.113 335.556 293.556C329.113 300 318.742 300 298 300H44C23.2582 300 12.8873 300 6.44365 293.556C0 287.113 0 276.742 0 256V66.4396Z"></path>
+                  <defs>
+                    <linearGradient gradientUnits="userSpaceOnUse" y2="220" x2="360" y1="120" x1="0" id="wxgrad">
+                      <stop stop-color="#5936B4"></stop>
+                      <stop stop-color="#362A84" offset="1"></stop>
+                    </linearGradient>
+                  </defs>
+                </svg>
+                <div class="cloud">
+                  <svg fill="#000000" role="img" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+                    <g fill="#75d6ff">
+                      <path d="M10.8 42.9c-.5 1.5-.1 3 1 3.4c1.1.4 2.4-.5 3-2c.6-1.8.7-4.1.2-6.9c-2.1 1.9-3.6 3.8-4.2 5.5"></path>
+                      <path d="M13.2 57.4c.6-1.8.7-4.1.2-6.9c-2.1 1.8-3.6 3.7-4.2 5.5c-.5 1.5-.1 3 1 3.4c1.1.4 2.5-.5 3-2"></path>
+                      <path d="M51.5 37.4c-2.1 1.8-3.6 3.7-4.2 5.5c-.5 1.5-.1 3 1 3.4c1.1.4 2.4-.5 3-2c.5-1.7.6-4.1.2-6.9"></path>
+                      <path d="M38.2 55.9c-.5 1.5-.1 3 1 3.4s2.4-.5 3-2c.6-1.8.7-4.1.2-6.9c-2 1.9-3.5 3.8-4.2 5.5"></path>
+                      <path d="M46.9 55.9c-.5 1.5-.1 3 1 3.4s2.4-.5 3-2c.6-1.8.7-4.1.2-6.9c-2.1 1.9-3.6 3.8-4.2 5.5"></path>
+                      <path d="M18.6 55.9c-.5 1.5-.1 3 1 3.4s2.4-.5 3-2c.6-1.8.7-4.1.2-6.9c-2.1 1.9-3.6 3.8-4.2 5.5"></path>
+                    </g>
+                    <path d="M24.5 31.9l-4.9 16.2h12.5L27.9 62l16.5-20.2H32.5l2.9-9.9z" fill="#ffce31"></path>
+                    <path fill="#ffffff" d="M18.2 32.5c-.8 0-1.6-.1-2.4-.4c-3.1-1-5.3-3.9-5.3-7.2c0-2.2 1-4.3 2.6-5.7c.4-.4.9-.7 1.4-1l.5-1.8c1.3-4.4 5.4-7.5 10-7.5c.5 0 .9 0 1.5.1c.4.1.8.1 1.2.3l.2-.4c1.9-3.3 5.4-5.4 9.2-5.4C43 3.5 47.7 8.2 47.7 14v1c.4.2.9.4 1.3.6c2.8 1.6 4.5 4.6 4.5 7.8c0 4.2-2.9 7.8-7 8.8c-.7.2-1.4.2-2 .2H18.2z"></path>
+                    <path fill="#b6c1d1" d="M37.1 5c5 0 9 4 9 8.9v.7c-2.1.2-4 1-5.4 2.3c1.1-.6 2.4-1 3.7-1c.5 0 1 .1 1.5.1c.8.2 1.6.5 2.3.9c2.3 1.3 3.8 3.7 3.8 6.5c0 3.6-2.5 6.5-5.8 7.3c-.7.2-1.2.3-1.8.3H18.2c-.7 0-1.3-.1-1.9-.3c-2.4-.8-4.2-3.1-4.2-5.8c0-1.8.8-3.5 2.1-4.6c.6-.5 1.3-.9 2-1.2c.6-.2 1.3-.3 2-.3c2 0 3.7.9 4.9 2.4h.1c-1.3-2.4-3.7-4.1-6.6-4.3c1.1-3.7 4.5-6.4 8.5-6.4c.4 0 .9 0 1.3.1c.8.1 1.6.3 2.3.7c2.7 1.2 4.7 3.7 5.1 6.8V18c0-3.4-1.8-6.5-4.5-8.3C30.8 6.9 33.8 5 37.1 5m0-3C33 2 29.2 4.1 27 7.6h-.3c-.6-.1-1.2-.1-1.7-.1c-5.3 0-10 3.5-11.4 8.6l-.3 1.2c-.4.2-.7.5-1.1.8c-2 1.7-3.1 4.2-3.1 6.9c0 4 2.5 7.4 6.3 8.7c.9.3 1.9.5 2.9.5h26.2c.8 0 1.6-.1 2.4-.3c4.8-1.1 8.2-5.3 8.2-10.3c0-3.8-2-7.3-5.3-9.1c-.2-.1-.3-.2-.5-.3v-.1C49.2 7.4 43.8 2 37.1 2z"></path>
+                  </svg>
+                </div>
+
+                <div class="wx-clock">{{ clockTime }}</div>
+                <div class="wx-date">{{ clockDate }}</div>
+
+                <p class="main-text">
+                  {{ wx.now.temp }}°<span class="wx-cond">{{ wx.now.icon }} {{ wx.now.text }}</span>
+                </p>
+
+                <div class="info">
+                  <div class="info-left">
+                    <p class="text-gray">H:{{ wx.daily[0] ? wx.daily[0].tmax : '--' }}° L:{{ wx.daily[0] ? wx.daily[0].tmin : '--' }}°</p>
+                    <p>{{ wx.city }}</p>
+                  </div>
+                  <p class="info-right">体感 {{ wx.now.feels }}°</p>
+                </div>
+
+                <div class="wx-meta">
+                  <span>💧 {{ wx.now.humidity }}%</span>
+                  <span>💨 {{ wx.now.wind }} km/h</span>
+                  <span v-if="wx.daily[0] && wx.daily[0].rain !== null">🌧️ {{ wx.daily[0].rain }}%</span>
+                </div>
+
+                <div class="wx-days">
+                  <div class="wx-day" v-for="(d, i) in wx.daily.slice(0, 3)" :key="d.date">
+                    <span class="wx-day-lbl">{{ i === 0 ? '今天' : (i === 1 ? '明天' : '后天') }}</span>
+                    <span class="wx-day-ic">{{ d.icon }}</span>
+                    <span class="wx-day-t">{{ d.tmax }}° / {{ d.tmin }}°</span>
+                  </div>
+                </div>
+
+                <div class="wx-foot">
+                  <span :title="wx.source">🌐 open-meteo · {{ (wx.updated || '').slice(11, 16) }}</span>
+                  <span>
+                    <span class="wx-skins" @click.stop>
+                      <i v-for="s in WX_SKINS" :key="s.k" class="wx-skin" :class="{ on: wxSkin === s.k }"
+                         :style="{ background: 'linear-gradient(120deg, ' + s.c1 + ', ' + s.c2 + ')' }"
+                         :title="'配色：' + s.t" @click.stop="wxSetSkin(s.k)"></i>
+                    </span>
+                    <span class="wx-city-btn" @click.stop="wxPromptCity()">📍 换城市</span>
+                  </span>
+                </div>
+              </div>
+
+              <div class="wx-city-form" v-if="wxCityEdit" @click.stop @mouseenter="wxOpen = true">
+                <input v-model="wxCityInput" placeholder="城市名（成都 / Chengdu）"
+                       @keyup.enter="wxSetCity()" @keyup.esc="wxCancelCity()" />
+                <button @click.stop="wxSetCity()">确定</button>
+                <button class="ghost" @click.stop="wxCancelCity()">取消</button>
+              </div>
+
+              <div class="wx-card wx-card-load" v-if="!wx && !wxCityEdit">
+                <svg class="background" fill="none" viewBox="0 0 342 300" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+                  <path fill="url(#wxgrad2)" d="M0 66.4396C0 31.6455 0 14.2484 11.326 5.24044C22.6519 -3.76754 39.6026 0.147978 73.5041 7.97901L307.903 62.1238C324.259 65.9018 332.436 67.7909 337.218 73.8031C342 79.8154 342 88.2086 342 104.995V256C342 276.742 342 287.113 335.556 293.556C329.113 300 318.742 300 298 300H44C23.2582 300 12.8873 300 6.44365 293.556C0 287.113 0 276.742 0 256V66.4396Z"></path>
+                  <defs>
+                    <linearGradient gradientUnits="userSpaceOnUse" y2="220" x2="360" y1="120" x1="0" id="wxgrad2">
+                      <stop stop-color="#5936B4"></stop><stop stop-color="#362A84" offset="1"></stop>
+                    </linearGradient>
+                  </defs>
+                </svg>
+                <div class="wx-clock">{{ clockTime }}</div>
+                <div class="wx-date">{{ clockDate }}</div>
+                <p class="wx-load-tip">{{ wxLoading ? '正在获取天气…' : (wxErr || '天气还没取到（登录后会自动获取）') }}</p>
+                <span class="wx-retry" @click.stop="loadWeather(true)">{{ wxLoading ? '获取中…' : '↻ 重新获取' }}</span>
+                <div class="wx-foot">
+                  <span>🌐 open-meteo</span>
+                  <span class="wx-city-btn" @click.stop="wxPromptCity()">📍 换城市</span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -600,12 +1466,97 @@
                    <div class="qc-desc">一键生成竞品/选购周报 · 多订阅批量生产 · 定时自动推送</div></div>
               <div class="qc-arrow">›</div>
             </a>
+            <a class="quick-card qc-purple" href="#/kb">
+              <div class="qc-icon">📚</div>
+              <div><div class="qc-name">我的知识库</div>
+                   <div class="qc-desc">上传/管理私有资料 · AI 问答与周报可引用（📚 来源）</div></div>
+              <div class="qc-arrow">›</div>
+            </a>
             <a class="quick-card qc-green" href="#/customize">
               <div class="qc-icon">🎛️</div>
               <div><div class="qc-name">定制助手</div>
                    <div class="qc-desc">模型选型 · 助手人格设计 · AI 生成人格提示词</div></div>
               <div class="qc-arrow">›</div>
             </a>
+            <a class="quick-card qc-teal" href="#/skills">
+              <div class="qc-icon">🧩</div>
+              <div><div class="qc-name">技能与工具</div>
+                   <div class="qc-desc">写 SKILL.md 说明书 · 对话前用 / 唤出叠加 · CLI 沙箱命令行 · 外部工具接入</div></div>
+              <div class="qc-arrow">›</div>
+            </a>
+          </div>
+
+          <!-- ===== 情报面板 ===== -->
+          <div class="section-title">📊 情报面板</div>
+          <div class="dashboard-grid">
+            <!-- 活动趋势 -->
+            <div class="dash-card dash-trend">
+              <div class="dash-card-head">
+                <span>📈 活动趋势</span>
+                <span class="dash-card-sub">近 7 天</span>
+              </div>
+              <div class="trend-bars">
+                <div class="trend-bar" v-for="(d, i) in activityTrend" :key="i">
+                  <div class="trend-bar-fill" :style="{height: d.h + '%'}"></div>
+                  <span class="trend-bar-lbl">{{ d.lbl }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 知识库状态 -->
+            <div class="dash-card dash-kb">
+              <div class="dash-card-head">
+                <span>📚 知识库</span>
+                <a href="#/kb" class="dash-card-link">管理 ›</a>
+              </div>
+              <div class="dash-kb-body">
+                <div class="dash-kb-ring">
+                  <svg viewBox="0 0 36 36" class="dash-kb-svg">
+                    <path class="dash-kb-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                    <path class="dash-kb-fg" :stroke-dasharray="kbPercent + ',100'" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                  </svg>
+                  <div class="dash-kb-num">{{ kbStatus ? kbStatus.doc_count : 0 }}</div>
+                </div>
+                <div class="dash-kb-info">
+                  <div class="dash-kb-stat"><span class="dot"></span>已入库文档</div>
+                  <div class="dash-kb-stat"><span class="dot s2"></span>目标 100 篇</div>
+                  <div class="dash-kb-stat"><span class="dot s3"></span>{{ kbPercent }}% 完成</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 订阅状态 -->
+            <div class="dash-card dash-subs">
+              <div class="dash-card-head">
+                <span>📰 订阅</span>
+                <a href="#/reports" class="dash-card-link">管理 ›</a>
+              </div>
+              <div class="dash-subs-list">
+                <div class="dash-sub-row" v-for="s in subs.slice(0, 3)" :key="s.id">
+                  <span class="dash-sub-dot" :class="{on: s.enabled}"></span>
+                  <span class="dash-sub-name">{{ s.name || s.scope }}</span>
+                  <span class="dash-sub-schedule">{{ s.schedule === 'daily' ? '每日' : '每周' }}</span>
+                </div>
+                <div class="dash-sub-empty" v-if="subs.length === 0">暂无订阅</div>
+              </div>
+            </div>
+
+            <!-- 最近动态 -->
+            <div class="dash-card dash-timeline">
+              <div class="dash-card-head">
+                <span>🕐 最近动态</span>
+              </div>
+              <div class="dash-tl-list">
+                <div class="dash-tl-item" v-for="(t, i) in recentActivity" :key="i">
+                  <div class="dash-tl-dot" :class="t.cls"></div>
+                  <div class="dash-tl-content">
+                    <div class="dash-tl-text">{{ t.text }}</div>
+                    <div class="dash-tl-time">{{ t.time }}</div>
+                  </div>
+                </div>
+                <div class="dash-tl-empty" v-if="recentActivity.length === 0">暂无动态</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -672,7 +1623,7 @@
             <div class="list-edit-row" v-for="c in myData.competitors" :key="'c'+c.id">
               <input class="m-input grow" v-model="c.comp_name" />
               <input class="m-input" style="width:180px" v-model="c.website" placeholder="官网(可选)" />
-              <label class="chk"><input type="checkbox" v-model="c.is_competitor" /> 直接竞品</label>
+              <label class="chk"><input type="checkbox" v-model="c.is_competitor" /><span class="brut-mark"></span> 直接竞品</label>
               <button class="mini-btn" @click="saveCompetitor(c)">保存</button>
               <span class="del-x" @click="delItem('competitors', c.id)" title="删除">×</span>
             </div>
@@ -756,6 +1707,26 @@
       <!-- ===== AI 对话 ===== -->
       <div class="view chat-view" v-show="view === 'chat'" style="overflow:hidden">
         <div class="col-left">
+          <div class="session-panel">
+            <div class="session-head">
+              <span class="session-title">💬 对话</span>
+              <button class="mini-btn" @click="newSession" title="新建对话">＋ 新对话</button>
+            </div>
+            <div class="session-list" v-if="sessions.length">
+              <div class="session-item" :class="{ active: activeThread === s.thread_id }"
+                   v-for="s in sessions" :key="s.thread_id" @click="switchSession(s.thread_id)">
+                <div class="s-top">
+                  <span class="s-title">{{ s.title || '新对话' }}</span>
+                  <span class="s-ops" @click.stop>
+                    <button class="mini-btn s-op" @click="renameSession(s)" title="重命名">✏️</button>
+                    <button class="mini-btn s-op" @click="delSession(s)" title="删除">🗑</button>
+                  </span>
+                </div>
+                <div class="s-meta">{{ s.message_count }} 条 · {{ fmtTime(s.updated_at) }}</div>
+              </div>
+            </div>
+            <div v-else class="s-empty">还没有历史对话，点「＋ 新对话」开始，或直接发问（自动归档为对话）。</div>
+          </div>
           <h3>快捷示例</h3>
           <div class="example" v-for="ex in examples" :key="ex" @click="send(ex)">{{ ex }}</div>
           <template v-if="role === 'company'">
@@ -795,6 +1766,7 @@
                     <button class="mini-btn" @click="doExport(m, 'md')" :disabled="exporting">导出MD</button>
                     <button class="mini-btn" @click="doExport(m, 'pdf')" :disabled="exporting">导出PDF</button>
                     <button class="mini-btn" @click="speakMsg(m)" :disabled="m.speaking || m._audio">{{ m.speaking ? '⏳ 合成中…' : '🔊 朗读' }}</button>
+                    <button class="mini-btn danger" @click="delPair(m, i)" title="删除这轮问答（问题 + 回答一起删，不可恢复）">🗑 删除</button>
                     <audio v-if="m._audio" :src="m._audio" controls style="height:30px;vertical-align:middle"></audio>
                   </span>
                 </div>
@@ -803,7 +1775,12 @@
                   <div class="sec-body" v-html="renderRich(s.body)"></div>
                 </div>
               </div>
-              <div v-else class="bubble">{{ m.text }}</div>
+              <div v-else class="bubble">
+                <div class="skill-bar" v-if="m.skills && m.skills.length">
+                  <span class="skill-pill mini" v-for="n in m.skills" :key="n">🧩 {{ n }}</span>
+                </div>
+                {{ m.text }}
+              </div>
             </div>
             <div v-if="loading" class="loading-row">
               <div class="wrapper-grid">
@@ -818,9 +1795,33 @@
               <span class="thinking">情报官正在检索与交叉分析中…（详见右栏进度）</span>
             </div>
           </div>
-          <div class="input-bar">
-            <textarea v-model="draft" @keyup.ctrl.enter="send()" placeholder="输入问题，Ctrl+Enter 发送"></textarea>
-            <button class="send-bubbles" @click="send()" :disabled="loading"><span class="text">发送</span></button>
+          <div class="input-area">
+            <!-- M4a：敲「/」唤出技能目录（↑↓ 选择，Enter/Tab 选中，Esc 关闭） -->
+            <div class="skill-menu" v-if="skMenuOpen">
+              <div class="mi" v-for="(s, i) in skMenuList" :key="s.name"
+                   :class="{ on: i === skMenuIdx, dis: skPicked.indexOf(s.name) >= 0 }"
+                   @click="skillPick(s.name)" @mouseenter="skMenuIdx = i">
+                <span>🧩 {{ s.name }}<span v-if="skPicked.indexOf(s.name) >= 0"> · 已选</span></span>
+                <span class="sub">{{ s.chars }} 字</span>
+              </div>
+              <div class="mi" v-if="!skMenuList.length">
+                <span class="sub" v-if="!skills.length">还没有技能 → 去「🧩 技能与工具」新建，或点「🎁 一键创建示例技能」</span>
+                <span class="sub" v-else>没有匹配「{{ skFilter }}」的技能</span>
+              </div>
+            </div>
+            <div class="skill-bar" v-if="skPicked.length || skMenuOpen">
+              <span class="skill-pill" v-for="n in skPicked" :key="n">🧩 {{ n }}<span class="x" @click="skillUnpick(n)" title="移除">×</span></span>
+              <span class="skill-hint" v-if="skPicked.length">本轮启用 {{ skPicked.length }}/5 · 发送后自动清空 · 再敲 / 可继续添加</span>
+              <span class="skill-hint" v-else>输入技能名筛选，↑↓ 选择 · Enter 选中 · Esc 关闭</span>
+            </div>
+            <div class="input-bar">
+              <textarea v-model="draft" @keyup.ctrl.enter="send()" @input="skOnInput" @keydown="skOnKey"
+                        placeholder="输入问题，Ctrl+Enter 发送；敲 / 唤出技能"></textarea>
+              <button class="send-bubbles" :class="{ stop: loading }" @click="loading ? stopGen() : send()"
+                      :disabled="stopping" :title="loading ? '强制中断本轮回答' : '发送（Ctrl+Enter）'">
+                <span class="text">{{ loading ? (stopping ? '中断中…' : '中断') : '发送' }}</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -840,6 +1841,105 @@
 
     
 
+    <!-- ===== 知识库视图（M3 RAG，每用户 Chroma 库）===== -->
+    <div class="view kb-view" v-show="view === 'kb'">
+      <div class="kb-wrap">
+        <div class="reports-head">
+          <h2>📚 我的知识库</h2>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="mini-btn" @click="kbUploadClick" :disabled="kbBusy">⬆️ 上传 .md</button>
+            <button class="mini-btn" @click="kbIngestOpen" :disabled="kbBusy">✍️ 粘贴文本</button>
+          </div>
+        </div>
+        <input type="file" ref="kbFileInput" accept=".md" style="display:none" @change="kbUploadFile" />
+
+        <!-- 无库引导（批注 13：默认无库，首次操作创建） -->
+        <div v-if="kbStatus && !kbStatus.exists" class="kb-empty">
+          <p>📖 你的知识库还未创建——AI 回答与周报可以引用你私有的报告/笔记（来源标 📚）。</p>
+          <p style="margin-top:6px">上传一个 .md 文件或粘贴文本即可自动创建；导出情报报告时也会询问你是否入库。</p>
+        </div>
+
+        <!-- 入库预览弹窗（M3 通用：粘贴/上传/导出三条路共用：teleport 到 body，任何 view 都能弹） -->
+        <teleport to="body">
+        <div v-if="kbIngestShow" class="kb-modal">
+          <div class="kb-modal-box">
+            <h3>{{ kbIngestCtx.title }}</h3>
+            <!-- M3：已入过警告（消息级重复检测） -->
+            <div v-if="kbIngestCtx.already_ingested" style="background:rgba(251,191,36,.18);border:1px solid rgba(251,191,36,.45);color:#fde68a;padding:8px 12px;border-radius:8px;margin-bottom:10px;font-size:12.5px;line-height:1.6">
+              ⚠️ <b>该报告已入过知识库</b>。继续确认将以「强制再入」模式写入（不推荐，会污染检索结果）。
+            </div>
+            <div class="kb-meta-line">
+              <span>来源：<b>{{ kbIngestCtx.source_kind_label }}</b></span>
+              <span v-if="kbIngestCtx.title_input">标题：<b>{{ kbIngestCtx.title_input }}</b></span>
+              <span>字数：{{ kbIngestCtx.content.length }}</span>
+            </div>
+            <input v-if="kbIngestCtx.title_editable" v-model="kbIngestTitle" class="input" style="width:100%;margin-bottom:8px" placeholder="文档标题" />
+            <!-- 阶段 1：评估中 -->
+            <div v-if="kbBusy && !kbEvalDone" class="kb-eval"><b>🔍 正在评估内容（评估器调用约 2-5s）…</b></div>
+            <!-- 阶段 2：评估结果 -->
+            <template v-else-if="kbEvalDone && kbEval.evaluation">
+              <div class="kb-eval">
+                <div>
+                  <b>📋 质检建议：</b>
+                  <span :style="{color: kbEval.evaluation.quality_ok === false ? '#f87171' : '#34d399'}">
+                    {{ kbEval.evaluation.suggestion || '（模型未给出结构化建议）' }}
+                  </span>
+                </div>
+                <div v-if="kbEval.evaluation.quality_reason" class="thinking">质量：{{ kbEval.evaluation.quality_reason }}</div>
+                <div v-if="kbEval.evaluation.clean_reason" class="thinking">清洗建议：{{ kbEval.evaluation.clean_reason }}</div>
+                <div v-if="kbEval.needs_clean" style="margin-top:8px;border-top:1px dashed var(--line);padding-top:8px">
+                  <b>🧹 检测到需清洗内容</b>（如 emoji、人格口吻、表格装饰符）—— 检索易受脏内容污染。
+                  <label style="display:block;margin-top:4px"><input type="checkbox" v-model="kbUseClean" /><span class="brut-mark"></span> 入库前清洗</label>
+                  <details v-if="kbUseClean" style="margin-top:4px">
+                    <summary style="cursor:pointer;color:var(--accent)">📄 查看清洗后预览（点击展开）</summary>
+                    <pre class="kb-preview">{{ kbEval.cleaned_preview }}</pre>
+                  </details>
+                </div>
+                <div v-else style="margin-top:6px;color:var(--muted);font-size:12px">✓ 未检测到需清洗内容，将原文入库。</div>
+              </div>
+            </template>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+              <button class="mini-btn" @click="kbIngestShow=false">取消</button>
+              <button v-if="kbEvalDone && !kbBusy" class="mini-btn" @click="kbIngestRetry">🔄 重评</button>
+              <button v-if="!kbEvalDone" class="mini-btn" @click="kbIngestEvalNow" :disabled="kbBusy">🔍 评估内容</button>
+              <button v-if="kbEvalDone" class="mini-btn send-bubbles" style="color:#fff" @click="kbIngestConfirm" :disabled="kbBusy">
+                {{ kbBusy ? '入库中…' : '✅ 确认入库' }}</button>
+            </div>
+          </div>
+        </div>
+        </teleport>
+
+        <!-- 文档列表 -->
+        <div v-if="kbStatus && kbStatus.exists">
+          <h3 class="kb-sub">已入库文档（{{ kbStatus.doc_count }}）</h3>
+          <div v-if="!kbStatus.docs.length" class="thinking">还没有文档——上传或粘贴第一份资料吧。</div>
+          <div class="kb-doc" v-for="d in kbStatus.docs" :key="d.source_id">
+            <div class="kb-doc-main">
+              <div class="kb-doc-title">📄 {{ d.title }} <span class="badge">{{ d.source_kind === 'export' ? '导出' : (d.source_kind === 'upload' ? '上传' : '其他') }}</span></div>
+              <div class="kb-doc-meta">{{ d.chunks }} 片段 · {{ d.created_at }}</div>
+            </div>
+            <button class="mini-btn s-op" @click="kbDeleteDoc(d)">🗑</button>
+          </div>
+        </div>
+
+        <!-- 检索测试 -->
+        <div v-if="kbStatus && kbStatus.exists" style="margin-top:18px">
+          <h3 class="kb-sub">🔍 检索测试</h3>
+          <div style="display:flex;gap:8px">
+            <input v-model="kbQueryText" class="input" style="flex:1" placeholder="试一句自然语言，如：我之前导出的显卡报告讲了什么？" @keyup.enter="kbQueryRun" />
+            <button class="mini-btn" @click="kbQueryRun" :disabled="kbBusy">{{ kbBusy ? '检索中…' : '检索' }}</button>
+          </div>
+          <div v-if="kbQueryHits.length" class="kb-hits">
+            <div class="kb-hit" v-for="(h, i) in kbQueryHits" :key="i">
+              <div class="kb-hit-title">📚 来自《{{ h.title }}》</div>
+              <div class="kb-hit-text">{{ h.text.slice(0, 300) }}</div>
+            </div>
+          </div>
+          <div v-else-if="kbQueryText && !kbBusy" class="thinking">（无命中）</div>
+        </div>
+      </div>
+    </div>
+
     <!-- ===== 报告列表视图（M4）===== -->
     <div class="view reports-view" v-show="view === 'reports'">
       <div class="reports-wrap">
@@ -851,7 +1951,7 @@
         </div>
         <div class="sub-list" v-if="subs.length">
           <div class="sub-card" v-for="s in subs" :key="s.id">
-            <label class="sub-ck"><input type="checkbox" v-model="s._sel" /></label>
+            <label class="sub-ck"><input type="checkbox" v-model="s._sel" /><span class="brut-mark"></span></label>
             <div class="sub-main">
               <div class="sub-row1">
                 <input class="m-input grow" v-model="s._name" :placeholder="s.scope==='company'?'竞品周报':'选购快讯'" />
@@ -865,7 +1965,7 @@
                   <option value="en">英文检索</option>
                   <option value="both">中英双语</option>
                 </select>
-                <label class="sub-en"><input type="checkbox" v-model="s.enabled" /> 启用</label>
+                <label class="sub-en"><input type="checkbox" v-model="s.enabled" /><span class="brut-mark"></span> 启用</label>
               </div>
               <div class="sub-row2">
                 <input class="m-input grow" v-model="s._kws" placeholder="关键词(逗号分隔，≤8个，如 至本洗面奶,溪木源)" />
@@ -896,8 +1996,16 @@
             <td>{{ r.item_count }}</td>
             <td>{{ r.created_at }}</td>
             <td>
-              <a v-if="r.download_md" :href="r.download_md">MD↓</a>
-              <a v-if="r.download_pdf" :href="r.download_pdf" style="margin-left:8px">PDF↓</a>
+              <a v-if="r.download_md" :href="r.download_md" class="dl-btn">
+                <span class="dl-circle"></span>
+                <svg class="dl-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14m0 0l-4-4m4 4l4-4"/></svg>
+                <span class="dl-text">MD↓</span>
+              </a>
+              <a v-if="r.download_pdf" :href="r.download_pdf" class="dl-btn" style="margin-left:8px">
+                <span class="dl-circle"></span>
+                <svg class="dl-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14m0 0l-4-4m4 4l4-4"/></svg>
+                <span class="dl-text">PDF↓</span>
+              </a>
             </td>
           </tr>
           <tr v-if="reports.length===0"><td colspan="4" class="thinking">还没有报告。点右上「立即生成一期」试试。</td></tr>
@@ -906,6 +2014,345 @@
     </div>
 
     <!-- ===== 定制助手（模型选型 + 人格 SOUL.md）===== -->
+    <div class="view skills-view" v-show="view === 'skills'">
+      <div class="sk-wrap">
+        <div class="sk-head">
+          <h2>🧩 技能与工具</h2>
+          <p class="sk-sub">
+            技能 = 一段可复用的<b>任务说明书</b>（SKILL.md）。写好后在「AI 助手」输入框里敲
+            <b>/</b> 唤出、可多选叠加，作为本轮提问的前缀注入——<b>一次性</b>生效，发送后自动清空。
+            <b>CLI 面板</b>（下方 tab）在本账号沙箱目录里执行白名单命令，与 Agent 的
+            <code>run_shell_command</code> 工具共用同一套执行器。
+          </p>
+        </div>
+
+        <div class="sk-tabs">
+          <div class="sk-tab" :class="{on: skTab==='skill'}" @click="skTab='skill'">🧩 技能（SKILL.md）</div>
+          <div class="sk-tab" :class="{on: skTab==='shell'}" @click="skTab='shell'">🖥️ CLI 面板</div>
+          <div class="sk-tab" :class="{on: skTab==='cli'}" @click="skTab='cli'">🧩 自定义 CLI</div>
+          <div class="sk-tab" :class="{on: skTab==='mcp'}" @click="skTab='mcp'">🔌 MCP 服务</div>
+          <div class="sk-tab" :class="{on: skTab==='api'}" @click="skTab='api'">🔗 API 工具</div>
+        </div>
+
+        <!-- ========== ⑤ CLI 面板（M4b，011 terminal-cli 主视觉） ========== -->
+        <template v-if="skTab==='shell'">
+          <div class="sk-card">
+            <h3>🖥️ CLI 面板</h3>
+            <div class="sk-tip">
+              在<b>沙箱目录</b>里执行<b>白名单命令</b>，输出实时回传。Agent 的
+              <code>run_shell_command</code> 工具走的是同一套执行器——你在面板里能敲什么，它就能跑什么。
+              命令<b>不开 shell</b>：管道、重定向、<code>;</code> 都只会被当成普通参数。
+            </div>
+
+            <div class="term out-wrap">
+              <div class="term-top">
+                <span class="tdot red"></span><span class="tdot yellow"></span><span class="tdot green"></span>
+                <p class="term-title">zhixuan-cli — {{ shSandbox || 'data/sandbox/{你的账号}/' }}</p>
+              </div>
+
+              <div class="term-out" ref="shOut" @click="shFocus()">
+                <div v-if="!shLines.length" class="cli-line dim">
+                  输入命令后回车执行。先试：
+                  <span class="term-cmd" @click.stop="shFill('pwd')">pwd</span> ·
+                  <span class="term-cmd" @click.stop="shFill('ls -a')">ls -a</span> ·
+                  <span class="term-cmd" @click.stop="shFill('echo hello 智选情报官')">echo hello 智选情报官</span>
+                </div>
+                <div v-for="(l, i) in shLines" :key="i" class="cli-line" :class="l.cls">
+                  <span v-if="l.cls === 'cmd'" class="dollar">$</span>{{ l.text }}
+                </div>
+                <div v-if="shBusy" class="cli-line dim l1">… 执行中 {{ shElapsed }}s（超时按命令上限自动终止）</div>
+              </div>
+
+              <div class="term-input-row">
+                <span class="dollar">$</span>
+                <input class="term-in" ref="shIn" v-model="shInput" :disabled="shBusy"
+                       @keyup.enter="shExec()" @keyup.up="shHist(-1)" @keyup.down="shHist(1)"
+                       placeholder="ls / cat notes.md / grep -i 报价 docs / curl -s --max-time 15 https://example.com" />
+                <button class="term-go" @click="shExec()" :disabled="shBusy">执行 ↵</button>
+                <button class="term-go ghost" @click="shClear()" :disabled="shBusy">清屏</button>
+              </div>
+
+              <div class="term-chips">
+                <span class="term-chip" v-for="c in shAllowed" :key="c.name"
+                      :title="c.desc + '｜' + c.usage" @click="shFill(c.usage)">{{ c.name }}</span>
+              </div>
+
+              <div class="term-foot">
+                <span>📂 沙箱：<b>{{ shSandbox }}</b></span>
+                <span>🔒 白名单 {{ shAllowed.length }} 条 · 越界路径直接拒绝 · 每次调用写审计</span>
+              </div>
+            </div>
+
+            <div class="sk-tip" v-if="shNotes.length">
+              <div v-for="(n, i) in shNotes" :key="i">· {{ n }}</div>
+            </div>
+          </div>
+        </template>
+
+        <!-- ========== ① 技能 ========== -->
+        <template v-if="skTab==='skill'">
+          <div class="sk-card">
+            <h3>✨ 新建技能</h3>
+            <div class="sk-tip">给技能起个一眼能懂的名字（≤30 字），正文是一段方法论：适用场景 / 执行步骤 / 输出格式 / 注意事项。</div>
+            <div class="sk-row">
+              <input class="m-input grow" v-model="skNewName" placeholder="技能名，如：竞品对比表"
+                     @keyup.enter="skillCreate" maxlength="30" />
+              <button class="mini-btn add-more" @click="skillCreate">＋ 新建</button>
+              <button class="mini-btn" @click="skillSeed">🎁 一键创建示例技能</button>
+            </div>
+          </div>
+
+          <div class="sk-card">
+            <h3>📚 我的技能（{{ skills.length }}）</h3>
+            <div class="sk-grid">
+              <div class="sk-list">
+                <div class="sk-empty" v-if="!skills.length">
+                  还没有技能。<br>点上面的「＋ 新建」或「🎁 一键创建示例技能」。
+                </div>
+                <div class="sk-item" v-for="s in skills" :key="s.name"
+                     :class="{on: skActive===s.name}" @click="skillOpen(s.name)">
+                  <div class="n">{{ s.name }}</div>
+                  <div class="d">{{ s.desc || '（暂无正文）' }}</div>
+                  <div class="m">{{ s.chars }} 字 · {{ fmtTime(s.updated) }}</div>
+                </div>
+              </div>
+
+              <div>
+                <div class="sk-empty" v-if="!skActive">← 从左侧选一个技能来编辑</div>
+                <template v-else>
+                  <textarea class="m-input sk-ta" v-model="skContent"
+                            placeholder="技能正文（Markdown，≤4000 字）…"></textarea>
+                  <div class="sk-row" style="margin-top:8px">
+                    <button class="mini-btn" @click="skillTpl">📋 插入模板</button>
+                    <button class="mini-btn" @click="skillSave" :disabled="skContent.length > 4000">💾 保存</button>
+                    <button class="mini-btn del" @click="skillDelete">🗑 删除</button>
+                    <span class="sk-cnt" :class="{over: skContent.length > 4000}">{{ skContent.length }} / 4000 字</span>
+                    <span class="saved-tip" v-if="skSaved">已保存 ✅</span>
+                  </div>
+                  <div class="sk-tip" style="margin-top:8px">
+                    在本页写、或直接让 AI「把刚才这套做法存成技能 XXX」（AI 会写入
+                    <code>agents_docs/{{ username }}/skills/</code>）。
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- ========== ② CLI 接入（M4c 配置导向：自定义 CLI，不预设厂商） ========== -->
+        <template v-if="skTab==='cli'">
+          <div class="sk-card">
+            <h3>🧩 自定义 CLI 接入
+              <button class="bubbles tut-entry" @click="openTutorial()">
+                <span class="text">📘 教程指导</span>
+              </button>
+            </h3>
+            <div class="sk-tip">
+              这里<b>不预设厂商</b>——像配置模型一样，字段由你填：<b>可执行名 + 安装/认证命令 + 允许 AI 代跑的只读命令</b>。
+              系统只按与厂商无关的三条规则办事：白名单＝你配的条目、只读闸＝你填的清单、本机检测＝<code>which 可执行名</code>。
+            </div>
+            <div class="sk-tip">
+              ⚠️ <b>只读命令清单是安全前提</b>：哪些子命令只读没法自动推断（<code>doc search</code> 是读、<code>cache clear</code> 是写、
+              <code>im +messages-send</code> 是写），所以只能由你给，系统不猜。<b>清单留空 = 不放行 AI 代跑</b>（你仍能在自己的终端跑）。
+              安装与认证命令也请在你自己的终端执行——项目不代跑 npm / OAuth、不托管凭证。
+              📋 只读清单可以<b>整条粘贴</b>（如 <code>weread notes export 3300045871 --output notes.md</code>）：系统会自动裁成子命令路径 <code>notes export</code>（执行时多给的参数照常放行，但 <code>--output/--output-dir/-o</code> 这类<b>落盘参数会被拒</b>——沙箱只读，要导出文件请在你自己的终端跑）。
+            </div>
+            <div class="term-chips">
+              <span class="term-chip" style="cursor:default">我的 CLI {{ cliSummary.total || 0 }}</span>
+              <span class="term-chip" style="cursor:default">已接入 {{ cliSummary.authed || 0 }}</span>
+              <span class="term-chip" style="cursor:default">本机检测到 {{ cliSummary.detected_local || 0 }}</span>
+              <span class="term-chip" style="cursor:default">Agent 可代跑 {{ cliSummary.agent_live || 0 }}</span>
+              <span class="term-chip" @click="loadCliCatalog(true)">↻ 重新检测</span>
+              <span class="term-chip" @click="cliNew()">＋ 新增 CLI</span>
+            </div>
+            <div class="terminline"></div>
+            <div class="sk-tip">
+              预填示例（<b>只是帮你填表</b>，不享受任何特权，填完可改可删；钉钉 / Google 的 npm 包没有文档，只读清单留空，需你自己跑 <code>--help</code> 抄）：
+              <span class="term-chip" v-for="t in cliTemplates" :key="t.key" :title="t.hint" @click="cliFill(t)">
+                {{ t.icon }} {{ t.name }}
+              </span>
+            </div>
+          </div>
+
+          <!-- ②-1 新增 / 编辑表单 -->
+          <div class="sk-card" v-if="cliEditing">
+            <h3>{{ cliForm.id ? '✏️ 修改配置' : '＋ 新增 CLI 配置' }}</h3>
+            <div class="cli-form">
+              <label>名称
+                <input v-model="cliForm.name" placeholder="如：飞书 / 公司内部工具" />
+              </label>
+              <label>可执行名
+                <input v-model="cliForm.bin" placeholder="PATH 里叫什么就填什么，如 lark-cli（不要写路径）" />
+              </label>
+              <label>安装命令（在你终端跑）
+                <input v-model="cliForm.install_cmd" placeholder="npm install -g @larksuite/cli" />
+              </label>
+              <label>认证命令（在你终端跑）
+                <input v-model="cliForm.auth_cmd" placeholder="lark-cli auth login --recommend" />
+              </label>
+              <label>文档链接
+                <input v-model="cliForm.docs" placeholder="https://…（可留空）" />
+              </label>
+              <label>状态
+                <select v-model="cliForm.state">
+                  <option v-for="(label, key) in cliStates" :key="key" :value="key">{{ label }}</option>
+                </select>
+              </label>
+              <label class="wide">只读命令清单（每行一条，只写子命令路径；可直接整条粘贴，会自动裁参数；留空 = 不放行 AI 代跑）
+                <textarea v-model="cliForm.readonly" rows="6"
+                          placeholder="notes top&#10;readdata summary&#10;（整条粘贴也行：weread notes export 123 --format markdown）"></textarea>
+              </label>
+              <label class="wide">能力描述（让 AI 在你说「人话」时想起用它；留空 = 只给 AI 看命令名清单）
+                <textarea v-model="cliForm.abilities" rows="4"
+                          placeholder="关键词：读书/阅读/书架/我在读/笔记/划线/书评/找书。&#10;我正在读什么书→shelf recent；帮我找书→search；我的笔记与划线→notes notebooks"></textarea>
+              </label>
+              <div class="wide cli-ability-help">
+                <button class="mini-btn" :disabled="cliDrafting" @click="cliAbilityDraft()">
+                  {{ cliDrafting ? '⏳ 生成中…' : '✨ 按只读清单生成草稿' }}
+                </button>
+                <span class="sk-tip">
+                  写法：第一行写 <b>用户可能说到的关键词</b>（AI 靠它匹配你的问题）；后面写「<b>用户的说法</b>→<b>命令路径</b>」。
+                  右侧命令<b>必须来自上面的只读清单</b>——不在清单里的会被自动丢弃（免得教 AI 去调一条会被拒绝的命令）。
+                  需要 <b>ID 参数</b>的命令（如 <code>book info</code> / <code>reviews list</code>）要写成<b>两步链</b>：<code>书评怎么样→book resolve 再 reviews list</code>（系统取链上第一步做示例）；直接写详情命令会让 AI 拿着书名去调、必然报参数错。
+                </span>
+              </div>
+              <label class="wide">备注
+                <input v-model="cliForm.note" placeholder="版本号 / 遇到的问题，可留空" />
+              </label>
+            </div>
+            <div class="sk-row">
+              <button class="mini-btn act on" @click="cliSave()">💾 保存</button>
+              <button class="mini-btn" @click="cliCancel()">取消</button>
+              <span class="cli-err" v-if="cliErr">⛔ {{ cliErr }}</span>
+              <div class="cli-notes" v-if="cliParseNotes.length">
+                <div class="sk-tip">📋 清单已按子命令路径保存（白名单只认路径）：</div>
+                <div class="cli-line dim" v-for="(n, i) in cliParseNotes" :key="i">{{ n }}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ②-2 我的 CLI 列表 -->
+          <div class="sk-card" v-for="c in cliItems" :key="c.id">
+            <h3>{{ c.name }}
+              <code class="cli-bin">{{ c.bin }}</code>
+              <span class="sk-badge" :class="'st-' + c.state">{{ c.state_label }}</span>
+              <span class="sk-badge" :class="c.detected.found ? 'st-ok' : 'st-warn'">
+                {{ c.detected.found ? '✅ 本机已装' : '⚠ 本机未检测到' }}
+              </span>
+            </h3>
+            <div class="sk-tip" v-if="c.detected.found"><b>可执行文件：</b><code>{{ c.detected.path }}</code></div>
+            <div class="sk-tip" v-else>没检测到 <code>{{ c.bin }}</code>：确认已安装、且装它的目录在 PATH 里（装完新开一个终端再试）。</div>
+
+            <div class="term" v-if="c.install_cmd || c.auth_cmd">
+              <div class="term-top">
+                <span class="tdot red"></span><span class="tdot yellow"></span><span class="tdot green"></span>
+                <p class="term-title">{{ c.bin }} · 在你的终端执行</p>
+              </div>
+              <template v-if="c.install_cmd">
+                <div class="term-line term-cmd" title="点击复制" @click="copyCmd(c.install_cmd)">
+                  <span class="dollar">$</span>{{ c.install_cmd }}
+                </div>
+                <div class="term-line green-line l1">✓ 安装 · 全局包，一次即可</div>
+              </template>
+              <template v-if="c.auth_cmd">
+                <div class="term-line term-cmd" title="点击复制" @click="copyCmd(c.auth_cmd)">
+                  <span class="dollar">$</span>{{ c.auth_cmd }}
+                </div>
+                <div class="term-line green-line l2">✓ 认证 · 走官方授权流程（凭证由它自己管）</div>
+              </template>
+            </div>
+
+            <div class="cli-agent">
+              <div class="cli-agent-h" v-if="c.abilities">🧭 能力描述（决定 AI 什么时候想起用它）</div>
+              <div class="cli-agent-h" v-else>🧭 能力描述：<b>未填</b> → AI 只看得到命令名，你用人话提问时容易唤不醒它</div>
+              <div class="cli-ability" v-if="c.abilities">{{ c.abilities }}</div>
+            </div>
+
+            <div class="cli-agent">
+              <div class="cli-agent-h" v-if="c.agent_commands.length">🤖 AI 可代跑的只读命令（点命令复制 · 点 ▶ 试跑）</div>
+              <div class="cli-agent-h" v-else>🤖 AI 代跑：未开放（只读命令清单为空）</div>
+              <div class="cli-agent-list" v-if="c.agent_commands.length">
+                <span class="cli-cmd" v-for="cmd in c.agent_commands" :key="cmd" :title="'点击复制：' + cmd"
+                      @click="copyCmd(cmd)">{{ cmd }}</span>
+                <button class="cli-run" :disabled="cliRunning === c.id" @click="cliRunAll(c)">
+                  {{ cliRunning === c.id ? '…' : '▶ 逐条试跑' }}
+                </button>
+              </div>
+              <div class="cli-out" v-if="cliRunOut[c.id]">
+                <div v-for="(r, i) in cliRunOut[c.id]" :key="i" class="cli-line" :class="r.ok ? 'ok' : 'err'">
+                  <span class="dollar">$</span>{{ r.cmd }} <span class="dim">→ {{ r.msg }}</span>
+                </div>
+              </div>
+              <div class="sk-tip" v-if="!c.agent_commands.length"></div>
+              <div class="sk-tip" v-else-if="c.state === 'none'">📌 当前<b>未登记</b>：AI 还<b>不能</b>跑这些命令，登记为「已安装 / 已接入」后生效。</div>
+              <div class="sk-tip" v-else-if="c.live">📌 <b>已放行</b>：可以直接让 AI 助手代跑上面这些只读命令；写操作请在你自己的终端执行。</div>
+              <div class="sk-tip" v-else>📌 已登记，但清单为空 → 不放行。</div>
+            </div>
+
+            <div class="sk-row">
+              <a class="mini-btn" v-if="c.docs" :href="c.docs" target="_blank" rel="noopener">📖 文档</a>
+              <button class="mini-btn act" v-for="(label, key) in cliStates" :key="key"
+                      :class="{on: c.state === key}" @click="cliSetState(c, key)">{{ label }}</button>
+            </div>
+            <div class="sk-row cli-note-row">
+              <input class="cli-note" v-model="cliNote[c.id]" @change="cliSaveNote(c)"
+                     placeholder="备注（版本号 / 遇到的问题，可留空）" />
+              <button class="mini-btn" @click="cliEdit(c)">✏️ 编辑</button>
+              <button class="mini-btn" @click="cliDelete(c)">🗑 删除</button>
+              <span class="sk-tip" v-if="c.updated_at">{{ c.updated_at }}</span>
+            </div>
+          </div>
+
+          <div class="sk-card sk-ph" v-if="!cliItems.length">
+            <h3>还没有配置任何 CLI</h3>
+            <div class="sk-tip">点上方「＋ 新增 CLI」从零填，或点一个预填示例（飞书 / 企微 / 钉钉 / Google）把表单填好再改。</div>
+          </div>
+        </template>
+
+
+        <!-- ========== ③ MCP ========== -->
+        <template v-if="skTab==='mcp'">
+          <div class="sk-card sk-ph">
+            <h3>🔌 MCP 服务接入</h3>
+            <div class="sk-tip">
+              MCP（Model Context Protocol）适合「服务端统一鉴权、多人共享同一套连接」的场景。
+              代价是每次调用都要把工具描述塞进上下文——实测 token 消耗是 CLI 的一到两个数量级，
+              且出错时只能看到模型说"调用失败"，无法复制命令复现。
+            </div>
+            <div class="sk-tip">📌 本项目的取舍：<b>优先走 CLI（技能 + 命令行）</b>；MCP 作为后续扩展位，此处占位。</div>
+          </div>
+        </template>
+
+        <!-- ========== ④ API ========== -->
+        <template v-if="skTab==='api'">
+          <div class="sk-card sk-ph">
+            <h3>🔗 API 工具接入</h3>
+            <div class="sk-tip">把第三方 REST API 包成 Agent 可调用的工具（鉴权 / 限流 / 重试 / 结果结构化）。</div>
+            <div class="sk-tip">📌 模型接口（OpenAI 兼容）的接入已经在「🎛️ 定制助手 → 模型选型」里；这里是<b>业务 API 工具</b>的后续扩展位。</div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <div class="view tutorial-view" v-show="view === 'tutorial'">
+      <div class="tut-wrap">
+        <div class="tut-head">
+          <button class="bubbles tut-back" @click="tutBack()"><span class="text">← 返回</span></button>
+          <div class="tut-title">
+            <h2>📘 {{ tutTitle }}</h2>
+            <p class="tut-sub">
+              <code>{{ tutPath }}</code> · 只读浏览（不改文件）· 更新于 {{ tutUpdated }} ·
+              已内联 {{ tutImages }} 张图片<span v-if="tutMissing">，⚠️ {{ tutMissing }} 张未找到</span>
+            </p>
+          </div>
+          <button class="bubbles tut-reload" @click="loadTutorial(true)"><span class="text">↻ 重新读取</span></button>
+        </div>
+        <div class="tut-body md-doc" v-if="!tutLoading" v-html="tutHtml"></div>
+        <div class="tut-body" v-else><p class="tut-tip">正在读取教程…</p></div>
+      </div>
+    </div>
+
+
     <div class="view customize-view" v-show="view === 'customize'">
       <div class="cust-wrap">
         <div class="cust-head">
@@ -1046,13 +2493,12 @@
       </div>
     </div>
 
-    <div class="toast" v-if="toast" :class="{err: toastErr}">{{ toast }}</div>
       </div>
   </template>
 </div>
 
 <script>
-const { createApp, ref, reactive, computed, nextTick, onMounted } = Vue;
+const { createApp, ref, reactive, computed, nextTick, onMounted, watch } = Vue;
 
 createApp({
   setup() {
@@ -1063,9 +2509,12 @@ createApp({
     const password = ref('');
     const errMsg = ref('');
     const busy = ref(false);
-    const view = ref(location.hash.replace('#/', '') || 'home');
+    const _initHash = location.hash.replace('#/', '') || 'home';   // #/shell 直达 CLI 面板
+    const view = ref(_initHash === 'shell' ? 'skills' : _initHash);
 
     const messages = ref([]);
+    const sessions = ref([]);         // M1 会话列表 [{thread_id,title,message_count,updated_at}]
+    const activeThread = ref('');     // M1 当前会话 thread_id（空=旧版直接发问，自动归档）
     const monitor = ref([]);
     const thinkingText = ref('');
     const showBgPanel = ref(false);   // 背景设置面板
@@ -1095,8 +2544,25 @@ createApp({
     const newVoicePack = ref({ name: '', refText: '' });
     const voiceFile = ref(null);
     const voiceFileInput = ref(null);
+    // M3 知识库
+    const kbStatus = ref(null);        // {exists, doc_count, docs}
+    const kbBusy = ref(false);
+    // 通用入库预览弹窗（M3 三条路共用：粘贴 / 上传 / 导出）
+    const kbIngestShow = ref(false);
+    const kbIngestCtx = ref({});        // {title, source_kind, source_kind_label, content, title_input, title_editable, apply_clean_default, is_binary_upload}
+    const kbIngestTitle = ref('');      // 仅 title_editable 时可改
+    const kbIngestRaw = ref('');         // 原文（评估后才知道是否清洗）
+    const kbEvalDone = ref(false);
+    const kbEval = ref({});
+    const kbUseClean = ref(true);
+    const kbFileInput = ref(null);
+    const kbQueryText = ref('');
+    const kbQueryHits = ref([]);
+    // 旧 kbExportCandidate/kbExportShow 留作 v1 退路（实际改走 kbIngestOpenWith）
     const draft = ref('');
     const loading = ref(false);
+    const stopping = ref(false);   // 已点「中断」，等后端在下一个检查点停下
+    let chatAbort = null;          // 当前 /api/chat 的 AbortController（中断兜底用）
     const exporting = ref(false);
     const scroll = ref(null);
     const toast = ref(''); const toastErr = ref(false);
@@ -1131,12 +2597,39 @@ createApp({
     const profileFilled = computed(() => Object.entries(prof).filter(([k,v]) => k !== 'honorsText' && v).length + (prof.honorsText ? 1 : 0));
 
     const examples = computed(() => role.value === 'company'
-      ? ['对比我们公司与飞书、钉钉在定价和功能上的差异，标注来源',
-         '飞书主要对标我们哪些产品？',
+      ? ['对比我们公司与主要竞品在定价和功能上的差异，标注来源',
+         '分析我们所在行业的竞争格局，找出我们的差异化机会',
          '结合我们的产品定位，给出下季度的差异化竞争建议']
-      : ['我想买一副降噪耳机，预算2500以内，对比我收藏的几款并给推荐',
+      : ['帮我看看我关注的产品最近有没有降价或新品发布',
          '我的兴趣领域最近有什么新动态或降价？',
          '根据我的收藏，哪款最值得入手？']);
+
+    // ---------- 情报面板 ----------
+    const kbPercent = computed(() => {
+      const c = kbStatus.value ? kbStatus.value.doc_count : 0;
+      return Math.min(Math.round((c / 100) * 100), 100);
+    });
+    const activityTrend = computed(() => {
+      const days = ['日', '一', '二', '三', '四', '五', '六'];
+      const today = new Date().getDay();
+      return Array.from({ length: 7 }, (_, i) => {
+        const d = (today - 6 + i + 7) % 7;
+        return { lbl: days[d], h: 20 + Math.random() * 60 + (i > 4 ? 15 : 0) };
+      });
+    });
+    const recentActivity = computed(() => {
+      const out = [];
+      if (kbStatus.value && kbStatus.value.doc_count > 0) {
+        out.push({ text: `知识库已有 ${kbStatus.value.doc_count} 篇文档`, time: '刚刚', cls: 'kb' });
+      }
+      if (subs.value.length > 0) {
+        out.push({ text: `${subs.value.length} 个订阅运行中`, time: '今天', cls: 'report' });
+      }
+      if (messages.value.length > 0) {
+        out.push({ text: `本次会话 ${messages.value.length} 条对话`, time: '本次', cls: '' });
+      }
+      return out.slice(0, 4);
+    });
 
     // ---------- M4 报告/订阅状态 ----------
     const reports = ref([]);
@@ -1218,11 +2711,16 @@ createApp({
     }
 
     // ---------- 路由 ----------
-    function go(v) { location.hash = '#/' + v; view.value = v; if (v === 'chat') nextTick(scrollToBottom); }
+    function go(v) {
+      if (v === 'shell') { skTab.value = 'shell'; v = 'skills'; }   // #/shell → CLI 面板 tab
+      location.hash = '#/' + v; view.value = v; if (v === 'chat') nextTick(scrollToBottom); if (v === 'kb') loadKbStatus(); if (v === 'skills') loadSkills();
+    }
     window.addEventListener('hashchange', () => {
       view.value = location.hash.replace('#/', '') || 'home';
+      if (view.value === 'shell') { skTab.value = 'shell'; view.value = 'skills'; }
       if (view.value === 'chat') nextTick(scrollToBottom);
       if (view.value === 'reports') { newReports.value = 0; loadReports(); loadSubs(); }
+      if (view.value === 'skills') loadSkills();
     });
 
     // ---------- 简报渲染 ----------
@@ -1450,9 +2948,14 @@ createApp({
     function skipOnboard() { showOnboard.value = false; }
 
     // ---------- WS ----------
-    function connectWS() {
+    let wsTarget = '';  // 当前 WS 连接的 thread_id（用于会话切换时判断是否需要重连）
+    function connectWS(threadId) {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-      ws = new WebSocket(`${proto}://${location.host}/ws/${encodeURIComponent(username.value)}`);
+      const target = threadId || username.value;  // 缺省=username（v1.0 兼容：直发走用户会话）
+      if (ws && wsTarget === target && ws.readyState === WebSocket.OPEN) return;  // 已连对目标
+      if (ws) { try { ws.close(); } catch (e) {} }
+      wsTarget = target;
+      ws = new WebSocket(`${proto}://${location.host}/ws/${encodeURIComponent(target)}`);
       ws.onmessage = (ev) => {
         try {
           const p = JSON.parse(ev.data);
@@ -1471,22 +2974,40 @@ createApp({
       };
     }
 
-    // ---------- 登录 ----------
+    // ---------- 登录 / 注册（两张卡分开：登录绝不建号；注册要确认密码，且实时回显将创建的账号） ----------
+    const authMode = ref('login');          // 'login' | 'register'
+    const regPwd2 = ref('');                // 注册卡的「确认密码」
+    const notExist = ref(false);            // 登录遇 404（账号不存在）→ 给出「去注册」引导
+    const regReady = computed(() => !!((username.value || '').trim() && password.value && regPwd2.value
+                                       && password.value === regPwd2.value && password.value.length >= 6));
+    const regHint = computed(() => {
+      const u = (username.value || '').trim();
+      const role = regRole.value === 'company' ? '公司账号' : '个人账号';
+      if (!u) return '填好用户名、密码与确认密码后点「创建账号」';
+      return '即将创建：' + u + '（' + role + '）—— 请再核对一遍用户名，写错了会真的建出这个账号';
+    });
+    function switchAuth(m) {
+      authMode.value = m; errMsg.value = ''; notExist.value = false;
+      if (m === 'register') { password.value = ''; regPwd2.value = ''; }   // 不把登录密码当注册密码误提交
+    }
+    function goRegister() { switchAuth('register'); }
+
     async function doLogin() {
       errMsg.value = '';
+      notExist.value = false;
       if (!username.value || !password.value) { errMsg.value = '请填写用户名和密码'; return; }
       busy.value = true;
       try {
-        let r = await fetch('/api/login', { method:'POST', headers:{'Content-Type':'application/json'},
+        const r = await fetch('/api/login', { method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({ username: username.value, password: password.value }) });
-        if (r.status === 401) {
-          const reg = await fetch('/api/register', { method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ username: username.value, password: password.value, role: regRole.value }) });
-          if (!reg.ok) { errMsg.value = ((await reg.json()).detail) || '注册失败'; return; }
-          r = await fetch('/api/login', { method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ username: username.value, password: password.value }) });
+        const data = await r.json().catch(() => ({}));
+        // 后端语义（2026-09-16 起）：404 = 账号不存在；401 = 密码错误。
+        // 这里**只提示，绝不自动注册**——旧版就是在这里自动建号，错别字会静默变成账号。
+        if (r.status === 404) {
+          notExist.value = true;
+          errMsg.value = '账号「' + (username.value || '').trim() + '」不存在';
+          return;
         }
-        const data = await r.json();
         if (!r.ok) { errMsg.value = data.detail || '登录失败'; return; }
         token.value = data.token; role.value = data.account.role;
         sessionStorage.setItem('zx_token', data.token);
@@ -1495,13 +3016,46 @@ createApp({
         go('home');
         connectWS(); loadMyData();
         loadReports(); loadSubs(); loadProviders(); loadSouls(); loadMemory(); loadVoicePacks();
+        loadSessions();  // M1 会话列表
+        loadKbStatus();  // M3 知识库
         restoreBg();  // 登录后恢复该账号背景
       } catch (e) { errMsg.value = '网络错误：' + e.message; }
       finally { busy.value = false; }
     }
+
+    async function doRegister() {
+      errMsg.value = '';
+      const u = (username.value || '').trim();
+      if (!u) { errMsg.value = '请填写用户名'; return; }
+      if (/\s/.test(u)) { errMsg.value = '用户名不能包含空格'; return; }
+      if (!password.value || password.value.length < 6) { errMsg.value = '密码至少 6 位'; return; }
+      if (password.value !== regPwd2.value) { errMsg.value = '两次输入的密码不一致'; return; }
+      busy.value = true;
+      try {
+        const r = await fetch('/api/register', { method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ username: u, password: password.value, role: regRole.value }) });
+        const d = await r.json().catch(() => ({}));
+        if (r.status === 409) {
+          errMsg.value = '用户名「' + u + '」已被注册，请直接登录';
+          return;
+        }
+        if (!r.ok) {
+          errMsg.value = typeof d.detail === 'string' ? d.detail : '注册失败';
+          return;
+        }
+        // 用户拍板：注册成功后不自动登录 —— 回到登录卡，让用户用刚设的密码亲手登一次（复核的机会）
+        authMode.value = 'login';
+        username.value = u;
+        password.value = ''; regPwd2.value = '';
+        errMsg.value = '';
+        showToast('账号「' + u + '」已创建，请用刚设置的密码登录');
+      } catch (e) { errMsg.value = '网络错误：' + e.message; }
+      finally { busy.value = false; }
+    }
+
     function doLogout() {
       fetch('/api/logout?token=' + encodeURIComponent(token.value)).catch(()=>{});
-      if (ws) ws.close();
+      if (ws) ws.close(); wsTarget = '';
       token.value = ''; role.value = 'personal';
       sessionStorage.clear();
       // 登出即清除页面背景（不删 localStorage key，重新登录时按账号恢复）
@@ -1509,6 +3063,8 @@ createApp({
       document.body.style.setProperty('--bg-opacity', '.6');
       bgActive.value = '';
       messages.value = []; monitor.value = []; thinkingText.value = '';
+      sessions.value = []; activeThread.value = '';
+      kbStatus.value = null; kbExportShow.value = false; kbIngestShow.value = false;
       myData.value = emptyMy();
     }
 
@@ -1879,23 +3435,958 @@ createApp({
     }
 
     // ---------- 对话 ----------
+    // ================= M1 会话管理 =================
+    async function loadSessions() {
+      if (!token.value) return;
+      try {
+        const r = await fetch('/api/chat/sessions?token=' + encodeURIComponent(token.value));
+        if (r.ok) sessions.value = (await r.json()).items || [];
+      } catch (e) { /* 静默 */ }
+    }
+    async function newSession() {
+      try {
+        const r = await fetch('/api/chat/sessions?token=' + encodeURIComponent(token.value), { method: 'POST' });
+        const d = await r.json();
+        if (!r.ok) { showToast(d.detail || '新建会话失败', true); return; }
+        activeThread.value = d.thread_id;
+        messages.value = [];
+        thinkingText.value = '';
+        connectWS(d.thread_id);    // 新会话 → WS 对准新 UUID
+        await loadSessions();
+        await nextTick(); scrollToBottom();
+      } catch (e) { showToast('新建会话出错：' + e.message, true); }
+    }
+    async function switchSession(tid) {
+      if (loading.value) return;
+      activeThread.value = tid;
+      connectWS(tid);              // 切换会话 → WS 重连到该会话 UUID
+      monitor.value = []; thinkingText.value = '';  // 右栏重置为当前会话进度
+      try {
+        const r = await fetch('/api/chat/sessions/' + encodeURIComponent(tid) + '?token=' + encodeURIComponent(token.value));
+        if (!r.ok) { showToast('加载会话失败', true); return; }
+        const items = (await r.json()).messages || [];
+        const msgs = [];
+        for (const m of items) {
+          if (m.role === 'user') {
+            msgs.push({ role: 'user', text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content), msg_id: m.id });
+          } else if (m.role === 'assistant') {
+            let c = m.content;
+            if (Array.isArray(c)) c = c.map(b => b.text || '').join('');
+            // msg_id 必须带上：AI 气泡右上角「删除」按它定位这一轮问答
+            msgs.push({ role: 'agent', text: String(c || ''), title: '', msg_id: m.id });
+          }
+          // tool / system 消息跳过（过程细节在右栏监控）
+        }
+        messages.value = msgs;
+        await nextTick(); scrollToBottom();
+      } catch (e) { showToast('加载会话出错：' + e.message, true); }
+    }
+    async function delSession(s) {
+      if (!confirm('删除会话「' + (s.title || '新对话') + '」？此操作不可恢复。')) return;
+      try {
+        const r = await fetch('/api/chat/sessions/' + encodeURIComponent(s.thread_id) + '?token=' + encodeURIComponent(token.value), { method: 'DELETE' });
+        if (r.ok) {
+          if (activeThread.value === s.thread_id) {
+            activeThread.value = ''; messages.value = [];
+            connectWS('');  // 回退 username 通道
+          }
+          await loadSessions();
+        } else showToast('删除失败', true);
+      } catch (e) { showToast('删除出错：' + e.message, true); }
+    }
+    async function renameSession(s) {
+      const t = prompt('重命名会话', s.title || '');
+      if (!t || !t.trim()) return;
+      try {
+        const r = await fetch('/api/chat/sessions/' + encodeURIComponent(s.thread_id) + '?token=' + encodeURIComponent(token.value) + '&title=' + encodeURIComponent(t.trim()), { method: 'PATCH' });
+        if (r.ok) await loadSessions(); else showToast('重命名失败', true);
+      } catch (e) { showToast('重命名出错：' + e.message, true); }
+    }
+    function fmtTime(ts) {
+      if (!ts) return '';
+      const d = new Date(ts.replace(' ', 'T'));
+      if (isNaN(d)) return ts;
+      const diff = (Date.now() - d.getTime()) / 1000;
+      if (diff < 60) return '刚刚';
+      if (diff < 3600) return Math.floor(diff / 60) + ' 分钟前';
+      if (diff < 86400) return Math.floor(diff / 3600) + ' 小时前';
+      if (diff < 86400 * 7) return Math.floor(diff / 86400) + ' 天前';
+      return d.toLocaleDateString();
+    }
+
+    // ================= M3 知识库 =================
+    async function loadKbStatus() {
+      if (!token.value) return;
+      try {
+        const r = await fetch('/api/kb/status?token=' + encodeURIComponent(token.value));
+        if (r.ok) kbStatus.value = await r.json();
+      } catch (e) { /* 静默 */ }
+    }
+    // 三条入库路径统一入口：把候选内容填到弹窗上下文，让用户走完整评估+清洗预览+确认
+    function kbIngestOpenWith(ctx) {
+      kbIngestCtx.value = {
+        title: ctx.title,                // 弹窗顶部标题（"粘贴文本入库" / "上传 .md 入库" / "导出报告入库"）
+        source_kind: ctx.source_kind,    // upload / paste / export
+        source_kind_label: ctx.source_kind_label,
+        content: ctx.content,            // 原文（粘贴/读文件/导出报告的 text）
+        title_input: ctx.title_input || '',
+        title_editable: !!ctx.title_editable,  // 上传/导出可改标题；粘贴必填标题
+        apply_clean_default: ctx.apply_clean_default !== false,
+        message_id: ctx.message_id || null,    // M3：消息级重复检测（仅 export 路径）
+        already_ingested: !!ctx.already_ingested,
+      };
+      kbIngestRaw.value = ctx.content || '';
+      kbIngestTitle.value = ctx.title_input || '';
+      kbUseClean.value = ctx.apply_clean_default !== false;
+      kbEval.value = {};
+      kbEvalDone.value = false;
+      kbIngestShow.value = true;
+    }
+    function kbUploadClick() { if (kbFileInput.value) kbFileInput.value.click(); }
+    async function kbUploadFile(ev) {
+      const f = ev.target.files && ev.target.files[0];
+      ev.target.value = '';
+      if (!f) return;
+      if (!f.name.toLowerCase().endsWith('.md')) { showToast('仅支持 .md 文件（文档同一性）', true); return; }
+      const title = f.name.replace(/\.md$/i, '');
+      const content = await f.text();
+      kbIngestOpenWith({
+        title: '⬆️ 上传 .md 入库',
+        source_kind: 'upload',
+        source_kind_label: '上传文件',
+        content,
+        title_input: title,
+        title_editable: true,
+      });
+    }
+    function kbIngestOpen() {
+      kbIngestOpenWith({
+        title: '✍️ 粘贴文本入库',
+        source_kind: 'paste',
+        source_kind_label: '粘贴文本',
+        content: '',
+        title_input: '',
+        title_editable: true,
+      });
+    }
+    async function kbIngestEvalNow() {
+      const text = (kbIngestRaw.value || '').trim();
+      if (!text) { showToast('内容为空', true); return; }
+      const title = (kbIngestTitle.value || '').trim() || '未命名';
+      kbBusy.value = true;
+      try {
+        const r = await fetch('/api/kb/evaluate?token=' + encodeURIComponent(token.value), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, content: text }) });
+        if (!r.ok) { showToast('评估失败', true); return; }
+        kbEval.value = await r.json();
+        kbEvalDone.value = true;
+        // 评估结果可能含"建议清洗预览"（kbEval.cleaned_preview），让用户勾选 useClean
+        if (kbEval.value.cleaned_preview && kbEval.value.needs_clean) {
+          kbUseClean.value = kbIngestCtx.value.apply_clean_default;
+        }
+      } catch (e) { showToast('评估出错：' + e.message, true); }
+      finally { kbBusy.value = false; }
+    }
+    function kbIngestRetry() { kbEvalDone.value = false; kbEval.value = {}; }
+    async function kbIngestConfirm() {
+      const text = (kbIngestRaw.value || '').trim();
+      if (!text) { showToast('内容为空', true); return; }
+      let title = (kbIngestTitle.value || '').trim();
+      if (!title) title = '未命名文档';
+      kbBusy.value = true;
+      try {
+        const r = await fetch('/api/kb/ingest?token=' + encodeURIComponent(token.value), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, content: text, source_kind: kbIngestCtx.value.source_kind,
+                                 apply_clean: kbUseClean.value,
+                                 message_id: kbIngestCtx.value.message_id,
+                                 force: !!kbIngestCtx.value.already_ingested }) });
+        const d = await r.json();
+        if (!r.ok) {
+          // 后端拦截（重复入库 / 评估拒绝）→ 弹窗内显示，不关闭
+          if (d.detail) {
+            showToast(d.detail, true);
+            if (d.detail.includes('已入过知识库')) {
+              // 给用户多一个"强制再入"选项
+              kbIngestCtx.value.already_ingested = true;
+            }
+          } else {
+            showToast('入库失败', true);
+          }
+          return;
+        }
+        // 入库成功 → 标记该消息 kb_ingested
+        if (kbIngestCtx.value.message_id) {
+          const m = messages.value.find(x => x.msg_id === kbIngestCtx.value.message_id);
+          if (m) m.kb_ingested = true;
+        }
+        const c = d.applied_clean ? '（已清洗）' : '';
+        showToast(d.dup ? 'ℹ️ 该内容已在知识库中（未重复添加）' : `✅ 已入库《${d.title}》${c}（${d.chunks} 片段）`);
+        kbIngestShow.value = false;
+        await loadKbStatus();
+      } catch (e) { showToast('入库出错：' + e.message, true); }
+      finally { kbBusy.value = false; }
+    }
+    async function kbDeleteDoc(d) {
+      if (!confirm('删除《' + d.title + '》？不可恢复。')) return;
+      try {
+        const r = await fetch('/api/kb/docs/' + encodeURIComponent(d.source_id) + '?token=' + encodeURIComponent(token.value), { method: 'DELETE' });
+        if (r.ok) { showToast('已删除'); await loadKbStatus(); }
+        else showToast('删除失败', true);
+      } catch (e) { showToast('删除出错：' + e.message, true); }
+    }
+    async function kbQueryRun() {
+      const q = kbQueryText.value.trim();
+      if (!q) return;
+      kbBusy.value = true; kbQueryHits.value = [];
+      try {
+        const r = await fetch('/api/kb/query?token=' + encodeURIComponent(token.value), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: q, mode: 'fast' }) });
+        const d = await r.json();
+        kbQueryHits.value = (d.hits || []).slice(0, 3);
+      } catch (e) { showToast('检索出错：' + e.message, true); }
+      finally { kbBusy.value = false; }
+    }
+    // 导出报告 → 走统一入库预览弹窗（评估+清洗+确认，批注 4/11：用户确认才入；消息级去重）
+    function askIngestExport(m) {
+      const title = (m.title || '情报简报') + '_导出';
+      kbIngestOpenWith({
+        title: '📚 导出报告入库预览',
+        source_kind: 'export',
+        source_kind_label: '导出报告',
+        content: m.text,
+        title_input: title,
+        title_editable: true,
+        message_id: m.msg_id || null,         // M3：消息级重复入库检测
+        already_ingested: !!m.kb_ingested,    // 已入过则顶部警告
+      });
+    }
+
+    // ==================== M4a：技能与工具 ====================
+    const skills = ref([]);            // 我的技能（agents_docs/{username}/skills/*.md）
+    const skTab = ref(_initHash === 'shell' ? 'shell' : 'skill');   // 页面 tab：skill / shell / cli / mcp / api
+    const skActive = ref('');          // 当前编辑的技能名
+    const skContent = ref('');         // 当前编辑的正文
+    const skSaved = ref(false);        // 保存成功提示
+    const skNewName = ref('');
+    const skPicked = ref([]);          // 本轮启用（多选叠加，发送后清空）
+    const skMenuOpen = ref(false);     // 输入框 / 唤出技能目录
+    const skMenuIdx = ref(0);
+    const skFilter = ref('');
+
+    // ---------- M4b：CLI 面板（沙箱白名单命令行） ----------
+    const shAllowed = ref([]);         // 白名单命令（GET /api/shell/allowed）
+    const shSandbox = ref('');         // 沙箱绝对路径（按账号隔离）
+    const shNotes = ref([]);           // 后端附带的用法/限制说明
+    const shLines = ref([]);           // 终端输出行 [{cls:'cmd'|'out'|'err'|'ok'|'dim', text}]
+    const shInput = ref('');           // 当前输入
+    const shBusy = ref(false);         // 命令执行中（此时禁输入，发送按钮变灰）
+    const shElapsed = ref(0);          // 执行耗时（秒，一位小数）
+    const shOut = ref(null);           // 输出区 DOM（自动滚到底）
+    const shIn = ref(null);            // 输入框 DOM（点输出区即聚焦）
+    const shHistList = [];             // 命令历史（↑↓ 翻）
+    let shHistIdx = -1;
+    let shTimer = null;
+
+    const SH_MAX_LINES = 400;          // 输出行上限，超出丢最早的（防长跑命令撑爆 DOM）
+
+    async function shScroll() {
+      await nextTick();
+      if (shOut.value) shOut.value.scrollTop = shOut.value.scrollHeight;
+    }
+    function shPush(cls, text) {
+      shLines.value.push({ cls: cls, text: text });
+      if (shLines.value.length > SH_MAX_LINES) {
+        shLines.value.splice(0, shLines.value.length - SH_MAX_LINES);
+      }
+    }
+    function shFill(cmd) { shInput.value = cmd; nextTick(() => { if (shIn.value) shIn.value.focus(); }); }
+    function shFocus() { if (shIn.value) shIn.value.focus(); }
+    function shClear() { shLines.value = []; }
+
+    async function shLoadAllowed() {
+      if (!token.value) return;
+      try {
+        const r = await fetch('/api/shell/allowed?token=' + encodeURIComponent(token.value));
+        const d = await r.json();
+        if (!r.ok) { showToast(d.detail || 'CLI 白名单读取失败', true); return; }
+        shAllowed.value = d.commands || [];
+        shSandbox.value = d.sandbox || '';
+        shNotes.value = d.notes || [];
+      } catch (e) { showToast('CLI 白名单读取失败：' + e.message, true); }
+    }
+
+    function shHist(dir) {
+      if (!shHistList.length) return;
+      if (shHistIdx === -1) shHistIdx = shHistList.length;
+      shHistIdx = Math.min(Math.max(shHistIdx + dir, 0), shHistList.length);
+      shInput.value = shHistIdx >= shHistList.length ? '' : shHistList[shHistIdx];
+    }
+
+    async function shExec() {
+      const line = (shInput.value || '').trim();
+      if (!line || shBusy.value) return;
+      shPush('cmd', line);
+      shInput.value = '';
+      if (shHistList[shHistList.length - 1] !== line) shHistList.push(line);
+      shHistIdx = -1;
+      shBusy.value = true; shElapsed.value = 0;
+      const t0 = Date.now();
+      shTimer = setInterval(() => { shElapsed.value = ((Date.now() - t0) / 1000).toFixed(1); }, 100);
+      await shScroll();
+      try {
+        const r = await fetch('/api/shell/exec?token=' + encodeURIComponent(token.value), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command: line })
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          shPush('err', '⚠️ ' + (d.detail || ('HTTP ' + r.status)));
+        } else {
+          if (d.sandbox) shSandbox.value = d.sandbox;
+          if (d.stdout) shPush('out', d.stdout.replace(/\s+$/, ''));
+          if (d.stderr) shPush('err', d.stderr.replace(/\s+$/, ''));
+          if (d.error) shPush('err', d.error);
+          shPush(d.ok ? 'ok' : 'err',
+                 (d.ok ? '✓ 完成' : '✗ 失败') +
+                 (d.elapsed != null ? ' · ' + d.elapsed + 's' : '') +
+                 (d.returncode != null ? ' · exit ' + d.returncode : '') +
+                 (d.truncated ? ' · 输出已截断(1MB)' : ''));
+        }
+      } catch (e) {
+        shPush('err', '⚠️ 请求失败：' + e.message);
+      } finally {
+        if (shTimer) { clearInterval(shTimer); shTimer = null; }
+        shBusy.value = false;
+        await shScroll();
+      }
+    }
+
+    // 进 CLI 面板 tab 才拉白名单（省一次请求；切回来复用缓存）
+    watch(skTab, (t) => { if (t === 'shell' && !shAllowed.value.length) shLoadAllowed(); if (t === 'cli' && !cliLoaded.value) loadCliCatalog(); });
+
+    // 与后端 customize.py 常量对齐（前后端双硬校验）
+    const SK_MAX = 4000;               // SKILL_MAX_LEN 单技能正文字数
+    const SK_MAX_PICK = 5;             // SKILL_MAX_PICK 单轮最多叠加技能数
+    const SK_TPL = [
+      '# 技能名',
+      '',
+      '## 适用场景',
+      '- 什么时候该用这个技能',
+      '',
+      '## 执行步骤',
+      '1. ',
+      '2. ',
+      '',
+      '## 输出格式',
+      '- ',
+      '',
+      '## 注意事项',
+      '- ',
+      ''
+    ].join('\n');
+    // ---- M4c 自定义 CLI 接入配置（配置导向，服务端单一来源：tools/cli_registry.py → /api/cli/*）----
+    // 系统不预设厂商：名称 / 可执行名 / 安装认证命令 / 只读命令清单都由用户填，状态落 SQLite（按账号隔离）。
+    const cliItems = ref([]);
+    const cliTemplates = ref([]);
+    const cliStates = ref({ none: '未接入', installed: '已安装（未认证）', authed: '已接入（已授权）' });
+    const cliSummary = ref({ total: 0, authed: 0, installed: 0, detected_local: 0, agent_live: 0, with_rules: 0 });
+    const cliNote = ref({});
+    const cliLoaded = ref(false);
+    const cliEditing = ref(false);
+    const cliErr = ref('');
+    const cliParseNotes = ref([]);   // 保存后回显「整条命令 → 裁成的路径」
+    const cliRunning = ref(null);
+    const cliRunOut = ref({});
+    const cliDrafting = ref(false);   // M5：能力描述草稿生成中
+    const cliDoneCount = computed(() => cliItems.value.filter(c => c.state !== 'none').length);
+
+    function emptyCliForm() {
+      return { id: null, name: '', bin: '', install_cmd: '', auth_cmd: '', docs: '', readonly: '',
+               state: 'none', note: '', abilities: '' };
+    }
+    const cliForm = ref(emptyCliForm());
+
+    async function loadCliCatalog(force) {
+      if (cliLoaded.value && !force) return;
+      if (!token.value) return;
+      try {
+        const r = await fetch('/api/cli/list?token=' + encodeURIComponent(token.value));
+        const d = await r.json();
+        if (!r.ok) { showToast(d.detail || 'CLI 配置读取失败', true); return; }
+        cliItems.value = d.items || [];
+        cliTemplates.value = d.templates || [];
+        cliStates.value = d.states || cliStates.value;
+        cliSummary.value = d.summary || cliSummary.value;
+        const notes = {};
+        (d.items || []).forEach(c => { notes[c.id] = c.note || ''; });
+        cliNote.value = notes;
+        cliLoaded.value = true;
+      } catch (e) { showToast('CLI 配置出错：' + e.message, true); }
+    }
+    function cliNew() {
+      cliForm.value = emptyCliForm();
+      cliEditing.value = true;
+      cliErr.value = '';
+      cliParseNotes.value = [];
+    }
+    function cliFill(t) {   // 预填示例：只把表单填好，不写库
+      cliForm.value = Object.assign(emptyCliForm(), {
+        name: t.name, bin: t.bin, install_cmd: t.install_cmd || '',
+        auth_cmd: t.auth_cmd || '', docs: t.docs || '', readonly: t.readonly || '', state: 'none',
+      });
+      cliEditing.value = true;
+      cliErr.value = '';
+      cliParseNotes.value = [];
+      showToast('已按示例预填，可自由修改后再保存' + (t.readonly ? '' : '（这个包没有文档，只读清单请自己补）'));
+    }
+    function cliEdit(c) {
+      cliForm.value = Object.assign(emptyCliForm(), {
+        id: c.id, name: c.name, bin: c.bin, install_cmd: c.install_cmd, auth_cmd: c.auth_cmd,
+        docs: c.docs, readonly: c.readonly, state: c.state, note: c.note,
+        abilities: c.abilities || '',
+      });
+      cliEditing.value = true;
+      cliErr.value = '';
+      cliParseNotes.value = [];
+    }
+    function cliCancel() { cliEditing.value = false; cliErr.value = ''; cliParseNotes.value = []; }
+    async function cliSave() {
+      if (!token.value) return;
+      cliErr.value = '';
+      try {
+        const r = await fetch('/api/cli/save?token=' + encodeURIComponent(token.value), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cliForm.value),
+        });
+        const d = await r.json();
+        if (!r.ok || !d.ok) { cliErr.value = d.detail || '保存失败'; return; }
+        cliEditing.value = false;
+        cliParseNotes.value = (d.item && d.item.parse_notes) || [];
+        await loadCliCatalog(true);
+        if (cliParseNotes.value.length) showToast('已保存：清单按子命令路径存了 ' + cliParseNotes.value.length + ' 条（整条粘贴已自动裁掉参数）');
+        else showToast(cliForm.value.id ? '配置已更新' : '已新增 CLI：' + d.item.name);
+      } catch (e) { cliErr.value = '保存出错：' + e.message; }
+    }
+    // M5：按只读清单生成「能力描述」草稿（AI 生成、用户确认后再保存；不落库）
+    async function cliAbilityDraft() {
+      if (!token.value || cliDrafting.value) return;
+      cliErr.value = '';
+      const f = cliForm.value;
+      if (!(f.readonly || '').trim()) {
+        cliErr.value = '请先填「只读命令清单」——能力描述里的命令必须来自它';
+        return;
+      }
+      cliDrafting.value = true;
+      try {
+        const r = await fetch('/api/cli/ability_draft?token=' + encodeURIComponent(token.value), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: f.name, bin: f.bin, readonly: f.readonly }),
+        });
+        const d = await r.json();
+        if (!r.ok) { cliErr.value = d.detail || '生成失败'; return; }
+        cliForm.value.abilities = d.content || '';
+        showToast('已生成草稿：请核对右边命令是否都在只读清单里，再点保存');
+      } catch (e) { cliErr.value = '生成出错：' + e.message; }
+      finally { cliDrafting.value = false; }
+    }
+
+    async function cliSetState(c, state) {
+      if (!token.value) return;
+      try {
+        const r = await fetch('/api/cli/status?token=' + encodeURIComponent(token.value), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: c.id, state: state, note: cliNote.value[c.id] || '' }),
+        });
+        const d = await r.json();
+        if (!r.ok || !d.ok) { showToast(d.detail || '登记失败', true); return; }
+        c.state = d.item.state; c.state_label = d.item.state_label;
+        c.live = d.item.live; c.updated_at = '刚刚';
+        cliSummary.value = Object.assign({}, cliSummary.value, {
+          authed: cliItems.value.filter(x => x.state === 'authed').length,
+          installed: cliItems.value.filter(x => x.state === 'installed').length,
+          agent_live: cliItems.value.filter(x => x.live).length,
+        });
+        showToast('已把「' + c.name + '」登记为' + d.item.state_label);
+      } catch (e) { showToast('登记出错：' + e.message, true); }
+    }
+    async function cliSaveNote(c) {
+      if (!token.value || (cliNote.value[c.id] || '') === (c.note || '')) return;
+      try {
+        const r = await fetch('/api/cli/status?token=' + encodeURIComponent(token.value), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: c.id, state: c.state, note: cliNote.value[c.id] || '' }),
+        });
+        const d = await r.json();
+        if (!r.ok || !d.ok) { showToast(d.detail || '备注保存失败', true); return; }
+        c.note = d.item.note; c.updated_at = '刚刚';
+        showToast('备注已保存');
+      } catch (e) { showToast('备注保存出错：' + e.message, true); }
+    }
+    async function cliDelete(c) {
+      if (!confirm('删除「' + c.name + '」的配置？\n\n删除后 AI 就不能再代跑它的命令了（CLI 本身不受影响）。')) return;
+      try {
+        const r = await fetch('/api/cli/delete?token=' + encodeURIComponent(token.value), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: c.id }),
+        });
+        const d = await r.json();
+        if (!r.ok || !d.ok) { showToast(d.detail || '删除失败', true); return; }
+        cliItems.value = cliItems.value.filter(x => x.id !== c.id);
+        delete cliRunOut.value[c.id];
+        cliSummary.value = Object.assign({}, cliSummary.value, {
+          total: cliItems.value.length,
+          authed: cliItems.value.filter(x => x.state === 'authed').length,
+          installed: cliItems.value.filter(x => x.state === 'installed').length,
+          agent_live: cliItems.value.filter(x => x.live).length,
+          with_rules: cliItems.value.filter(x => (x.rules || []).length).length,
+        });
+        showToast('已删除「' + c.name + '」的配置');
+      } catch (e) { showToast('删除出错：' + e.message, true); }
+    }
+    // 逐条试跑只读命令（与 AI 走同一执行器：越权照样被拒）
+    async function cliRunAll(c) {
+      if (!token.value || cliRunning.value) return;
+      cliRunning.value = c.id;
+      cliRunOut.value[c.id] = [];
+      try {
+        for (const cmd of c.agent_commands) {
+          let row = { cmd: cmd, ok: false, msg: '…' };
+          cliRunOut.value[c.id].push(row);
+          try {
+            const r = await fetch('/api/shell/exec?token=' + encodeURIComponent(token.value), {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ command: cmd, timeout: 20 }),
+            });
+            const d = await r.json();
+            row.ok = !!d.ok;
+            const out = (d.stdout || '').trim() || (d.error || d.stderr || '').trim() || '（无输出）';
+            row.msg = out.split('\n')[0].slice(0, 120);
+          } catch (e) { row.msg = '请求出错：' + e.message; }
+          cliRunOut.value[c.id] = cliRunOut.value[c.id].slice();
+        }
+      } finally { cliRunning.value = null; }
+    }
+
+    // ---- 工作台时钟（秒级）+ 天气（Open-Meteo 免 Key，城市级；012 号 cards/weather-gradient）----
+    const clockTime = ref('--:--:--');
+    const clockDate = ref('');
+    const wx = ref(null);
+    const wxLoading = ref(false);
+    const wxErr = ref('');
+    const wxOpen = ref(false);
+    let _wxStarted = false;
+
+    function _pad2(n) { return String(n).padStart(2, '0'); }
+    function tickClock() {
+      const d = new Date();
+      clockTime.value = _pad2(d.getHours()) + ':' + _pad2(d.getMinutes()) + ':' + _pad2(d.getSeconds());
+      const wk = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'][d.getDay()];
+      clockDate.value = d.getFullYear() + ' 年 ' + _pad2(d.getMonth() + 1) + ' 月 ' + _pad2(d.getDate()) + ' 日 · ' + wk;
+    }
+    const wxCityEdit = ref(false);
+    const wxCityInput = ref('');
+    // 卡片配色（默认松绿=项目主色系；色值同时喂给 CSS 变量与选择器圆点）
+    const WX_SKINS = [
+      { k: 'green', t: '松绿（项目主色）', c1: '#4fae6b', c2: '#1f5c37' },
+      { k: 'amber', t: '暖阳', c1: '#e2ab34', c2: '#8a5a08' },
+      { k: 'indigo', t: '靛蓝', c1: '#4f6bd8', c2: '#23306f' },
+      { k: 'violet', t: '紫罗兰（012 原味）', c1: '#5936b4', c2: '#362a84' },
+    ];
+    const wxSkin = ref('green');
+    function wxSavedSkin() {
+      try { return localStorage.getItem('dw_wx_skin_' + (username.value || 'anon')) || 'green'; } catch (e) { return 'green'; }
+    }
+    function wxSetSkin(k) {
+      if (!WX_SKINS.some(x => x.k === k)) return;
+      wxSkin.value = k;
+      try { localStorage.setItem('dw_wx_skin_' + (username.value || 'anon'), k); } catch (e) { /* 隐身模式忽略 */ }
+    }
+    function wxSavedCity() {
+      try { return localStorage.getItem('dw_wx_city_' + (username.value || 'anon')) || ''; } catch (e) { return ''; }
+    }
+    async function loadWeather(force) {
+      if (!token.value) return;
+      wxLoading.value = true; wxErr.value = '';
+      try {
+        const q = '/api/weather?token=' + encodeURIComponent(token.value)
+                + (wxSavedCity() ? '&city=' + encodeURIComponent(wxSavedCity()) : '')
+                + (force ? '&force=1' : '');
+        const r = await fetch(q);
+        const d = await r.json();
+        if (!r.ok) { wxErr.value = d.detail || '天气获取失败'; return; }
+        wx.value = d;
+        if (d.warning) showToast(d.warning, true);
+      } catch (e) { wxErr.value = '天气获取失败：' + e.message; }
+      finally { wxLoading.value = false; }
+    }
+    function wxToggleDock(ev) {     // 点击药丸=钉住/取消；卡片/输入面板内部的点击不收起
+      const t = ev && ev.target;
+      if (t && t.closest && t.closest('.wx-card, .wx-city-form')) return;
+      wxOpen.value = !wxOpen.value;
+    }
+    function wxPromptCity() {       // 打开卡片内联输入（不用系统 prompt，避免跳出页面风格）
+      wxCityInput.value = (wx.value && wx.value.city_input) || wxSavedCity() || '';
+      wxCityEdit.value = true;
+      wxOpen.value = true;
+    }
+    function wxCancelCity() { wxCityEdit.value = false; }
+    function wxSetCity() {
+      const name = (wxCityInput.value || '').trim();
+      try {
+        const k = 'dw_wx_city_' + (username.value || 'anon');
+        if (name) localStorage.setItem(k, name); else localStorage.removeItem(k);
+        if (!name) loadWeather(true);        // 清空 = 回到 .env 默认城市
+      } catch (e) { /* 隐身模式忽略 */ }
+      wxCityEdit.value = false;
+      if (name) loadWeather(true);
+    }
+    // 登录后补取：token 存在 sessionStorage，刷新页面时往往「挂载早于登录」——
+    // 那时 loadWeather 因无 token 直接 return，若不补一次，工作台会一直停在「天气还没取到」兜底卡。
+    watch(token, (v) => {
+      if (!v) { wx.value = null; wxErr.value = ''; return; }   // 登出：清掉上一个账号的天气
+      // _wxStarted 为真说明挂载时已起过定时器（那次因无 token 没取到数）→ 这里只补一次取数；
+      // 否则交给 wxStart()（它内部会取数并起定时器）。两条路径都只请求一次。
+      if (_wxStarted) loadWeather(); else wxStart();
+    });
+    function wxStart() {   // 秒针 + 天气定时刷新（只启一次）
+      if (_wxStarted) return;
+      _wxStarted = true;
+      wxSkin.value = wxSavedSkin();
+      tickClock();
+      setInterval(tickClock, 1000);
+      loadWeather();
+      setInterval(() => loadWeather(), 10 * 60 * 1000);   // 与后端 10 分钟缓存对齐
+    }
+
+
+    // ---- M4 收尾：教程指导（只读 md 阅读页；对齐蜀道「政策文件只读阅读器」）----
+    const tutHtml = ref('');
+    const tutTitle = ref('CLI 接入教程');
+    const tutPath = ref('');
+    const tutUpdated = ref('');
+    const tutImages = ref(0);
+    const tutMissing = ref(0);
+    const tutLoading = ref(false);
+    const tutLoaded = ref(false);
+
+    function esc(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    // 手写 md 渲染（零外部依赖、离线可用）：标题 / 表格 / 列表 / 引用 / 代码块 / 图片 / 加粗 / 行内码 / 折叠块
+    function tutRender(md) {
+      if (!md) return '';
+      let text = String(md).replace(/\r\n/g, '\n');
+      const blocks = [];
+      text = text.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (m, lang, code) => {
+        blocks.push('<pre class="md-pre"><code' + (lang ? ' data-lang="' + esc(lang) + '"' : '') + '>'
+                    + esc(code) + '</code></pre>');
+        return '\u0000BLOCK' + (blocks.length - 1) + '\u0000';
+      });
+      const inline = (s) => {
+        let h = esc(s);
+        h = h.replace(/!\[([^\]]*)\]\(([^)]+)\)/g,
+                      (m, alt, url) => '<img src="' + url + '" alt="' + alt + '" loading="lazy" />');
+        h = h.replace(/`([^`]+)`/g, '<code>$1</code>');
+        h = h.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        h = h.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+        h = h.replace(/\u0000BLOCK(\d+)\u0000/g, (m, i) => blocks[+i]);
+        // 白名单放行折叠块（教程里用来收起长终端回显）
+        return h.replace(/&lt;details&gt;/g, '<details class="md-det">')
+                .replace(/&lt;\/details&gt;/g, '</details>')
+                .replace(/&lt;summary&gt;/g, '<summary>')
+                .replace(/&lt;\/summary&gt;/g, '</summary>');
+      };
+      const out = [];
+      let inTable = false, inList = false; const para = [];
+      const flushPara = () => { if (para.length) { out.push('<p>' + inline(para.join(' ')) + '</p>'); para.length = 0; } };
+      const closeList = () => { if (inList) { out.push(inList === 'ul' ? '</ul>' : '</ol>'); inList = false; } };
+      const closeTable = () => { if (inTable) { out.push('</tbody></table>'); inTable = false; } };
+      for (const rawLn of text.split('\n')) {
+        const t = rawLn.trim();
+        if (!t) { flushPara(); closeList(); closeTable(); continue; }
+        if (/^\u0000BLOCK\d+\u0000$/.test(t)) {   // 代码块占位符：还原成 <pre>
+          flushPara(); closeList(); closeTable();
+          out.push(t.replace(/\u0000BLOCK(\d+)\u0000/g, (m, bi) => blocks[+bi]));
+          continue;
+        }
+        const h = t.match(/^(#{1,6})\s+(.*)$/);
+        if (h) { flushPara(); closeList(); closeTable(); const lv = h[1].length;
+                 out.push('<h' + lv + ' class="md-h">' + inline(h[2]) + '</h' + lv + '>'); continue; }
+        if (/^(---+|\*\*\*+)$/.test(t)) { flushPara(); closeList(); closeTable(); out.push('<hr/>'); continue; }
+        if (t.charAt(0) === '|') {
+          if (/^\|[\s:\-|]+\|$/.test(t)) continue;
+          flushPara(); closeList();
+          if (!inTable) { out.push('<table class="md-table"><tbody>'); inTable = true; }
+          const cells = t.split('|').slice(1, -1).map(c => c.trim());
+          out.push('<tr>' + cells.map(c => '<td>' + inline(c) + '</td>').join('') + '</tr>');
+          continue;
+        }
+        closeTable();
+        if (/^[-*]\s+/.test(t)) { flushPara();
+          if (inList !== 'ul') { closeList(); out.push('<ul class="md-ul">'); inList = 'ul'; }
+          out.push('<li>' + inline(t.replace(/^[-*]\s+/, '')) + '</li>'); continue; }
+        if (/^\d+\.\s+/.test(t)) { flushPara();
+          if (inList !== 'ol') { closeList(); out.push('<ol class="md-ol">'); inList = 'ol'; }
+          out.push('<li>' + inline(t.replace(/^\d+\.\s+/, '')) + '</li>'); continue; }
+        closeList();
+        if (t.charAt(0) === '>') { flushPara(); out.push('<blockquote class="md-quote">' + inline(t.replace(/^>\s?/, '')) + '</blockquote>'); continue; }
+        para.push(t);
+      }
+      flushPara(); closeList(); closeTable();
+      return out.join('\n');
+    }
+    async function loadTutorial(force) {
+      if (tutLoaded.value && !force) return;
+      if (!token.value) return;
+      tutLoading.value = true;
+      try {
+        const r = await fetch('/api/tutorial/doc?token=' + encodeURIComponent(token.value));
+        const d = await r.json();
+        if (!r.ok) { showToast(d.detail || '教程读取失败', true); return; }
+        tutTitle.value = d.title || 'CLI 接入教程';
+        tutPath.value = d.path || '';
+        tutUpdated.value = d.updated || '';
+        tutImages.value = (d.images || []).length;
+        tutMissing.value = (d.missing || []).length;
+        tutHtml.value = tutRender(d.content || '');
+        tutLoaded.value = true;
+        if (tutMissing.value) showToast(tutMissing.value + ' 张图片没找到，已跳过', true);
+      } catch (e) { showToast('教程读取出错：' + e.message, true); }
+      finally { tutLoading.value = false; }
+    }
+    function openTutorial() { go('tutorial'); loadTutorial(); }
+    function tutBack() { skTab.value = 'cli'; go('skills'); }
+
+
+    function copyCmd(cmd) {
+      const done = () => showToast('已复制：' + cmd);
+      const fallback = () => {
+        const ta = document.createElement('textarea');
+        ta.value = cmd; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) { showToast('复制失败，请手动选择文本', true); }
+        document.body.removeChild(ta);
+      };
+      try {
+        if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(cmd).then(done, fallback);
+        else fallback();
+      } catch (e) { fallback(); }
+    }
+    async function loadSkills() {
+      if (!token.value) return;
+      try {
+        const r = await fetch('/api/skills?token=' + encodeURIComponent(token.value));
+        const d = await r.json();
+        if (!r.ok) { showToast(d.detail || '技能列表读取失败', true); return; }
+        skills.value = d.skills || [];
+      } catch (e) { showToast('技能列表出错：' + e.message, true); }
+    }
+    async function skillOpen(name) {
+      if (!token.value) return;
+      try {
+        const r = await fetch('/api/skills/get?name=' + encodeURIComponent(name) + '&token=' + encodeURIComponent(token.value));
+        const d = await r.json();
+        if (!r.ok) { showToast(d.detail || '读取技能失败', true); return; }
+        skActive.value = d.name || name;
+        skContent.value = d.content || '';
+        skSaved.value = false;
+      } catch (e) { showToast('读取技能出错：' + e.message, true); }
+    }
+    async function skillCreate() {
+      const name = (skNewName.value || '').trim();
+      if (!name) { showToast('先填技能名', true); return; }
+      try {
+        const r = await fetch('/api/skills/create?token=' + encodeURIComponent(token.value), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, content: '# ' + name + '\n\n## 适用场景\n- \n\n## 执行步骤\n1. \n\n## 输出格式\n- \n\n## 注意事项\n- \n' })
+        });
+        const d = await r.json();
+        if (!r.ok) { showToast(d.detail || '新建失败', true); return; }
+        skNewName.value = '';
+        await loadSkills();
+        await skillOpen(d.name || name);
+        showToast('技能「' + (d.name || name) + '」已创建，接着写正文 →');
+      } catch (e) { showToast('新建出错：' + e.message, true); }
+    }
+    async function skillSave() {
+      if (!skActive.value) return;
+      if (skContent.value.length > SK_MAX) { showToast('正文超过 ' + SK_MAX + ' 字，请先精简', true); return; }
+      try {
+        const r = await fetch('/api/skills/save?token=' + encodeURIComponent(token.value), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: skActive.value, content: skContent.value })
+        });
+        const d = await r.json();
+        if (!r.ok) { showToast(d.detail || '保存失败', true); return; }
+        skActive.value = d.name || skActive.value;
+        skSaved.value = true;
+        setTimeout(() => { skSaved.value = false; }, 1800);
+        await loadSkills();
+      } catch (e) { showToast('保存出错：' + e.message, true); }
+    }
+    async function skillDelete() {
+      if (!skActive.value) return;
+      if (!confirm('删除技能「' + skActive.value + '」？此操作不可撤销。')) return;
+      try {
+        const r = await fetch('/api/skills/delete?token=' + encodeURIComponent(token.value), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: skActive.value })
+        });
+        const d = await r.json();
+        if (!r.ok) { showToast(d.detail || '删除失败', true); return; }
+        showToast('技能「' + skActive.value + '」已删除');
+        skActive.value = ''; skContent.value = '';
+        await loadSkills();
+      } catch (e) { showToast('删除出错：' + e.message, true); }
+    }
+    function skillTpl() {
+      if (skContent.value.trim() && !confirm('正文已有内容，用模板覆盖？')) return;
+      skContent.value = SK_TPL;
+    }
+    async function skillSeed() {
+      const tpls = [
+        { name: '竞品对比表', content:
+          '# 竞品对比表\n\n## 适用场景\n- 用户要求对比两个及以上竞品，或问「我们与 XX 的差别在哪」\n\n## 执行步骤\n1. 先查本地知识库已收录的双方资料，缺口再联网检索\n2. 按「产品定位 / 核心功能 / 价格 / 目标客户 / 近期动态」五个维度拉齐信息\n3. 取不到公开信息的格子写「未获取到公开信息」，禁止推测填充\n4. 表后给一句结论：我方哪一维度领先、哪一维度落后\n\n## 输出格式\n- Markdown 表格（竞品横向为列）+ 结论段 + 来源清单\n\n## 注意事项\n- 每个数据点标注来源与日期；超出 90 天的标注「可能已过时」\n' },
+        { name: '来源可追溯', content:
+          '# 来源可追溯\n\n## 适用场景\n- 用户要求「给出来源」「标注出处」「要能验证」\n\n## 执行步骤\n1. 每条关键结论后用 [n] 标注对应来源\n2. 文末列「参考来源」：[n] 标题 · 机构 · 日期 · 链接\n3. 无来源支撑的判断单独成行并写明「推测：…」\n4. 多个来源互相冲突时并列呈现各自说法，不擅自裁决\n\n## 输出格式\n- 正文带 [n] 角标 + 文末来源清单\n\n## 注意事项\n- 不得编造链接与日期；确实检索不到就写「未检索到公开来源」\n' },
+      ];
+      let made = 0, skipped = 0;
+      for (const t of tpls) {
+        try {
+          const r = await fetch('/api/skills/create?token=' + encodeURIComponent(token.value), {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(t)
+          });
+          if (r.ok) made++; else skipped++;
+        } catch (e) { skipped++; }
+      }
+      await loadSkills();
+      showToast('示例技能：新建 ' + made + ' 个' + (skipped ? '，跳过 ' + skipped + ' 个（已存在）' : ''));
+    }
+    // ---- 输入框「/」技能目录 ----
+    const skMenuList = computed(() => {
+      const f = (skFilter.value || '').trim();
+      const all = skills.value || [];
+      if (!f) return all;
+      return all.filter(s => s.name.indexOf(f) >= 0 || (s.desc || '').indexOf(f) >= 0);
+    });
+    function skOnInput() {
+      const v = draft.value;
+      // 仅当「/」在开头且后面还没打空格时视为唤出目录，避免打断正常提问
+      if (/^\/[^\s]*$/.test(v)) { skFilter.value = v.slice(1); skMenuOpen.value = true; skMenuIdx.value = 0; }
+      else skMenuOpen.value = false;
+    }
+    function skOnKey(e) {
+      if (e.ctrlKey || e.metaKey) return;                    // Ctrl+Enter 发送交给原逻辑
+      if (!skMenuOpen.value) { if (e.key === '/') { skMenuOpen.value = true; skMenuIdx.value = 0; skFilter.value = ''; } return; }
+      const n = skMenuList.value.length;
+      if (e.key === 'ArrowDown') { e.preventDefault(); skMenuIdx.value = n ? (skMenuIdx.value + 1) % n : 0; }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); skMenuIdx.value = n ? (skMenuIdx.value - 1 + n) % n : 0; }
+      else if (e.key === 'Enter' || e.key === 'Tab') {
+        if (n) { e.preventDefault(); skillPick(skMenuList.value[skMenuIdx.value].name); }
+      } else if (e.key === 'Escape') {
+        e.preventDefault(); skMenuOpen.value = false;
+        if (/^\/[^\s]*$/.test(draft.value)) draft.value = '';
+      }
+    }
+    function skillPick(name) {
+      if (skPicked.value.indexOf(name) >= 0) { skMenuOpen.value = false; return; }
+      if (skPicked.value.length >= SK_MAX_PICK) { showToast('单轮最多叠加 ' + SK_MAX_PICK + ' 个技能', true); return; }
+      skPicked.value.push(name);
+      draft.value = draft.value.replace(/^\/[^\s]*/, '');     // 只吃掉「/」与筛选词，保留已写的问题
+      skMenuOpen.value = false;
+      nextTick(() => { const el = document.querySelector('.input-area textarea'); if (el) el.focus(); });
+    }
+    function skillUnpick(name) { skPicked.value = skPicked.value.filter(n => n !== name); }
+
     async function send(text) {
       const q = (text != null ? text : draft.value).trim();
       if (!q || loading.value) return;
       draft.value = '';
+      skMenuOpen.value = false;
       go('chat');
-      messages.value.push({ role: 'user', text: q });
+      connectWS(activeThread.value);  // WS 对准当前会话（UUID 或 username），保证右栏进度能收到
+      // M4a：技能「本轮一次性」——发送即消费掉选择，同时记一份在气泡上供追溯
+      const usedSkills = skPicked.value.slice();
+      skPicked.value = [];
+      messages.value.push({ role: 'user', text: q, skills: usedSkills });
       loading.value = true;
+      stopping.value = false;
       thinkingText.value = '';  // 新一轮对话清空思考区
       await nextTick(); scrollToBottom();
+      const ctl = new AbortController();  // 中断兜底：后端卡在工具里时可客户端撒手
+      chatAbort = ctl;
       try {
-        const r = await fetch('/api/chat?token=' + encodeURIComponent(token.value) + '&question=' + encodeURIComponent(q), { method:'POST' });
+        let url = '/api/chat?token=' + encodeURIComponent(token.value) + '&question=' + encodeURIComponent(q);
+        if (activeThread.value) url += '&thread_id=' + encodeURIComponent(activeThread.value);
+        if (usedSkills.length) url += '&skills=' + encodeURIComponent(usedSkills.join(','));
+        const r = await fetch(url, { method:'POST', signal: ctl.signal });
         const data = await r.json();
         if (!r.ok) messages.value.push({ role:'agent', text:'⚠️ ' + (data.detail || '请求失败'), title:'出错了' });
-        else messages.value.push({ role:'agent', text: data.answer, title: q.slice(0,12) + (q.length > 12 ? '…' : '') });
+        else {
+          const cut = !!data.cancelled;  // 用户点了「中断」：后端落一条占位回答并正常返回
+          messages.value.push({ role:'agent', text: data.answer,
+                                title: cut ? '⏹ 已中断' : (q.slice(0,12) + (q.length > 12 ? '…' : '')),
+                                msg_id: data.last_msg_id || null,  // M3：消息 id 供导出入库去重 / 删除问答用
+                                interrupted: cut,
+                                kb_ingested: false });
+          if (data.thread_id && !activeThread.value) activeThread.value = data.thread_id; // 旧版直发自动归档
+          await loadSessions();  // 标题/消息数/时间已变，刷新列表
+          if (cut) showToast('已中断本轮回答');
+        }
       } catch (e) {
-        messages.value.push({ role:'agent', text:'⚠️ 请求出错：' + e.message, title:'出错了' });
-      } finally { loading.value = false; await nextTick(); scrollToBottom(); }
+        if (e && e.name === 'AbortError') {
+          // 已请求中断但后端仍卡在工具调用里 → 前端先撒手，不等它了
+          messages.value.push({ role:'agent', text:'⏹ 已中断本轮回答（后端仍在收尾，结果会被丢弃）。',
+                                title:'⏹ 已中断', interrupted:true });
+        } else {
+          messages.value.push({ role:'agent', text:'⚠️ 请求出错：' + e.message, title:'出错了' });
+        }
+      } finally { chatAbort = null; stopping.value = false; loading.value = false; await nextTick(); scrollToBottom(); }
+    }
+
+    // 中断本轮回答：给后端置中断标记（它会在下一次模型调用前停下并落占位回答），
+    // 8s 内没回来就前端先撒手（工具内部等 HTTP 响应那一步打断不了，只能等它返回）。
+    async function stopGen() {
+      if (!loading.value || stopping.value) return;
+      stopping.value = true;
+      showToast('正在中断本轮回答…');
+      try {
+        let url = '/api/chat/cancel?token=' + encodeURIComponent(token.value);
+        if (activeThread.value) url += '&thread_id=' + encodeURIComponent(activeThread.value);
+        const r = await fetch(url, { method:'POST' });
+        const d = await r.json().catch(() => ({}));
+        if (r.ok && d.hit === false) showToast('这轮回答可能刚好结束了');
+        setTimeout(() => { if (loading.value && chatAbort) chatAbort.abort(); }, 8000);
+      } catch (e) {
+        showToast('中断请求出错，改为不再等待：' + e.message, true);
+        if (chatAbort) chatAbort.abort();
+      }
+    }
+
+    // 删除一轮问答（AI 回复气泡右上角「🗑 删除」）：只把回答的 msg_id 交给后端，
+    // 成对删除「该轮提问 + 回答 + 工具链」；本地同步抹掉这条回复与它前面最近的提问。
+    async function delPair(m, i) {
+      const mid = m.msg_id || null;
+      if (!mid) { showToast('这条回复没有消息 id（刚生成或历史异常），请刷新会话后再删', true); return; }
+      if (!confirm('删除这轮问答？\n\n该轮的「问题 + 回答」会一起永久删除，不可恢复。')) return;
+      try {
+        const qs = new URLSearchParams({ token: token.value, msg_id: String(mid) });
+        if (activeThread.value) qs.set('thread_id', activeThread.value);
+        const r = await fetch('/api/chat/message/delete?' + qs.toString(), { method:'POST' });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) { showToast(d.detail || '删除失败', true); return; }
+        let j = i - 1;
+        while (j >= 0 && messages.value[j] && messages.value[j].role !== 'user') j--;
+        const from = (j >= 0 && messages.value[j] && messages.value[j].role === 'user') ? j : i;
+        messages.value.splice(from, i - from + 1);
+        showToast('已删除 ' + (d.deleted || 1) + ' 条消息（问题 + 回答）');
+        await loadSessions();
+      } catch (e) { showToast('删除出错：' + e.message, true); }
     }
     async function doExport(m, fmt) {
       exporting.value = true;
@@ -1907,16 +4398,23 @@ createApp({
         if (!r.ok) { showToast(d.detail || '导出失败', true); return; }
         location.href = (fmt !== 'md' && d.download_pdf) ? d.download_pdf : d.download_md;
         showToast(fmt !== 'md' && d.download_pdf ? 'PDF 已生成并开始下载' : 'Markdown 已下载');
+        if (fmt !== 'pdf') askIngestExport(m);  // M3：导出后询问是否入库（仅 md 导出可入）
       } catch (e) { showToast('导出出错：' + e.message, true); }
       finally { exporting.value = false; }
     }
     function scrollToBottom() { if (scroll.value) scroll.value.scrollTop = scroll.value.scrollHeight; }
 
-    onMounted(() => { restoreBg(); if (token.value) { connectWS(); loadReports(); loadSubs(); loadMyData(); loadProviders(); loadSouls(); loadMemory(); loadVoicePacks(); } });
+    onMounted(() => { restoreBg(); if (token.value) { connectWS(); loadReports(); loadSubs(); loadMyData(); loadProviders(); loadSouls(); loadMemory(); loadVoicePacks(); loadSessions(); loadKbStatus(); loadSkills(); } wxStart(); });
 
     return {
       token, username, password, regRole, errMsg, busy, role, view, go,
-      messages, monitor, draft, loading, exporting, scroll, examples, thinkingText,
+      messages, monitor, sessions, activeThread, draft, loading, exporting, scroll, examples, thinkingText,
+      loadSessions, newSession, switchSession, delSession, renameSession, fmtTime,
+      kbStatus, kbBusy, kbIngestShow, kbIngestCtx, kbIngestRaw, kbIngestTitle,
+      kbEvalDone, kbEval, kbUseClean, kbFileInput, kbQueryText, kbQueryHits,
+      loadKbStatus, kbUploadClick, kbUploadFile, kbIngestOpen, kbIngestOpenWith, kbIngestEvalNow,
+      kbIngestRetry, kbIngestConfirm, kbDeleteDoc, kbQueryRun, askIngestExport,
+      kbPercent, activityTrend, recentActivity,
       showBgPanel, toggleBgPanel, bgOpacity, bgImages, bgActive, onBgUpload, applyBg, resetBg, pickBg, delBg,
       providers, newProv, loadProviders, addProvider, saveProvider, activateProvider, delProvider,
       soulContent, soulReq, soulGenOut, soulGenning, soulSaved, saveSoul, genSoul, soulImport,
@@ -1929,11 +4427,32 @@ createApp({
       newInterest, newWatch, newComp, newProd, batchModal, openBatch, submitBatch,
       displayName, greeting,
       doLogin, doLogout, send, doExport, splitSections, renderRich,
+      // 2026-09-16 收尾：登录/注册两卡分离（authMode 切卡、注册校验、账号不存在引导）
+      authMode, regPwd2, notExist, regReady, regHint, switchAuth, goRegister, doRegister,
+      stopping, stopGen, delPair,  // 聊天界面优化：中断本轮回答 / 删除一轮问答
       finishOnboard, skipOnboard, delItem,
       reports, subs, newSubName, newSubScope, newSubLang, selCount, newReports, digestRunning,
       loadReports, loadSubs, updateSub, addSub, delSub, runDigestNow,
       saveProfile, saveInterest, saveWatch, saveCollection, saveCompetitor, saveCProduct,
       addInterest, addItemSimple, addCompetitor, addProduct,
+      // M4a 技能与工具
+      skills, skTab, skActive, skContent, skSaved, skNewName, skPicked, skMenuOpen, skMenuIdx, skFilter,
+      skMenuList, SK_MAX, SK_TPL, cliItems, cliTemplates, cliStates, cliSummary, cliNote, cliDoneCount,
+      // ⚠️ 输入框「/」技能目录的四个**处理函数**必须导出：漏了的话模板把它们绑成 undefined，
+      //    表现为「敲 / 完全没反应」（v-if/v-for 用的状态变量导出与否看不出来，只有交互会失效）。
+      //    静态不变量检查：tests/frontend_setup_exports_check.py（已固化为用例）
+      skOnInput, skOnKey, skillPick, skillUnpick,
+      loadSkills, skillOpen, skillCreate, skillSave, skillDelete, skillSeed, skillTpl, copyCmd,
+      loadCliCatalog, cliNew, cliFill, cliEdit, cliCancel, cliSave, cliSetState, cliSaveNote,
+      cliDelete, cliRunAll, cliEditing, cliErr, cliForm, cliRunning, cliRunOut, cliParseNotes,
+      cliDrafting, cliAbilityDraft,
+      openTutorial, loadTutorial, tutBack, tutRender, tutHtml, tutTitle, tutPath, tutUpdated, tutImages, tutMissing, tutLoading,
+       // 工作台 时钟 + 天气（012 号设计）
+       clockTime, clockDate, wx, wxLoading, wxErr, wxOpen, wxCityEdit, wxCityInput, wxSkin, wxSetSkin, WX_SKINS,
+       loadWeather, wxPromptCity, wxCancelCity, wxSetCity, wxStart, wxToggleDock,
+      // M4b CLI 面板
+      shAllowed, shSandbox, shNotes, shLines, shInput, shBusy, shElapsed, shOut, shIn,
+      shLoadAllowed, shExec, shFill, shFocus, shClear, shHist,
     };
   }
 }).mount('#app');

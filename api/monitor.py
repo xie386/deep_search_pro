@@ -34,11 +34,21 @@ class ToolMonitor:
             cls._instance = super(ToolMonitor, cls).__new__(cls)
             cls._instance.websocket_manager = None  # 预留给 FastAPI WebSocketManager
             cls._instance._current_thread_id = None  # 跨线程推送用的当前 thread_id
+            cls._instance._console_sink = None       # 非 Web 前端（如 dspro CLI）可接管控制台输出
         return cls._instance
 
     def set_websocket_manager(self, manager):
         """设置 FastAPI 的 WebSocket 管理器"""
         self.websocket_manager = manager
+
+    def set_console_sink(self, sink):
+        """接管「控制台保底输出」。
+
+        Web 端不设置（保持内置 print 便于排查）；dspro CLI 注册自己的 sink，
+        把工具调用/思考过程渲染成终端进度行，避免 [Monitor:xxx] 原始输出混进对话。
+        签名：sink(event_type: str, message: str, data: dict) -> None
+        """
+        self._console_sink = sink
 
     # ------------------------------------------------------------------
     # 当前请求 thread_id 的跨线程载体
@@ -115,7 +125,13 @@ class ToolMonitor:
                 pass
 
         # 3. 控制台保底输出 (方便调试)
-        # 加上特殊前缀，方便肉眼识别
+        # 加上特殊前缀，方便肉眼识别；CLI 等前端注册 sink 后由它接管
+        if self._console_sink is not None:
+            try:
+                self._console_sink(event_type, message, payload.get("data") or {})
+            except Exception:
+                pass
+            return
         print(f"\n[Monitor:{event_type}] {message}")
 
     def report_tool(self, tool_name: str, args: Dict[str, Any] = None):

@@ -146,6 +146,22 @@ def run_digest(sub_id: int, owner_id: int, conn=None) -> dict:
             profile_line = (f"- 用户画像（情报侧重参考）：{profile_hint}\n"
                             "- 情报侧重：优先收录贴合上述画像的信息（如价格敏感用户侧重降价/优惠/性价比类动态），但不得因侧重而忽略订阅关键词范围内的重大新闻")
 
+        # M3：知识库代码层必查（full 模式）——订阅关键词相关私有资料注入候选参考
+        kb_line = ""
+        try:
+            from rag_knowledge.kb_service import kb_exists, query as _kb_query
+            if kb_exists(username):
+                kb_parts = []
+                for _q in batches[:3]:  # 最多查 3 个关键词（控制耗时，full rerank <1s/次）
+                    for _h in _kb_query(username, _q, mode="full", top_k=2, account_id=owner_id):
+                        _snip = (_h["text"] or "")[:200].replace("\n", " ")
+                        kb_parts.append(f"《{_h['title']}》{_snip}")
+                if kb_parts:
+                    kb_line = ("- 知识库相关观点（用户私有沉淀，来自个人知识库；周报如需可引用，来源标 📚 知识库）：\n"
+                               + "\n".join(f"  · {p}" for p in kb_parts[:6]))
+        except Exception as _e:
+            print(f"[digest] 知识库必查失败（忽略）: {_e}")
+
         task_prompt = f"""请为以下订阅生成一期定期情报周报（Digest）。
 
 【订阅信息】
@@ -157,6 +173,7 @@ def run_digest(sub_id: int, owner_id: int, conn=None) -> dict:
 - 检索语言：{lang_desc}
 - 输出语言：中文
 {profile_line}
+{kb_line}
 【执行步骤】
 1. 调用【网络搜索助手】，为每个关键词各检索一轮：query 用订阅关键词原文（简短实体词，不要自行堆叠「最新/新闻/价格」等修饰词——修饰词会显著降低相关性）；topic 必须用 news；days 必须传 7；strict_days 必须传 True（工具会在代码层剔除超过 7 天的旧闻）；{bilingual_flag}（工具会在 strict_days=True 时于代码层剔除超7天旧闻）；max_results 用 8。若某关键词首轮结果不足或全部被剔除，可换一个更聚焦的表述（如多词兴趣拆成核心实体词）再补一轮；全程检索轮次控制在 {len(batches)}~{len(batches)*2} 次内。
 2. 汇总所有检索结果（工具已做严格时效过滤，只保留近 7 天），去重后作为「候选条目」。

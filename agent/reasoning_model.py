@@ -23,9 +23,26 @@ from langchain_core.messages import AIMessageChunk
 from langchain_core.outputs import ChatGenerationChunk, ChatResult
 from langchain_openai import ChatOpenAI
 
+from agent.cancel import check as _check_cancel
+
 
 class ReasoningChatOpenAI(ChatOpenAI):
     """在 ChatOpenAI 基础上保留 reasoning_content（DeepSeek-R1 等思考模型）。"""
+
+    # ------------------------------------------------------------------
+    # 用户强制中断的唯一检查点（见 agent/cancel.py 的模块说明）：
+    # 每个 agent 步骤都要过一次模型调用，故在真正发请求前检查中断标志，
+    # raise AgentCancelled 后异常一路穿透 langgraph 到 invoke 调用方。
+    # 覆盖关系：invoke → _generate；ainvoke/astream → langchain 默认把
+    # _generate/_stream 丢线程池执行，所以这两个口子就够，不用再写 _agenerate。
+    # ------------------------------------------------------------------
+    def _generate(self, *args: Any, **kwargs: Any) -> ChatResult:
+        _check_cancel()
+        return super()._generate(*args, **kwargs)
+
+    def _stream(self, *args: Any, **kwargs: Any):
+        _check_cancel()
+        return super()._stream(*args, **kwargs)
 
     # ------------------------------------------------------------------
     # 非流式：invoke/ainvoke 时，把 response.choices[0].message.reasoning_content

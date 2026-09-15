@@ -20,8 +20,11 @@ import asyncio
 import json
 import os
 import re
+import shutil
+import httpx
 import sys
 import time
+import threading
 from pathlib import Path
 from typing import List, Optional
 
@@ -39,7 +42,7 @@ from fastapi import UploadFile, File, Form, Body, Depends, FastAPI, HTTPExceptio
 from pydantic import BaseModel
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from agent.llm import model
 from agent.prompts import main_agent_content
@@ -49,15 +52,19 @@ from agent.subagents.personal_agent import personal_agent
 # 文档读写工具：主智能体可把知识/笔记保存到 agents_docs（仅限该目录 .md/.txt）
 from tools.readtofile import read_agent_doc, list_agent_docs
 from tools.writetofile import write_agent_doc
+from tools.kb_tools import query_kb  # M3：个人知识库检索工具（fast 模式）
+from tools.shell_executor import run_shell_command  # M4b：CLI 沙箱命令工具（与 CLI 面板共用执行器）
+from tools._runtime import shell_runtime as shell_runtime  # M4b：CLI 面板 /api/shell/* 路由用
+from tools import cli_registry as cli_reg  # M4c：第三方 CLI 接入登记（注册表 + 本机检测 + 状态）
 from api.account import LoginReq, RegisterReq, login, logout, register, get_session
 from api.context import set_owner_context, set_thread_context
 import api.me_user_data as me
 from api.monitor import manager, monitor
+from agent import cancel as agent_cancel
 import api.customize as cust
 import api.voice_tts as vtts
 from deepagents import create_deep_agent
-from langgraph.checkpoint.memory import MemorySaver
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from agent.reasoning_model import ReasoningChatOpenAI
 from deepagents.middleware._tool_exclusion import _ToolExclusionMiddleware
 
@@ -75,9 +82,10 @@ AGENT = create_deep_agent(
     model=model,
     system_prompt=main_agent_content["system_prompt"],
     subagents=[network_search_agent, db_agent, personal_agent],
-    tools=[read_agent_doc, write_agent_doc, list_agent_docs],
+    tools=[read_agent_doc, write_agent_doc, list_agent_docs, query_kb, run_shell_command],
     middleware=[_ToolExclusionMiddleware(excluded=_EXCLUDED_FS_TOOLS)],#去除deepagents内置的filesystem工具，只保留项目自定义的
-    checkpointer=MemorySaver(),
+    # M1：不再用 MemorySaver 承载消息历史（进程重启即丢、无界增长）。
+    # 对话历史由 SQLite 持久化（agent/conversation_store.py），每次 invoke 显式传入完整上下文。
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -90,8 +98,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 _custom_agents: dict = {}
 
 
-def _build_custom_agent(provider: dict, soul_text: str, memory_text: str = "", username: str = ""):
-    """用用户自定义模型（若有）+ SOUL.md 人格 + 记忆画像构建一个独立主 Agent"""
+def _build_custom_agent(provider: dict):
+    """按账号构建独立主 Agent（M2：agent 静态化）。
+
+    只注入「账号自定义模型 + main 基础提示词」——SOUL 人格 / MEMORY 记忆画像等
+    动态内容不再固化进构建（每次 invoke 前由 build_request_context 装配注入）。
+    """
     if provider:
         custom_model = ReasoningChatOpenAI(
             model=provider["model_name"],
@@ -101,18 +113,12 @@ def _build_custom_agent(provider: dict, soul_text: str, memory_text: str = "", u
     else:
         custom_model = model  # 无自定义模型时用默认 .env 模型
     sys_prompt = main_agent_content["system_prompt"]
-    if soul_text:
-        sys_prompt = f"{soul_text}\n\n——\n\n{sys_prompt}"
-    if memory_text:
-        mem_hint = f"（记忆文件：agents_docs/{username}/MEMORY.md，可用读取/写入文档工具维护）" if username else ""
-        sys_prompt = f"{sys_prompt}\n\n——\n\n【你的用户记忆画像】{mem_hint}\n{memory_text}"
     return create_deep_agent(
         model=custom_model,
         system_prompt=sys_prompt,
         subagents=[network_search_agent, db_agent, personal_agent],
-        tools=[read_agent_doc, write_agent_doc, list_agent_docs],
+        tools=[read_agent_doc, write_agent_doc, list_agent_docs, query_kb, run_shell_command],
         middleware=[_ToolExclusionMiddleware(excluded=_EXCLUDED_FS_TOOLS)],
-        checkpointer=MemorySaver(),
     )
 
 
@@ -137,45 +143,145 @@ def _get_memory_text(account_id: int):
 
 
 def _get_agent_for(account_id: int | None):
-    """按账号选择 agent：有自定义模型/人格/记忆画像则用（缓存），否则全局 AGENT。
-    缓存 key 含 soul+memory 哈希：人格或记忆变化时自动重建 agent。"""
+    """按账号选择 agent（M2：agent 静态化——只按自定义模型配置缓存）。
+
+    SOUL 人格 / MEMORY 记忆画像不再进入构建（走每次 invoke 的请求装配），
+    因此只有「自定义模型」变化才需要重建 agent；改人格/记忆零重建。
+    无自定义模型 → 全局 AGENT（静态单例）。
+    """
     if account_id is None:
         return AGENT
     try:
         provider = cust.get_active_provider(account_id)
     except Exception:
         provider = None
-    soul_text = cust.get_soul_content(account_id)
-    memory_text, username = _get_memory_text(account_id)
-    # 有自定义模型/人格/记忆画像时按账号建独立 agent：
-    # 全局 AGENT 的 system_prompt 在构建时固定，无法注入这些动态内容。
-    if provider or soul_text or memory_text:
-        key = (account_id, hash((soul_text or "", memory_text or "")))
+    if provider:
+        # 缓存 key：账号 + 模型配置（base_url/model_name/api_key 任一变化 → 重建）
+        key = (account_id, provider.get("base_url"), provider.get("model_name"),
+               provider.get("api_key"))
         if key not in _custom_agents:
-            _custom_agents[key] = _build_custom_agent(provider, soul_text, memory_text, username)
+            _custom_agents[key] = _build_custom_agent(provider)
         return _custom_agents[key]
     return AGENT
 
 
-def _run_agent(question: str, thread_id: str, account_id: int | None = None) -> str:
-    """在工作线程里执行同步的 agent.invoke。
+def _run_agent(question: str, thread_id: str, account_id: int | None = None,
+               skill_names: list[str] | None = None) -> str:
+    """在工作线程里执行同步的 agent.invoke（M1 上下文工程化改造）。
+
+    上下文装配：
+      1. 历史从 SQLite 读取（agent/conversation_store.get_history）
+      2. agent/context_budget 做 token 预算（截断/压缩）
+      3. invoke 显式传入完整消息（无 MemorySaver 累积，多轮靠 SQLite 历史）
+      4. 本轮新增消息（user 提问 + 工具消息 + 回答）持久化回 SQLite
     monitor 埋点会经 run_coroutine_threadsafe 推到主 loop 的 WebSocket；
-    account_id 注入数据归属上下文，工具查询按 owner_id 隔离。"""
+    account_id 注入数据归属上下文，工具查询按 owner_id 隔离。
+    """
     set_thread_context(thread_id)  # 让 monitor 知道本轮进度推给哪个 WS
     if account_id is not None:
         set_owner_context(account_id)  # 数据归属权：Agent 只能读到该用户的数据
 
     agent = _get_agent_for(account_id)
 
-    cfg = {"configurable": {"thread_id": thread_id}}
-    result = agent.invoke(
-        {"messages": [HumanMessage(content=question)]}, cfg
+    # M2：请求装配管线——动态内容（SOUL 人格 + MEMORY 记忆画像）每次 invoke 前
+    # 拼成 SystemMessage 注入 messages 首条（agent 已静态化，不再因画像变化重建）。
+    from agent.build_context import build_request_context
+    if account_id is not None:
+        try:
+            soul_text = cust.get_soul_content(account_id)
+        except Exception:
+            soul_text = ""
+        memory_text, username = _get_memory_text(account_id)
+    else:
+        soul_text, memory_text, username = "", "", ""
+    # M4a：技能说明书由 server 层读取（技能文件在 api 层的用户文档目录下，
+    # 装配管线不 import api.* 以免反向依赖），再经 skills_text 传入装配。
+    skills_text = ""
+    if account_id is not None and skill_names:
+        try:
+            skills_text = cust.get_skills_text(account_id, skill_names)
+        except Exception as e:
+            print(f"[M4a] 技能读取失败（忽略）: {type(e).__name__}: {e}")
+    # M4c：用户自配 CLI 的可用清单——由 server 层取好传入（装配管线不 import api.*）。
+    # 目的是消除「配好了却自称没有」的幻觉；没配 CLI 时是空串，零开销。
+    # M5b：改由 `tool_router` 决定注入内容——工具少（≤4）时与 M5a 逐字一致（快路径）；
+    # 工具多时只把**相关**工具完整注入，其余留一行名称（不隐身），不确定则回退全量。
+    cli_brief = ""
+    route_mode = "full"
+    if account_id is not None:
+        try:
+            from tools import tool_router
+            _r = tool_router.route_tools(account_id, question)
+            cli_brief = (_r.brief + "\n" + _r.examples) if _r.examples else _r.brief
+            route_mode = _r.mode
+            if _r.mode == "routed":
+                monitor.report_thinking(
+                    "（工具路由：%d 个工具中命中 %d 个完整能力卡）"
+                    % (_r.detail.get("pool", 0), len(_r.hits)))
+        except Exception as e:
+            print(f"[M4c/M5] 工具注入生成失败（忽略）: {type(e).__name__}: {e}")
+    ctx = build_request_context(
+        thread_id, account_id, question,
+        soul_text=soul_text, memory_text=memory_text, username=username,
+        skills_text=skills_text, cli_brief=cli_brief,
     )
+    if ctx.cli_injected:
+        monitor.report_thinking(
+            "（已注入可用 CLI 清单 %d 条）"
+            % len([ln for ln in cli_brief.splitlines() if ln.startswith("- ")]))
+    if ctx.skills_injected:
+        monitor.report_thinking(f"（已注入 {len(skill_names or [])} 个技能说明书）")
+    invoke_messages = ctx.messages
+    if ctx.dropped_rounds:
+        monitor.report_thinking(f"（历史过长，已自动截断 {ctx.dropped_rounds} 轮旧对话）")
+    if ctx.compressed:
+        monitor.report_thinking("（历史过长，已自动压缩旧对话摘要）")
+
+    cfg = {"configurable": {"thread_id": thread_id}}
+    # 用户强制中断（v2.0 聊天界面优化）：登记本轮为可中断运行；中断标志由
+    # 前端 POST /api/chat/cancel 置位，模型调用前的检查点负责抛 AgentCancelled。
+    # finally 里清标记，避免残留标志把下一轮 invoke 立刻掐掉。
+    agent_cancel.begin(thread_id)
+    try:
+        result = agent.invoke({"messages": invoke_messages}, cfg)
+    finally:
+        agent_cancel.end(thread_id)
     # 思考捕获（A+ 方案）：ReasoningChatOpenAI 保留 reasoning_content 到每轮
     # AIMessage 的 additional_kwargs，invoke 完成后遍历提取并推给前端右栏——
     # 单请求（省 token）、不弃 langchain、覆盖所有轮次（含工具调用后的思考）。
     from agent.thinking_capture import report_thinking_from_messages
     report_thinking_from_messages(result["messages"])
+
+    if account_id is not None:
+        # M1：本轮持久化（user 提问 + 新增的 assistant/tool 消息）
+        try:
+            from agent import conversation_store as cs
+            # 结果消息里 question 之后的部分 = 本轮新增（含工具调用链）
+            new_msgs: list = []
+            seen_q = False
+            # M4a：技能前缀会改写实际用户文本（ctx.final_user_msg），
+            # 故按「装配后的最终文本」定位本轮起点；无技能时二者相等。
+            # 若都不匹配（异常），退化为只存最终回答。
+            _boundary = {ctx.final_user_msg or question, question}
+            for m in result["messages"]:
+                if isinstance(m, HumanMessage) and m.content in _boundary:
+                    seen_q = True
+                    continue
+                if seen_q:
+                    new_msgs.append(m)
+            if not seen_q:  # 兜底（异常情况）：至少存最终回答
+                new_msgs = [result["messages"][-1]]
+            # token 用量：从最后一条 AIMessage 的 usage_metadata 取（尽力而为）
+            tok_usage = 0
+            for m in reversed(result["messages"]):
+                um = getattr(m, "usage_metadata", None)
+                if um and um.get("total_tokens"):
+                    tok_usage = um["total_tokens"]
+                    break
+            _sr = cs.save_turn(account_id, thread_id, question, new_msgs, token_usage=tok_usage)
+        except Exception as e:
+            print(f"[M1] 会话持久化失败（忽略）: {type(e).__name__}: {e}")
+
     return result["messages"][-1].content
 
 
@@ -191,6 +297,8 @@ async def _startup():
     # 这样 monitor._emit 里的 run_coroutine_threadsafe 才有合法的 loop 可投送。
     manager.set_loop(asyncio.get_event_loop())
     print("[M2] FastAPI 启动，monitor loop 已绑定。")
+    _wx_load_disk()   # 工作台天气：先吃磁盘缓存，首屏秒出
+    threading.Thread(target=_wx_warm, daemon=True).start()   # 后台预热默认城市（外网首次实测 ~16s）
     from api.digest_scheduler import start as start_digest_sched
     start_digest_sched()
 
@@ -224,25 +332,49 @@ async def api_logout(token: str = Query(...)):
 
 
 # ----------------------------- 问答 -----------------------------
-@app.post("/api/chat", summary="发送一条消息，返回最终回答（多轮按 token 隔离）")
+@app.post("/api/chat", summary="发送一条消息，返回最终回答（多轮按会话隔离，M1）")
 async def api_chat(
     question: str = Query(..., description="用户问题"),
     token: str = Query(..., description="登录 token"),
+    thread_id: str = Query(None, description="会话 ID（前端「+ 新对话」建的 UUID）；缺省=用户名单会话（兼容 v1.0）"),
+    skills: str = Query("", description="M4a：本轮启用的技能名，逗号分隔（如 '竞品对比,来源标注'）；空=不用技能"),
 ):
     sess = get_session(token)  # 校验登录，无效抛 401
-    thread_id = sess["username"]  # 多轮记忆以用户为单位隔离
+    # 会话存储在本函数多处要用（含 v1.0 兼容路径下的 last_msg_id），提到函数顶部
+    # 统一 import：原来只在 thread_id 分支里 import，不带 thread_id 时会 UnboundLocalError
+    from agent import conversation_store as cs
+    # M4a：技能名列表（一次性，仅本轮生效；后端按账号读文件，越权名会被静默跳过）
+    skill_names = [s.strip() for s in (skills or "").split(",") if s.strip()]
+    if not thread_id:
+        thread_id = sess["username"]  # v1.0 兼容：以用户名为 thread
+    else:
+        # M1 多会话：校验归属（防越权用他人 thread_id），不存在则 404
+        if cs.get_session(sess["account_id"], thread_id) is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "会话不存在或不属于当前账号")
     monitor.set_current_thread(thread_id)  # 让工作线程里的 monitor 埋点能定向推 WS
+    cancelled = False
     try:
         # 画像变更通知：记录调用前的 MEMORY.md 内容，回复末尾对比提示
         before_memory = cust.memory_get(token).get("content", "")
         answer = await asyncio.to_thread(_run_agent, question, thread_id,
-                                        sess.get("account_id"))
+                                        sess.get("account_id"), skill_names)
         try:
             after_memory = cust.memory_get(token).get("content", "")
             if after_memory != before_memory:
                 answer = f"{answer}\n\n---\n📝 已更新你的记忆画像（智能体在本次对话中做了记忆维护），可在「定制助手 → 记忆画像」查看或编辑。"
         except Exception:
             pass
+    except agent_cancel.AgentCancelled:
+        # 用户点了「中断」（v2.0 聊天界面优化）：不是错误，转成正常响应。
+        # 落一条占位回答，保持「问-答成对」——否则历史里悬着一个没有回答的提问，
+        # 下一轮装配时模型会把它当成待答问题；前端也用这条回复挂「删除」按钮。
+        cancelled = True
+        answer = "⏹ 本轮回答已被中断（未完成）。"
+        try:
+            cs.save_turn(sess.get("account_id"), thread_id, question,
+                         [AIMessage(content=answer)])
+        except Exception as e:
+            print(f"[中断] 占位回答落库失败（忽略）: {type(e).__name__}: {e}")
     except Exception as e:  # 不吞掉错误，给出可读信息
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
                             f"Agent 执行出错：{type(e).__name__}: {e}")
@@ -252,7 +384,264 @@ async def api_chat(
         "answer": answer,
         "role": sess["role"],
         "thread_id": thread_id,
+        "cancelled": cancelled,  # 前端据此把这条气泡标成「已中断」
+        "last_msg_id": cs.get_last_msg_id(thread_id),  # M3：用于 kb 重复入库检测
     }
+
+
+@app.post("/api/chat/cancel", summary="强制中断本轮回答（前端「中断」按钮）")
+async def api_chat_cancel(token: str = Query(...),
+                          thread_id: str = Query(None, description="缺省=用户名单会话（兼容 v1.0）")):
+    """给正在跑的那轮 invoke 置中断标记。
+
+    生效点：`agent/reasoning_model.py` 里每次模型调用前的检查点
+    （`agent/cancel.py` 说明为什么选在这儿）——抛出的 AgentCancelled 会穿透
+    langgraph 冒回 `/api/chat`，那里以 `cancelled=true` 正常收尾。
+    局限：工具内部正在等 HTTP 响应（如一次网搜）打断不了，会在它返回后的
+    下一个模型调用点生效，秒级延迟。
+    """
+    sess = get_session(token)
+    from agent import conversation_store as cs
+    tid = thread_id or sess["username"]
+    if thread_id and cs.get_session(sess["account_id"], thread_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "会话不存在或不属于当前账号")
+    hit = agent_cancel.request(tid)
+    return {
+        "ok": True, "thread_id": tid, "hit": hit,
+        "detail": "已请求中断" if hit else "该会话当前没有正在跑的回答（可能刚好结束）",
+    }
+
+
+@app.post("/api/chat/message/delete", summary="删除一轮问答（问题 + 回答 + 工具链，不可恢复）")
+async def api_message_delete(token: str = Query(...),
+                             msg_id: int = Query(..., description="AI 回复气泡的消息 id（last_msg_id）"),
+                             thread_id: str = Query(None, description="缺省=用户名单会话（兼容 v1.0）")):
+    """前端 AI 回复气泡右上角的「删除」按钮：只传回答的 msg_id，成对删除规则
+    （连带该轮提问与工具链）在 `conversation_store.delete_turn` 里。"""
+    sess = get_session(token)
+    from agent import conversation_store as cs
+    tid = thread_id or sess["username"]
+    if thread_id and cs.get_session(sess["account_id"], thread_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "会话不存在或不属于当前账号")
+    res = cs.delete_turn(sess["account_id"], tid, msg_id)
+    if not res.get("ok"):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "消息不存在或已被删除（刷新会话后重试）")
+    return res
+
+
+# ----------------------------- 会话管理（M1 上下文工程化） -----------------------------
+@app.get("/api/chat/sessions", summary="当前账号会话列表（按活跃倒序）")
+async def api_sessions_list(token: str = Query(...)):
+    sess = get_session(token)  # 401 if invalid
+    from agent import conversation_store as cs
+    items = cs.list_sessions(sess["account_id"])
+    return {"items": items}
+
+
+@app.post("/api/chat/sessions", summary="新建空会话（UUID thread_id，前端随后带它发问）")
+async def api_sessions_create(token: str = Query(...)):
+    sess = get_session(token)
+    from agent import conversation_store as cs
+    s = cs.create_session(sess["account_id"], "新对话")
+    return s
+
+
+@app.get("/api/chat/sessions/{thread_id}", summary="读某会话全部消息")
+async def api_sessions_read(thread_id: str, token: str = Query(...)):
+    sess = get_session(token)
+    from agent import conversation_store as cs
+    if cs.get_session(sess["account_id"], thread_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "会话不存在或不属于当前账号")
+    msgs = cs.get_messages_plain(sess["account_id"], thread_id)
+    return {"messages": msgs}
+
+
+@app.patch("/api/chat/sessions/{thread_id}", summary="重命名会话标题")
+async def api_sessions_rename(thread_id: str, token: str = Query(...), title: str = Query(...)):
+    sess = get_session(token)
+    from agent import conversation_store as cs
+    ok = cs.rename_session(sess["account_id"], thread_id, title.strip()[:30] or "新对话")
+    if not ok:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "会话不存在或不属于当前账号")
+    return {"ok": True}
+
+
+@app.delete("/api/chat/sessions/{thread_id}", summary="删除会话（级联删消息，不可恢复）")
+async def api_sessions_delete(thread_id: str, token: str = Query(...)):
+    sess = get_session(token)
+    from agent import conversation_store as cs
+    ok = cs.delete_session(sess["account_id"], thread_id)
+    if not ok:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "会话不存在或不属于当前账号")
+    return {"ok": True}
+
+
+# ----------------------------- 知识库（M3 RAG，每用户 Chroma 库） -----------------------------
+def _kb_username(token: str) -> str:
+    """token → 当前账号 username（KB 按 username 目录隔离）。"""
+    sess = get_session(token)
+    return sess["username"]
+
+
+@app.get("/api/kb/status", summary="知识库状态（是否已创建/文档数）")
+async def kb_status(token: str = Query(...)):
+    sess = get_session(token)
+    username, aid = sess["username"], sess["account_id"]
+    from rag_knowledge.kb_service import kb_exists
+    from rag_knowledge import kb_store
+    recs = kb_store.list_records(username) if kb_exists(username, aid) else []
+    return {"exists": kb_exists(username, aid), "doc_count": len(recs),
+            "docs": recs}  # 顺带返回列表，前端一次拿全
+
+
+@app.post("/api/kb/ingest", summary="文本入库（md5 去重；首次自动建库）")
+async def kb_ingest(token: str = Query(...), req: dict = Body(...)):
+    """M3 评估+清洗：始终跑 evaluator(质量建议) + cleaner(脏内容清洗)。
+
+    防重复：req.message_id + req.force：
+      - message_id 非空且对应消息 kb_ingested=1 时 → 除非 force=True，否则拒入。
+      - 入库成功后自动把对应消息的 kb_ingested 置 1（仅 source_kind=export 的「导出报告」路径）。
+    """
+    sess = get_session(token)
+    username, aid = sess["username"], sess["account_id"]
+    title = (req.get("title") or "").strip()[:60]
+    content = (req.get("content") or "").strip()
+    source_kind = req.get("source_kind") or "paste"
+    message_id = req.get("message_id")
+    force = bool(req.get("force", False))
+    if not content:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "内容为空")
+    # -- 重复入库拦截：消息级 --
+    if message_id and not force:
+        try:
+            from tools.schema_personal import get_personal_conn
+            conn = get_personal_conn()
+            row = conn.execute(
+                "SELECT kb_ingested FROM messages m "
+                "JOIN conversations c ON c.id = m.conversation_id "
+                "WHERE m.id = ? AND c.account_id = ?",
+                (message_id, aid),
+            ).fetchone()
+            conn.close()
+            if row and (row["kb_ingested"] if isinstance(row, dict) else row[0]):
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    "该报告已入过知识库（force=true 强制再入）",
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            pass  # 查询失败不阻塞入库
+    try:
+        from rag_knowledge import cleaner
+        from rag_knowledge.evaluator import evaluate_doc
+        cleaned = cleaner.clean_for_kb(content)
+        needs_clean = cleaned != content
+        try:
+            verdict = evaluate_doc(title or "未命名", content)
+        except Exception as e:
+            verdict = {"quality_ok": True, "suggestion": "评估器异常，按可入库处理", "error": str(e)}
+    except Exception as e:
+        cleaned = content
+        needs_clean = False
+        verdict = {"quality_ok": True, "suggestion": "评估+清洗模块异常，原文入库", "error": str(e)}
+    from rag_knowledge.kb_service import ingest_text
+    r = ingest_text(username, title or "未命名文档", content, source_kind, account_id=aid)
+    if not r.get("ok"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, r.get("error", "入库失败"))
+    r["evaluation"] = verdict
+    r["cleaned_preview"] = cleaned[:800] if needs_clean else ""
+    r["needs_clean"] = needs_clean
+    # -- 入库成功：写回 messages.kb_ingested（仅导出报告路径，且消息归属当前账号）--
+    if message_id and source_kind == "export":
+        try:
+            from tools.schema_personal import get_personal_conn
+            conn = get_personal_conn()
+            conn.execute(
+                "UPDATE messages SET kb_ingested = 1 "
+                "WHERE id = ? AND conversation_id IN "
+                "(SELECT id FROM conversations WHERE account_id = ?)",
+                (message_id, aid),
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+    return r
+
+
+@app.post("/api/kb/evaluate", summary="入库评估（脏/质量建议 + 清洗预览）")
+async def kb_evaluate(token: str = Query(...), req: dict = Body(...)):
+    username = _kb_username(token)
+    title = (req.get("title") or "").strip()[:60]
+    content = (req.get("content") or "").strip()
+    from rag_knowledge import cleaner
+    from rag_knowledge.evaluator import evaluate_doc
+    cleaned = cleaner.clean_for_kb(content)
+    try:
+        verdict = evaluate_doc(title or "未命名", content)
+    except Exception as e:
+        verdict = {"error": str(e)}
+    return {"evaluation": verdict, "cleaned_preview": cleaned,
+            "needs_clean": cleaned != content}
+
+
+@app.post("/api/kb/upload", summary="上传 .md 文件入库（仅 md，批注 12）")
+async def kb_upload(token: str = Query(...), file: UploadFile = File(...)):
+    """M3 上传 .md 也跑评估+清洗（AI 报告脏内容重灾区）。"""
+    sess = get_session(token)
+    username, aid = sess["username"], sess["account_id"]
+    fname = file.filename or ""
+    if not fname.lower().endswith(".md"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "仅支持 .md 文件（文档同一性）")
+    raw = (await file.read()).decode("utf-8", errors="ignore")
+    title = fname[:-3] if fname.endswith(".md") else fname
+    try:
+        from rag_knowledge import cleaner
+        from rag_knowledge.evaluator import evaluate_doc
+        cleaned = cleaner.clean_for_kb(raw)
+        needs_clean = cleaned != raw
+        try:
+            verdict = evaluate_doc(title, raw)
+        except Exception as e:
+            verdict = {"quality_ok": True, "suggestion": "评估器异常，按可入库处理", "error": str(e)}
+    except Exception as e:
+        cleaned = raw
+        needs_clean = False
+        verdict = {"quality_ok": True, "suggestion": "评估+清洗模块异常，原文入库", "error": str(e)}
+    from rag_knowledge.kb_service import ingest_text
+    r = ingest_text(username, title, raw, "upload", account_id=aid)
+    if not r.get("ok"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, r.get("error", "入库失败"))
+    r["evaluation"] = verdict
+    r["cleaned_preview"] = cleaned[:800] if needs_clean else ""
+    r["needs_clean"] = needs_clean
+    return r
+
+
+@app.delete("/api/kb/docs/{source_id}", summary="删除库内文档")
+async def kb_delete_doc(source_id: str, token: str = Query(...)):
+    sess = get_session(token)
+    username, aid = sess["username"], sess["account_id"]
+    from rag_knowledge.kb_service import delete_doc
+    if not delete_doc(username, source_id, account_id=aid):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "文档不存在")
+    return {"ok": True}
+
+
+@app.post("/api/kb/query", summary="知识库检索测试（fast/full）")
+async def kb_query(token: str = Query(...), req: dict = Body(...)):
+    sess = get_session(token)
+    username, aid = sess["username"], sess["account_id"]
+    question = (req.get("question") or "").strip()
+    mode = req.get("mode") or "fast"
+    if not question:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "问题为空")
+    from rag_knowledge.kb_service import query, kb_exists
+    if not kb_exists(username, aid):
+        return {"hits": [], "empty": True}
+    hits = query(username, question, mode=mode, account_id=aid)
+    return {"hits": hits, "empty": False}
 
 
 # ----------------------------- WebSocket 实时进度 -----------------------------
@@ -710,6 +1099,375 @@ async def memory_save(req: cust.MemoryReq, token: str = Query(...)):
 async def memory_init(token: str = Query(...)):
     return cust.memory_initialize(token)
 
+# ----------------------------- 技能 SKILL.md（M4a） -----------------------------
+@app.get("/api/skills", summary="列出我的技能（含简介/字数）")
+async def skills_list(token: str = Query(...)):
+    return cust.skills_list(token)
+
+
+@app.get("/api/skills/get", summary="读取单个技能正文")
+async def skill_get(name: str = Query(...), token: str = Query(...)):
+    return cust.skill_get(token, name)
+
+
+@app.post("/api/skills/create", summary="新建技能（重名 409）")
+async def skill_create(req: cust.SkillReq, token: str = Query(...)):
+    return cust.skill_create(token, req)
+
+
+@app.post("/api/skills/save", summary="保存技能正文（不存在则创建）")
+async def skill_save(req: cust.SkillReq, token: str = Query(...)):
+    return cust.skill_save(token, req)
+
+
+@app.post("/api/skills/delete", summary="删除技能")
+async def skill_delete(req: cust.SkillReq, token: str = Query(...)):
+    return cust.skill_delete(token, req.name)
+
+# ----------------------------- M4b：CLI 面板（白名单沙箱执行） -----------------------------
+@app.get("/api/shell/allowed", summary="CLI 面板：白名单命令 + 沙箱目录")
+async def shell_allowed(token: str = Query(...)):
+    """返回白名单命令清单（面板底部命令栏 + Agent 提示共用同一份定义）。"""
+    sess = get_session(token)
+    return shell_runtime.allowed_commands(sess["username"], sess.get("account_id"))
+
+
+@app.post("/api/shell/exec", summary="CLI 面板：执行一条白名单命令（沙箱内）")
+async def shell_exec(req: dict = Body(...), token: str = Query(...)):
+    """在 `data/sandbox/{username}/` 里执行白名单命令。
+
+    安全拒绝（路径逃逸 / 非白名单命令 / curl 写了文件…）也返回 HTTP 200，
+    靠 `ok=false` + `error` 表达——面板按行渲染，不当成接口异常。
+    实际执行走 `asyncio.to_thread`，避免 ffmpeg 这类长命令阻塞 uvicorn 事件循环。
+    """
+    sess = get_session(token)
+    line = (req.get("command") or "").strip()
+    args = req.get("args")
+    timeout = req.get("timeout")
+    if not line and not args:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "命令不能为空")
+    if len(line) > 2000:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "命令过长（>2000 字符）")
+    if args is not None and not isinstance(args, list):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "args 必须是字符串数组")
+    acc = sess.get("account_id")
+    if args:
+        return await asyncio.to_thread(shell_runtime.execute, line, [str(a) for a in args],
+                                       timeout, sess["username"], acc)
+    return await asyncio.to_thread(shell_runtime.run_line, line, sess["username"], timeout, acc)
+
+
+# ----------------------------- M4c 自定义 CLI 接入配置 -----------------------------
+@app.get("/api/cli/list", summary="我的 CLI 配置 + 预填示例 + 本机检测")
+async def cli_list(token: str = Query(...)):
+    """**配置导向**：系统不预设厂商。返回该账号自己配置的 CLI（含只读清单与本机检测）+ 预填示例。
+
+    预填示例（飞书/企微/钉钉/Google）只是表单模板，不进白名单、不参与任何判定。
+    本机检测只看可执行文件与 npm 全局目录，**不执行任何第三方程序**。
+    """
+    sess = get_session(token)
+    acc = sess.get("account_id")
+    cli_reg.migrate_legacy(acc)          # 旧版内置厂商登记 → 搬进 user_clis（幂等，一次性）
+    items = cli_reg.list_clis(acc)
+    return {
+        "ok": True,
+        "states": cli_reg.STATES,
+        "items": items,
+        "templates": cli_reg.templates(),
+        "summary": {
+            "total": len(items),
+            "authed": sum(1 for i in items if i["state"] == "authed"),
+            "installed": sum(1 for i in items if i["state"] == "installed"),
+            "detected_local": sum(1 for i in items if i["detected"]["found"]),
+            "agent_live": sum(1 for i in items if i["live"]),
+            "with_rules": sum(1 for i in items if i["rules"]),
+        },
+    }
+
+
+@app.post("/api/cli/ability_draft", summary="M5：按 CLI 名称 + 只读清单生成「能力描述」草稿")
+async def cli_ability_draft(req: dict = Body(...), token: str = Query(...)):
+    """生成能力描述草稿（用户语言：触发关键词 + 用户说法→命令映射）。
+
+    **只返回草稿，不写库**——用户在表单里确认/修改后，走 /api/cli/save 保存。
+    描述里的命令必须来自该 CLI 的只读清单（清单为空则拒绝生成，先填清单）。
+    """
+    get_session(token)
+    return cust.cli_ability_generate(req.get("name") or "", req.get("bin") or "",
+                                     req.get("readonly") or "")
+
+
+@app.post("/api/cli/save", summary="自定义 CLI：新增 / 修改配置")
+async def cli_save(req: dict = Body(...), token: str = Query(...)):
+    """新增（`id` 留空）或修改一条 CLI 配置。
+
+    必填：名称、可执行名（纯名字，不含路径）；只读命令清单可留空——留空 = 不放行 Agent 代跑。
+    安装 / 认证命令只做展示，仍由你在自己的终端执行（本模块不代跑 npm / OAuth）。
+    """
+    sess = get_session(token)
+    try:
+        item = cli_reg.save_cli(sess.get("account_id"), req or {})
+    except cli_reg.CliConfigError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+    return {"ok": True, "item": item}
+
+
+@app.post("/api/cli/status", summary="自定义 CLI：登记 / 撤销接入状态（含备注）")
+async def cli_status(req: dict = Body(...), token: str = Query(...)):
+    """状态：none（未接入）/ installed（已装未认证）/ authed（已接入已授权）。"""
+    sess = get_session(token)
+    try:
+        item = cli_reg.set_state(sess.get("account_id"), req.get("id"),
+                                 (req.get("state") or "none").strip() or "none", req.get("note"))
+    except cli_reg.CliConfigError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+    return {"ok": True, "item": item}
+
+
+@app.post("/api/cli/delete", summary="自定义 CLI：删除配置（同时回收 Agent 代跑权限）")
+async def cli_delete(req: dict = Body(...), token: str = Query(...)):
+    sess = get_session(token)
+    if req.get("id") in (None, ""):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "缺少 id")
+    ok = cli_reg.delete_cli(sess.get("account_id"), req.get("id"))
+    if not ok:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "该 CLI 不存在（或不属于当前账号）")
+    return {"ok": True, "deleted": True}
+
+WX_CACHE_FILE = PROJECT_ROOT / "data" / "weather_cache.json"
+
+
+def _wx_load_disk():
+    """启动时把上次成功的天气灌进内存缓存 → 重启后首屏也是秒出（外网首次请求实测 ~16s）。"""
+    try:
+        if WX_CACHE_FILE.is_file():
+            data = json.loads(WX_CACHE_FILE.read_text(encoding="utf-8"))
+            for city, item in (data or {}).items():
+                if isinstance(item, dict) and item.get("payload"):
+                    _wx_cache[city] = (float(item.get("ts") or 0), item["payload"])
+    except Exception as e:  # noqa: BLE001 - 缓存坏了不影响功能
+        print("[天气] 磁盘缓存读取失败（忽略）: %s" % e)
+
+
+def _wx_save_disk():
+    try:
+        WX_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        WX_CACHE_FILE.write_text(
+            json.dumps({c: {"ts": ts, "payload": pl} for c, (ts, pl) in _wx_cache.items()},
+                       ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _wx_warm():
+    """启动后台预热默认城市（不阻塞启动；失败只打印一行）。"""
+    try:
+        city = DEFAULT_CITY
+        hit = _wx_cache.get(city)
+        if hit and time.time() - hit[0] < WEATHER_TTL:
+            return
+        data = _wx_fetch(city)
+        _wx_cache[city] = (time.time(), data)
+        _wx_save_disk()
+        print("[天气] 预热完成：%s %s°C %s" % (data.get("city"), data["now"].get("temp"), data["now"].get("text")))
+    except Exception as e:  # noqa: BLE001
+        print("[天气] 预热失败（不影响启动）: %s" % type(e).__name__)
+
+
+
+# ----------------------------- M4 收尾：工作台天气（Open-Meteo，免 Key，城市级） -----------------------------
+# 数据源：Open-Meteo（geocoding + forecast），完全免费、无需 API Key，支持城市级地理编码。
+# 策略：进程内缓存（城市坐标永久、天气 10 分钟），外网失败时降级直连重试（本机系统代理可能挡外部域名）。
+WMO_TEXT = {
+    0: ("晴", "☀️"), 1: ("晴间多云", "🌤️"), 2: ("多云", "⛅"), 3: ("阴", "☁️"),
+    45: ("雾", "🌫️"), 48: ("雾凇", "🌫️"),
+    51: ("毛毛雨", "🌦️"), 53: ("小雨", "🌦️"), 55: ("中雨", "🌧️"), 56: ("冻毛毛雨", "🌧️"), 57: ("冻雨", "🌧️"),
+    61: ("小雨", "🌧️"), 63: ("中雨", "🌧️"), 65: ("大雨", "🌧️"), 66: ("冻雨", "🌧️"), 67: ("强冻雨", "🌧️"),
+    71: ("小雪", "🌨️"), 73: ("中雪", "🌨️"), 75: ("大雪", "❄️"), 77: ("雪粒", "🌨️"),
+    80: ("阵雨", "🌦️"), 81: ("强阵雨", "🌧️"), 82: ("暴雨", "⛈️"), 85: ("阵雪", "🌨️"), 86: ("强阵雪", "❄️"),
+    95: ("雷阵雨", "⛈️"), 96: ("雷阵雨伴冰雹", "⛈️"), 99: ("强雷暴伴冰雹", "⛈️"),
+}
+WEATHER_TTL = 600          # 天气缓存 10 分钟（Open-Meteo 自身也是 15 分钟粒度）
+DEFAULT_CITY = os.getenv("WEATHER_CITY", "成都")
+_wx_cache: dict = {}       # {city: (ts, payload)}
+_wx_geo: dict = {}         # {city: geo dict}（城市坐标不变，永久缓存）
+
+
+def _wx_code(code):
+    try:
+        return WMO_TEXT.get(int(code), ("未知", "🌡️"))
+    except (TypeError, ValueError):
+        return ("未知", "🌡️")
+
+
+def _wx_json(url: str, params: dict) -> dict:
+    """取 JSON：先走环境（含系统代理），失败再降级直连重试一次。"""
+    try:
+        r = httpx.get(url, params=params, timeout=12.0)
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        with httpx.Client(trust_env=False, timeout=12.0) as c:
+            r = c.get(url, params=params)
+            r.raise_for_status()
+            return r.json()
+
+
+def _wx_geocode(city: str) -> dict:
+    key = (city or "").strip() or DEFAULT_CITY
+    if key in _wx_geo:
+        return _wx_geo[key]
+    d = _wx_json("https://geocoding-api.open-meteo.com/v1/search",
+                 {"name": key, "count": 1, "language": "zh", "format": "json"})
+    res = (d or {}).get("results") or []
+    if not res:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "没找到城市「%s」，换个写法试试（如：成都 / Chengdu）" % key)
+    g = res[0]
+    _wx_geo[key] = g
+    return g
+
+
+def _wx_fetch(city: str) -> dict:
+    g = _wx_geocode(city)
+    fc = _wx_json("https://api.open-meteo.com/v1/forecast", {
+        "latitude": g["latitude"], "longitude": g["longitude"],
+        "current": "temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation",
+        "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+        "timezone": "Asia/Shanghai", "forecast_days": 4,
+    })
+    cur = (fc or {}).get("current") or {}
+    daily = (fc or {}).get("daily") or {}
+    text, icon = _wx_code(cur.get("weather_code"))
+    days = []
+    for i, day in enumerate(daily.get("time") or []):
+        t, ic = _wx_code((daily.get("weather_code") or [None])[i])
+        days.append({"date": day, "text": t, "icon": ic,
+                     "tmax": (daily.get("temperature_2m_max") or [None])[i],
+                     "tmin": (daily.get("temperature_2m_min") or [None])[i],
+                     "rain": (daily.get("precipitation_probability_max") or [None])[i]})
+    label = g.get("name") or city
+    if g.get("admin1") and g.get("admin1") != g.get("name"):
+        label = "%s·%s" % (g.get("name"), g.get("admin1"))
+    return {
+        "ok": True, "city": label, "city_input": city,
+        "admin1": g.get("admin1"), "country": g.get("country"),
+        "lat": g.get("latitude"), "lon": g.get("longitude"),
+        "now": {"temp": cur.get("temperature_2m"), "feels": cur.get("apparent_temperature"),
+                "humidity": cur.get("relative_humidity_2m"), "wind": cur.get("wind_speed_10m"),
+                "rain_now": cur.get("precipitation"), "code": cur.get("weather_code"),
+                "text": text, "icon": icon, "time": cur.get("time")},
+        "daily": days,
+        "source": "open-meteo.com（免 Key）",
+        "updated": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+
+@app.get("/api/weather", summary="工作台天气（Open-Meteo，城市级，含 3 天预报）")
+async def weather(token: str = Query(...), city: str = Query(""), force: int = Query(0)):
+    """城市级实时天气 + 预报。city 留空取 .env 的 WEATHER_CITY（默认成都）。"""
+    get_session(token)
+    key = (city or "").strip() or DEFAULT_CITY
+    now = time.time()
+    hit = _wx_cache.get(key)
+    if hit and not force and now - hit[0] < WEATHER_TTL:
+        return hit[1]
+    try:
+        data = await asyncio.to_thread(_wx_fetch, key)
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001 - 外网异常统一转 502，别 500 抛栈
+        if hit:      # 有旧数据就先用旧的，比报错强
+            return {**hit[1], "stale": True, "warning": "天气刷新失败（%s），显示上次结果" % type(e).__name__}
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                            "天气服务不可用：%s（数据源 open-meteo.com，需要外网）" % type(e).__name__)
+    _wx_cache[key] = (now, data)
+    _wx_save_disk()
+    return data
+
+
+
+# ----------------------------- M4 收尾：教程指导（只读 md 阅读器 + 内联图片） -----------------------------
+# 对齐蜀道「政策文件只读阅读器」的做法：后端只读接口（目录/扩展名/白名单校验 + 防 ../ 穿越），
+# 前端手写 md 渲染器（零外部依赖、离线可用）。
+TUTORIAL_DIR = PROJECT_ROOT / "docs" / "v2.0" / "演示文档"
+TUTORIAL_MD = TUTORIAL_DIR / "演示文档.md"
+TUTORIAL_ASSETS = PROJECT_ROOT / "data" / "tutorial_assets"   # 运行时缓存（data/ 已 gitignore）
+TUTORIAL_IMG_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"}
+
+
+def _tutorial_roots() -> list[Path]:
+    """图片允许的来源目录（白名单）——文档同目录 + Typora 贴图目录（作者常把图贴到项目外）。"""
+    roots = [TUTORIAL_DIR]
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        roots.append(Path(appdata) / "Typora" / "typora-user-images")
+    return roots
+
+
+def _tutorial_sync_assets(md_text: str):
+    """把文档引用的图片按**文件名**同步到 data/tutorial_assets/，src 改写为 /tutorial-assets/<文件名>。
+
+    安全：只取 `Path(name).name`（挡绝对路径与 `../` 穿越）→ 只在白名单目录里查找 → 只处理图片扩展名；
+    对外只暴露**拷贝后的缓存目录**（静态挂载），不直接暴露用户目录。
+    找不到的图片整段剔除（避免裂图），并把原始路径回报给前端。
+    """
+    TUTORIAL_ASSETS.mkdir(parents=True, exist_ok=True)
+    images, missing = [], []
+
+    def _sync(name):
+        safe = Path(str(name).strip().strip('"').replace("\\", "/")).name
+        if not safe or Path(safe).suffix.lower() not in TUTORIAL_IMG_EXTS:
+            return None
+        dst = TUTORIAL_ASSETS / safe
+        for root in _tutorial_roots():
+            src = root / safe
+            try:
+                if src.is_file():
+                    if (not dst.is_file()) or src.stat().st_mtime > dst.stat().st_mtime:
+                        shutil.copy2(src, dst)
+                    return "/tutorial-assets/" + safe
+            except OSError:
+                continue
+        return None
+
+    def _sub(m):
+        alt, src = m.group(1), m.group(2)
+        url = _sync(src)
+        if url is None:
+            missing.append(src)
+            return ""
+        images.append({"alt": alt, "url": url})
+        return "![%s](%s)" % (alt, url)
+
+    return re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", _sub, md_text), images, missing
+
+
+@app.get("/api/tutorial/doc", summary="教程指导：只读读取演示文档（图片已内联到 /tutorial-assets）")
+async def tutorial_doc(token: str = Query(...)):
+    """只读返回教程 md（**不改文件**）：图片引用改写成静态资源 URL，前端直接渲染。"""
+    get_session(token)
+    if not TUTORIAL_MD.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "教程文档不存在：%s" % TUTORIAL_MD.name)
+    try:
+        text = TUTORIAL_MD.read_text(encoding="utf-8")
+        md, images, missing = _tutorial_sync_assets(text)
+        st = TUTORIAL_MD.stat()
+    except OSError as e:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "教程文档读取失败：%s" % e)
+    title = TUTORIAL_MD.stem
+    for ln in md.splitlines():
+        if ln.strip().startswith("# "):
+            title = ln.strip().lstrip("#").strip() or title
+            break
+    return {
+        "ok": True, "name": TUTORIAL_MD.name,
+        "path": str(TUTORIAL_MD.relative_to(PROJECT_ROOT)).replace("\\", "/"),
+        "title": title, "content": md, "images": images, "missing": missing,
+        "updated": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(st.st_mtime)),
+        "size": st.st_size,
+    }
+
+
 # ----------------------------- 语音朗读（voice_test 联动） -----------------------------
 @app.get("/api/voice/packs", summary="我的语音包列表（含当前选中）")
 async def voice_packs(token: str = Query(...)):
@@ -755,3 +1513,5 @@ async def index():
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR), html=False), name="static")
 # 背景图目录：pic/{username}/ 按账号隔离
 app.mount("/pic", StaticFiles(directory=str(cust.PIC_DIR), html=False), name="pic")
+TUTORIAL_ASSETS.mkdir(parents=True, exist_ok=True)   # 教程图片缓存目录（静态挂载要求目录存在）
+app.mount("/tutorial-assets", StaticFiles(directory=str(TUTORIAL_ASSETS), html=False), name="tutorial-assets")

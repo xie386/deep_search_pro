@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+# dspro 包装脚本（git-bash / WSL / macOS / Linux）：免激活 venv 直接跑 CLI。
+# 用法：./dspro login 用户名 密码  /  ./dspro list -digest  /  ./dspro digest "领域名"
+DIR=$(cd "$(dirname "$0")" && pwd)
+if [ -x "$DIR/.venv/Scripts/python.exe" ]; then
+  exec "$DIR/.venv/Scripts/python.exe" -m cli.main "$@"
+elif [ -x "$DIR/.venv/bin/python" ]; then
+  exec "$DIR/.venv/bin/python" -m cli.main "$@"
+fi
+exec python -m cli.main "$@"
