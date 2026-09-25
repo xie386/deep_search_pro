@@ -1,0 +1,11 @@
+{
+  "source": "flat-minimal-vector-app-icon--a-single-centered-pu.png",
+  "small_threshold": 32,
+  "small_crop": 0.0,
+  "accent_dot": {
+    "cx": 0.8711,
+    "cy": 0.8613,
+    "r": 0.0352,
+    "found_px": 1090
+  }
+}

@@ -27,7 +27,33 @@ sys.path = [p for p in sys.path if "hermes-agent" not in p and "hermes_agent" no
 
 from dotenv import load_dotenv
 
+from agent import answer_text
+
 load_dotenv(_PROJECT_ROOT / ".env")
+
+# ============================================================
+# ★ 周报「扫描说明」格式契约（单一来源，2026-09-24 收口）
+#
+# 这段措辞同时被三处依赖：
+#   ① 生成侧 A：`prompt/prompts.yml` 的 digest 段（让【定期情报周报助手】按此写头部）
+#   ② 生成侧 B：本文件的 task_prompt「输出要求」（让主 Agent 也按此产出）
+#   ③ 解析侧：SCAN_LINE_RE 从周报正文里抠「扫描 N 条 / 精选 M 条」用于落库统计
+#
+# 历史教训：措辞一旦漂移，③ 会**静默解析失败**——M4 期真实发生过"周报内容齐全、
+# 统计却记 0 条"（当时还叠了 markdown 加粗没容忍的问题）。所以：契约写成常量、
+# 解析正则紧挨着它、并在 import 期自检两侧一致（`_SCAN_CONTRACT_OK`）。
+# 改这里 ⇒ 必须同步改 prompts.yml 的 digest 段与 SCAN_LINE_RE。
+# ============================================================
+SCAN_LINE_CONTRACT = "本次共扫描 N 条候选，精选出 M 条"          # 给模型看的措辞（N/M 为占位）
+SCAN_LINE_SAMPLE = "本次共扫描 12 条候选，精选出 8 条"            # 自检用样例（真实数字）
+SCAN_LINE_RE = re.compile(
+    r"共扫描\s*\*{0,2}\s*(\d+)\s*\*{0,2}\s*条候选[，,]\s*精选出\s*\*{0,2}\s*(\d+)\s*\*{0,2}\s*条"
+)
+_SCAN_CONTRACT_OK = bool(SCAN_LINE_RE.search(SCAN_LINE_SAMPLE))
+if not _SCAN_CONTRACT_OK:   # 只告警不抛：周报格式坏了不该让整个应用起不来
+    print("[digest][契约告警] 扫描说明格式常量与解析正则不一致——请同步 "
+          "agent/digest_engine.py 的 SCAN_LINE_* 与 prompt/prompts.yml 的 digest 段")
+
 
 MAX_BATCHES = 8          # 单次 digest 检索批次硬上限
 DAYS_WINDOW = 7          # 时间窗：近 N 天
@@ -182,7 +208,7 @@ def run_digest(sub_id: int, owner_id: int, conn=None) -> dict:
 
 【输出要求】
 - 只输出周报 Markdown 正文，从 "## 📰" 开始到 "*由智选情报官自动生成*" 结束。
-- 周报头部扫描说明格式：本次共扫描 N 条候选，精选出 M 条（N/M 为真实数字）。
+- 周报头部扫描说明格式：{SCAN_LINE_CONTRACT}（N/M 为真实数字）。
 """
 
         digest_main_prompt = main_agent_content["system_prompt"] + f"""
@@ -197,8 +223,13 @@ def run_digest(sub_id: int, owner_id: int, conn=None) -> dict:
             subagents=[network_search_agent, digest_agent],
         )
         result = agent.invoke({"messages": [HumanMessage(content=task_prompt)]})
-        answer = result["messages"][-1].content or ""
-        answer = answer.strip()
+        # ★ 2026-09-24：与聊天同一处修复 —— 推理模型偶尔把正文写进 reasoning_content、
+        #   content 为空；直接取 messages[-1].content 会拿到空串（在这里表现为
+        #   「主 Agent 未产出有效周报内容」）。统一走 agent.answer_text 提取。
+        answer, _ans_src = answer_text.final_answer(result["messages"])
+        if _ans_src == answer_text.SOURCE_REASONING:
+            print("[digest] 模型未返回正文，已用其思考内容回填")
+        answer = (answer or "").strip()
 
         # 3. 清洗：去掉可能的代码围栏，取 markdown 主体
         md = _extract_markdown(answer)
@@ -206,7 +237,8 @@ def run_digest(sub_id: int, owner_id: int, conn=None) -> dict:
             return {"ok": False, "error": "主 Agent 未产出有效周报内容", "raw": answer[:200]}
 
         # 4. 解析统计口径（真实数字来自周报头部；容忍 markdown 加粗 **N** 包裹）
-        m = re.search(r"共扫描\s*\*{0,2}\s*(\d+)\s*\*{0,2}\s*条候选[，,]\s*精选出\s*\*{0,2}\s*(\d+)\s*\*{0,2}\s*条", md)
+        # 契约见文件顶部 SCAN_LINE_CONTRACT / SCAN_LINE_RE（改一处必须同步另一侧）
+        m = SCAN_LINE_RE.search(md)
         scanned = int(m.group(1)) if m else 0
         item_count = int(m.group(2)) if m else 0
         # 正则未命中时回退：数"🔍"来源标记作为最低可信精选数（避免真实内容被记 0）

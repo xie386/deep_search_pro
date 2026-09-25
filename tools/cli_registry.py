@@ -569,6 +569,159 @@ def _parse_ability_pairs(abilities: str) -> list[tuple[str, str]]:
     return pairs
 
 
+# ------------------------------------------- M5：能力描述草稿 —— help 真值与审计
+# 背景（2026-09-24 用户报障）：能力描述撰写 AI 原先只拿到「命令名清单」，没有任何依据，只能望文生义
+# —— 实测 13 条映射里 3 条错，且**全错在需要判断力的地方**（哪些命令要 ID、哪条是「书名→ID」的解析器）。
+# 现在改成：文档（tools/cli_docs.py）当语义依据 + 这里的 **help 真值**当校验依据。
+
+HELP_TIMEOUT = 10          # 单条 --help 最多等 10s（实测本机 CLI 都在 1s 内返回）
+_USAGE_RE = re.compile(r"^\s*Usage:\s*(.+)$", re.M)
+_POS_ARG_RE = re.compile(r"<([^>]{1,40})>")
+_UPPER_ARG_RE = re.compile(r"(?<![A-Z0-9_])([A-Z][A-Z0-9_]{2,})(?![A-Z0-9_])")
+_NOT_POSITIONAL = {"USAGE", "OPTIONS", "OPTION", "COMMAND", "COMMANDS", "ARGS", "ARG", "HELP", "FLAGS", "FILE"}
+
+
+def classify_usage(usage: str) -> str:
+    """按命令行帮助的 Usage 行判断命令形态。
+
+    三类，含义与**能不能直接调**一一对应：
+      · `needs_id`   —— 有位置参数且参数名以 id 结尾（`<bookId>`）→ 需要先解析出 ID，
+                       **必须作为两步链的第 2 步**（直调会报参数错）；
+      · `free_text`  —— 有位置参数但是自由文本（`<title>` / `<keyword>`）→ 可以当两步链的第 1 步；
+      · `standalone` —— 没有位置参数 → 直接可调，**不能当两步链的第 2 步**（前一步的产出喂不进去）。
+    """
+    u = (usage or "").strip()
+    if not u:
+        return "unknown"
+    names = [x.strip() for x in _POS_ARG_RE.findall(u) if x.strip()]
+    if not names:
+        names = [x for x in _UPPER_ARG_RE.findall(u) if x not in _NOT_POSITIONAL]
+    if not names:
+        return "standalone"
+    for n in names:
+        if re.search(r"id$", n, re.I):
+            return "needs_id"
+    return "free_text"
+
+
+def collect_help(bin_name: str, cmds: list[str], *, username: str | None = None,
+                 account_id: int | None = None, timeout: int = HELP_TIMEOUT) -> dict:
+    """逐条跑 `<bin> <cmd> --help`，拿**本机真值**（走沙箱运行时，口径不放宽）。
+
+    为什么复用运行时而不是自己起 subprocess：超时、输出截断、环境净化、cwd 沙箱、审计日志都在那里；
+    而且它**照旧执行只读闸**（`adhoc` 只是把「用户此刻表单里的清单」当作该 CLI 的规则）。
+    `--help` 不在写标志里；裸 `<bin> --help` 会被判「缺少子命令」→ 只能采**已放行子命令**的 help，
+    这正好符合 M4c「清单 = 放行范围」的边界。
+    """
+    from tools._runtime import shell_runtime as rt          # 局部 import：运行时也 import 本模块，避免循环
+
+    rules = [[t for t in c.split() if t] for c in cmds]
+    adhoc = {bin_name: rules}
+    out: dict[str, dict] = {}
+    for c in cmds:
+        tokens = c.split()
+        got = {"ok": False, "usage": "", "desc": "", "kind": "unknown", "error": ""}
+        for flag in ("--help", "-h"):                       # 少数 CLI 只认 -h
+            res = rt.execute(bin_name, tokens + [flag], timeout=timeout, username=username,
+                             account_id=account_id, adhoc=adhoc)
+            text = ((res.get("stdout") or "") + "\n" + (res.get("stderr") or "")).strip()
+            m = _USAGE_RE.search(text)
+            if m:
+                lines = [l.strip() for l in text.splitlines() if l.strip()]
+                idx = next((i for i, l in enumerate(lines) if l.lower().startswith("usage:")), 0)
+                got = {"ok": True, "usage": m.group(1).strip(),
+                       "desc": lines[idx + 1] if idx + 1 < len(lines) else "",
+                       "kind": classify_usage(m.group(1)), "error": ""}
+                break
+            got["error"] = res.get("error") or (res.get("stderr") or "").strip()[:120] or "没有输出 Usage 行"
+        out[c] = got
+    return out
+
+
+def suggest_resolver(kinds: dict[str, str], help_map: dict | None = None) -> str:
+    """在清单里挑一条「最像解析器」的命令（两步链的第 1 步用）。
+
+    优先：自由文本参数 + help 描述里出现 resolve / 解析 / to id 之类字样
+    （`book resolve <title>` 的原文就是 "Resolve a book title to likely bookId matches"）。
+    挑不到就退回第一条自由文本命令。
+    """
+    free = [c for c, k in (kinds or {}).items() if k == "free_text"]
+    if not free:
+        return ""
+    hm = help_map or {}
+    for c in free:
+        desc = ((hm.get(c) or {}).get("desc") or "") + " " + ((hm.get(c) or {}).get("usage") or "")
+        if re.search(r"resolve|resolution|解析|lookup|likely\s+id|\bid\s+matches?", desc, re.I):
+            return c
+    return free[0]
+
+
+def _match_command(rhs: str, cmds: list[str]) -> str:
+    """把映射右半边（可能带参数/前缀）匹配到清单里最长的一条命令路径。"""
+    hit = ""
+    for c in cmds:
+        if rhs == c or rhs.startswith(c + " ") or rhs.startswith(c):
+            if len(c) > len(hit):
+                hit = c
+    return hit
+
+
+def audit_ability_draft(abilities: str, kinds: dict[str, str], help_map: dict | None = None) -> list[str]:
+    """审计能力描述草稿，返回**给人看的中文警告**（空列表 = 没问题）。
+
+    四条规则全部来自 `--help` 真值，不猜：
+      R1 直调了需要 ID 的命令（`book progress`）→ 应写成「<解析命令> 再 book progress」；
+      R2 两步链的第 1 步自己就需要 ID（链头直接报参数错）；
+      R3 两步链的第 2 步是 standalone（不需要参数 → 前一步产出喂不进去 = 凭空造链）；
+      R4 两步链的第 1 步是 standalone（不产出可解析 ID）。
+    配套 `coverage_note()` 提示「清单里哪些命令没被描述到」。
+    """
+    cmds = list((kinds or {}).keys())
+    warns: list[str] = []
+    for seg in re.split(r"[；;\n|]", abilities or ""):
+        if not _ARROW_RE.search(seg):
+            continue
+        lhs, rhs = _ARROW_RE.split(seg, maxsplit=1)
+        rhs = rhs.strip().strip("。.,，、")
+        if not rhs:
+            continue
+        chain = bool(re.search(r"再|然后|接着", rhs))
+        steps = [x.strip() for x in re.split(r"再|然后|接着", rhs)] if chain else [rhs]
+        first = _match_command(steps[0], cmds)
+        second = _match_command(steps[1], cmds) if len(steps) > 1 else ""
+        trigger = lhs.strip().strip("。.,，、：:")[:24]
+        if not first and not second:
+            # 右半边匹配不到清单里任何命令 → 提醒（这条示例会被 ability_examples 丢掉）
+            # ⚠️ 别用「首词是否出现在某条命令里」判：`shelf books` 与 `shelf list` 共享首词，会被漏掉
+            shown = " ".join(steps[0].split()[:3])
+            warns.append("「%s」右边的 `%s` 不在只读清单里（该示例会被丢弃，不会被教给 Agent）"
+                         % (trigger, shown))
+            continue
+        k1 = (kinds or {}).get(first, "") if first else ""
+        k2 = (kinds or {}).get(second, "") if second else ""
+        if not chain and k1 == "needs_id":
+            sug = suggest_resolver(kinds, help_map)
+            hint = ("建议写成「%s 再 %s」" % (sug, first)) if sug else "它需要先拿到 ID 才能调"
+            warns.append("「%s」直调了需要 ID 的 `%s`——%s" % (trigger, first, hint))
+        elif chain and k1 == "needs_id":
+            warns.append("「%s」两步链的第 1 步 `%s` 自己就需要 ID，会直接报参数错" % (trigger, first))
+        elif chain and k2 == "standalone":
+            warns.append("「%s」两步链的第 2 步 `%s` 不需要参数——第 1 步的产出喂不进去（凭空造链）"
+                         % (trigger, second))
+        elif chain and k1 == "standalone":
+            warns.append("「%s」两步链的第 1 步 `%s` 不产出可解析的 ID" % (trigger, first))
+    return warns
+
+
+def coverage_note(abilities: str, cmds: list[str]) -> str:
+    """草稿没覆盖到的命令（提示用户可补 help 文本再生成一次）。"""
+    text = abilities or ""
+    miss = [c for c in cmds if c not in text and c.split()[0] not in text]
+    if not miss:
+        return ""
+    return "只读清单里有 %d 条命令没被描述到：%s" % (len(miss), "、".join(miss[:8]) + ("…" if len(miss) > 8 else ""))
+
+
 def ability_examples(account_id: int | None, max_n: int = 10, max_per_cli: int = 10) -> list[str]:
     """M5：从各 CLI 的能力描述里抽「用户说法 → 工具调用」对照，供 few-shot 注入。
 

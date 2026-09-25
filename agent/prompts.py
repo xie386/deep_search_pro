@@ -25,8 +25,13 @@ prompt_yaml_content = load_yaml(yaml_file_path)
 
 # main_agent_content
 main_agent_content = prompt_yaml_content["main_agent"]
-print(main_agent_content,"\n")
+# ⚠️ 调试打印已注释（2026-09-22）：import 阶段把整份提示词打到 stdout，
+#    ① 每次启动刷一屏无用输出；② 在中文 Windows 上，当 stdout 是文件/管道时按 GBK 编码，
+#    提示词里的 emoji（🔍 等）编不出来 → UnicodeEncodeError → **进程 import 阶段直接崩**
+#    （桌面版双击崩溃、`uvicorn > server.log`、`dspro list > out.txt` 全都踩这个）。
+# 需要时临时打开：os.getenv("DS_DEBUG_PROMPTS") == "1"
+# print(main_agent_content, "\n")
 # sub_agents_content
 sub_agents_content = prompt_yaml_content["sub_agents"]
 
-print(sub_agents_content,"\n")
+# print(sub_agents_content, "\n")

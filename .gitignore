@@ -52,3 +52,8 @@ nul
 
 # ── RAG 知识库（M3：每用户向量库 + 入库记录，用户数据）──
 rag_knowledge/db/
+
+# 桌面版外壳日志（本机运行时产物）
+static/desktop/desktop.log
+static/desktop/backend.log
+data/desktop_webview/

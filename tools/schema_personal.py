@@ -103,6 +103,18 @@ def ensure_tables() -> None:
                 created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
             );
 
+            -- ===== 登录会话（★ 2026-09-23 由「进程内内存字典」改为落库）=====
+            -- 为什么改：桌面版「记住登录」把 token 存在浏览器 localStorage 里，而桌面壳每次
+            -- 重开都会新起一个后端进程 —— 内存版会话一重启就全失效，用户看到的是
+            -- 「界面已登录、工作台数据全是 0、天气卡报未登录或登录已失效」（用户实测报障）。
+            -- 落库后 token 跨后端重启仍然有效；表里只存 token→账号 的映射，
+            -- 用户名/角色/昵称等**运行时从 accounts 联查**，避免资料改了会话里还是旧值。
+            CREATE TABLE IF NOT EXISTS sessions (
+                token      TEXT PRIMARY KEY,
+                account_id INTEGER NOT NULL REFERENCES accounts(id),
+                login_at   REAL NOT NULL
+            );
+
             -- ===== 个人侧（M1.5 已有，此处幂等声明）=====
             CREATE TABLE IF NOT EXISTS products (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,

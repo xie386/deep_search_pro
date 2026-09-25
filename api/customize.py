@@ -327,31 +327,104 @@ def get_soul_content(aid: int) -> str:
 
 
 # ============================ CLI 能力描述生成 AI（M5）============================
-def cli_ability_generate(name: str, bin_name: str, rules_text: str) -> dict:
-    """按「CLI 名称 + 只读命令清单」生成一段能力描述草稿（用户语言）。
+def cli_ability_generate(name: str, bin_name: str, rules_text: str, *, docs: str = "",
+                         help_text: str = "", username: str | None = None,
+                         account_id: int | None = None, refresh_docs: bool = False) -> dict:
+    """按证据生成「CLI 能力描述」草稿（用户语言）。**只生成草稿，不落库**。
 
     用途：M5 工具智能路由第一层——这段描述会进主 Agent 的系统提示词，
-    让它在用户说人话时想起该用这个 CLI。**只生成草稿，不落库**：用户在表单里改完再保存
-    （与 M4c「只读清单必须人给」的边界一致：能力描述影响"路由"，不影响"放行"）。
+    让它在用户说人话时想起该用这个 CLI。
+
+    证据分层（2026-09-24 用户拍板，实测：只给命令名时 13 条映射有 3 条错，全错在「要 ID」这类判断上）：
+      ① **语义层**：用户填的 `docs` 地址（一般是 CLI 的 GitHub README）→ 抓取后作为**唯一事实来源**；
+         它的用法示例能表达「引号里的书名 = 自由文本」「裸数字 = ID」这类关键区别。
+      ② **校验层**：逐条跑 `<bin> <cmd> --help`（走沙箱运行时 + 只读闸），得到每条命令的形态
+         （`needs_id` / `free_text` / `standalone`）——**以表格形式**给模型当事实（不是塞原始 help，
+         那里面 `Get /book/info` 这类噪音只会干扰），并在生成后用于**审计草稿**。
+      ③ **兜底**：文档抓不到 / 文档没覆盖那条命令 → 用 help 原文补位 → 用户粘贴的 `help_text` 补位
+         → 都没有就保守化（宁可少写一条，也不编造）。
     """
     import yaml
-    from langchain_core.messages import HumanMessage
-    from agent.llm import model as default_model
 
     name = (name or "").strip() or "该 CLI"
+    bin_name = (bin_name or "").strip()
     rules_text = (rules_text or "").strip()
     if not rules_text:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "请先填好「只读命令清单」再生成能力描述——描述里的命令必须来自这份清单")
+
+    # ---- 清单解析（与保存时同一套：只保留子命令路径）
+    from tools import cli_registry as reg
+    rules, _notes = reg.parse_rules(rules_text, bin_name)
+    cmds = [" ".join(r) for r in rules]
+
+    # ---- 证据 ①：官方文档
+    from tools import cli_docs
+    doc = cli_docs.fetch_docs(docs, force=refresh_docs) if docs else {
+        "ok": False, "text": "", "note": "没填文档地址", "url": "", "source": ""}
+    doc_text = cli_docs.extract_evidence(doc["text"], cmds, bin_name) if doc["ok"] else ""
+    covered, missing = cli_docs.coverage(doc["text"], cmds) if doc["ok"] else ([], list(cmds))
+
+    # ---- 证据 ②：help 真值（要 bin 才能采；采不到不影响生成，只降级）
+    help_map: dict = {}
+    help_ok = 0
+    if bin_name:
+        try:
+            help_map = reg.collect_help(bin_name, cmds, username=username, account_id=account_id)
+            help_ok = sum(1 for v in help_map.values() if v["ok"])
+        except Exception as e:  # noqa: BLE001 - 采集失败不该让草稿生成整个挂掉
+            print(f"[ability] help 采集失败（降级为仅文档依据）: {type(e).__name__}: {e}")
+    kinds = {c: v["kind"] for c, v in help_map.items()}
+
+    # ---- 拼证据包
+    def _kind_table() -> str:
+        if not help_map:
+            return ""
+        lines = ["| 命令 | 形态 | 依据（本机 --help） |", "| --- | --- | --- |"]
+        label = {"needs_id": "需要 ID（**不能直调**）", "free_text": "自由文本参数",
+                 "standalone": "无参数直调", "unknown": "未知"}
+        for c, v in help_map.items():
+            lines.append("| `%s` | %s | %s |" % (
+                c, label.get(v["kind"], "未知"),
+                (v["usage"] or v["error"] or "")[:80]))
+        return "\n".join(lines)
+
+    parts = ["CLI 名称：%s\n可执行名：%s" % (name, bin_name or "(未填)")]
+    if doc_text:
+        parts.append("【官方文档（**唯一事实来源**）——来自 %s】\n%s" % (doc["url"], doc_text))
+    else:
+        parts.append("【官方文档】未提供或抓取失败（%s）" % (doc["note"] or "无"))
+    if missing and doc_text:
+        parts.append("【文档未覆盖的命令】以下命令文档里没写，**不要为它们编造能力描述**：%s"
+                     % "、".join(missing))
+    if help_map:
+        head = "【本机实测的真值表（逐条跑过 --help）】"
+        tail = ("\n（文档未覆盖的命令，这里补上 help 原文供你判断：\n%s\n）"
+                % "\n".join("- `%s`: %s | %s" % (c, help_map[c]["usage"], help_map[c]["desc"])
+                            for c in missing if c in help_map)) if missing else ""
+        parts.append(head + "\n" + _kind_table() + tail)
+    if (help_text or "").strip():
+        parts.append("【用户粘贴的帮助文本（文档没覆盖时以它为准）】\n%s" % help_text.strip()[:6000])
+    parts.append("【允许出现的命令（只能从这份只读清单里挑，逐字原样）】\n%s" % rules_text)
+    parts.append(
+        "# 本次的硬规则（严格按上面的证据判断，**不要凭命令名猜**）\n"
+        "1. 形态是「需要 ID」的命令**不能直调**，必须写成两步链的第 2 步；第 1 步用能拿到 ID 的那条命令"
+        "（文档/help 里说明是解析用途的那条，如 `book resolve`）；\n"
+        "2. 形态是「自由文本参数」的命令可以作两步链的第 1 步；「无参数直调」的命令**不能**作第 2 步"
+        "（前一步的产出喂不进去）——**不要编造这种链**；\n"
+        "3. 两条证据都没有提到的能力，**不要写**（宁可少写一条，也不要编造子命令语义）；\n"
+        "4. 只输出规定格式的两行内容（关键词行 + 映射行），不要解释。")
+    user_msg = "\n\n".join(parts)
+
+    # ---- 生成
     try:
         yml_path = _PROJECT_ROOT / "prompt" / "prompts.yml"
         cfg = yaml.safe_load(yml_path.read_text(encoding="utf-8"))
         sys_prompt = cfg["ability_writer"]["system_prompt"]
     except Exception as e:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"读取能力描述提示词失败：{e}")
-    user_msg = (f"CLI 名称：{name}\n可执行名：{bin_name or name}\n"
-                f"只读命令清单（只能从这里挑命令）：\n{rules_text}\n\n请为它生成能力描述。")
     try:
+        from agent.llm import model as default_model
         resp = default_model.invoke(
             [{"role": "system", "content": sys_prompt},
              {"role": "user", "content": user_msg}]
@@ -361,7 +434,23 @@ def cli_ability_generate(name: str, bin_name: str, rules_text: str) -> dict:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"生成失败：{type(e).__name__}: {e}")
     if not text:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "模型没有返回内容，请重试")
-    return {"content": text}
+
+    # ---- 审计（纯代码，零模型）：把「需要 ID 却直调」「凭空造链」直接指出来
+    warnings = reg.audit_ability_draft(text, kinds, help_map)
+    note = reg.coverage_note(text, cmds)
+    if note:
+        warnings.append(note + "（可把该命令的 `--help` 文本粘到「帮助文本」里再生成一次）")
+
+    return {
+        "content": text,
+        "evidence": {
+            "docs": {"ok": bool(doc["ok"]), "url": doc["url"], "source": doc["source"],
+                     "note": doc["note"], "covered": len(covered), "missing": missing},
+            "help": {"ok": help_ok, "total": len(cmds)},
+            "commands": len(cmds),
+        },
+        "warnings": warnings,
+    }
 
 
 # ============================ 人格生成 AI ============================

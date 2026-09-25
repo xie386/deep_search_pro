@@ -24,6 +24,30 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# ── 外部搜索配额保护开关（2026-09-24 用户提出：Tavily 额度紧张时用）─────────────
+# STUB_WEBSEARCH=1 时，把 Tavily 的真实检索换成**离线桩**（返回固定内容的假结果），
+# 于是模型即便委派【网络搜索助手】也不消耗额度。必须在 `from api import server` **之前**
+# 替换，因为子 Agent 的工具列表是在 import 期装配的（`agent/subagents/network_search_agent.py`
+# 直接引用 `tools.tavily_tool.internet_search`，而后者在调用时才查 `_search_once`）。
+# 桩只影响「检索返回什么内容」，不影响「模型是否决定调用工具」——A/B 对比仍然有效。
+_STUB_WEBSEARCH = os.environ.get("STUB_WEBSEARCH") == "1"
+_WEBSTUB = {"n": 0, "queries": []}
+if _STUB_WEBSEARCH:
+    from tools import tavily_tool as _tt
+
+    def _stub_search_once(query, topic, max_results, include_raw_content, days, strict_days):
+        _WEBSTUB["n"] += 1
+        _WEBSTUB["queries"].append(str(query)[:60])
+        print("  [webstub] 模型委派了网搜（第 %d 次，不消耗额度）：query=%s" % (_WEBSTUB["n"], query))
+        return {"stub": True, "query": query, "topic": topic,
+                "results": [{"title": "【离线桩】%s" % str(query)[:24],
+                             "url": "https://stub.local/%d" % _WEBSTUB["n"],
+                             "content": "（离线桩结果：为节省外部搜索额度返回的固定内容，非真实数据）",
+                             "published_date": "2026-09-23T00:00:00Z"}]}
+
+    _tt._search_once = _stub_search_once
+    print("[stub] Tavily 检索已替换为离线桩（STUB_WEBSEARCH=1）：本轮不消耗搜索额度\n")
+
 from fastapi.testclient import TestClient  # noqa: E402
 
 from api import server  # noqa: E402
@@ -204,6 +228,12 @@ def _calls_of_thread(account_id: int, thread_id: str) -> list[list[str]]:
 
 
 # --------------------------------------------------------------------------- 环境
+# 按账号建目录的根（**purge_account 只管库表，目录得自己清**）。
+# 2026-09-24 实测：库里 0 个 m5p 账号时，data/sandbox/ 下还躺着 6 个孤儿目录 ——
+# 因为旧版 _drop_account 只删了 agents_docs/{username}，把 CLI 沙箱目录漏掉了。
+_ACCOUNT_DIR_ROOTS = ("agents_docs", "output", "pic", "data/sandbox", "data/tts_ref", "rag_knowledge/db")
+
+
 def _account_id(username: str):
     conn = get_personal_conn()
     try:
@@ -213,20 +243,82 @@ def _account_id(username: str):
         conn.close()
 
 
+def _account_dirs(username: str) -> list:
+    """该账号在各「按账号建目录」的根下真实存在的目录（多半不存在）。"""
+    out = []
+    for rel in _ACCOUNT_DIR_ROOTS:
+        d = os.path.join(ROOT, *rel.split("/"), username)
+        if os.path.isdir(d):
+            out.append(d)
+    return out
+
+
 def _drop_account(username: str) -> bool:
+    """删账号（库表 + 磁盘目录）。目录不删干净 = 残留，见 _ACCOUNT_DIR_ROOTS 的注释。"""
     import shutil
     from tools.schema_personal import purge_account
     conn = get_personal_conn()
     try:
         row = conn.execute("SELECT id FROM accounts WHERE username=?", (username,)).fetchone()
-        if not row:
-            return False
-        aid = row["id"]
+        aid = row["id"] if row else None
     finally:
         conn.close()
-    purge_account(aid)      # 自省表结构，新增账号域表不用再改这里
-    shutil.rmtree(os.path.join(ROOT, "agents_docs", username), ignore_errors=True)
-    return True
+    if aid is not None:
+        purge_account(aid)      # 自省表结构，新增账号域表不用再改这里
+    for d in _account_dirs(username):
+        shutil.rmtree(d, ignore_errors=True)
+    return aid is not None
+
+
+def _sweep_stale(keep: str = "", minutes: int = 60) -> int:
+    """启动时兜底回收**历史残留**：① 老的 m5p_* 账号 ② 没有账号的 m5p_* 孤儿目录。
+
+    为什么需要：本脚本原来只在**正常结束**路径里清理，一旦被 kill（Ctrl+C / 超时 / 被编辑器
+    停止）就漏 —— 2026-09-24 实测：一次被 kill 的 A/B 运行留下 1 个账号
+    （m5p_0924002607，连会话与工具链数据都在库里）+ 目录，另有 6 个更早运行留下的孤儿沙箱目录。
+
+    minutes 守卫：只回收 created_at 早于 N 分钟前的账号，避免误删**并发运行中**的另一轮探针
+    账号（本脚本本来就要求「探针组不可并发跑」，这里再加一道保险）。
+    ⚠️ accounts.created_at 是 SQLite CURRENT_TIMESTAMP（**UTC**）——比较必须用 UTC 时间；
+    用本地时间比会差 8 小时，把刚建的账号当成老的删掉（这里用 datetime.now(timezone.utc)）。
+    """
+    import shutil
+    from tools.schema_personal import purge_account
+    # ⚠️ 不用 SQL 的 LIKE \_ / ESCAPE（反斜杠转义在多层字符串里极易写坏，实测踩过）：
+    #    在 Python 侧过滤 —— 用户名判前缀、时间比字符串（UTC 的 YYYY-MM-DD HH:MM:SS 可直接字典序比）。
+    from datetime import datetime, timedelta, timezone
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_personal_conn()
+    try:
+        rows = conn.execute("SELECT id, username, created_at FROM accounts").fetchall()
+        stale = [(r["id"], r["username"]) for r in rows
+                 if r["username"].startswith("m5p_") and r["username"] != keep
+                 and str(r["created_at"] or "") < cutoff]
+        live = {r["username"] for r in rows}
+    finally:
+        conn.close()
+
+    n = 0
+    for aid, uname in stale:
+        purge_account(aid)
+        for d in _account_dirs(uname):
+            shutil.rmtree(d, ignore_errors=True)
+        print("   [回收] 历史残留账号 %s(#%s) 及其目录" % (uname, aid))
+        n += 1
+
+    for rel in _ACCOUNT_DIR_ROOTS:          # 账号早被删、目录留下的孤儿
+        base = os.path.join(ROOT, *rel.split("/"))
+        if not os.path.isdir(base):
+            continue
+        for name in os.listdir(base):
+            if not (name.startswith("m5p_") and name != keep and name not in live):
+                continue
+            d = os.path.join(base, name)
+            if os.path.isdir(d):
+                shutil.rmtree(d, ignore_errors=True)
+                print("   [回收] 孤儿目录 %s" % os.path.relpath(d, ROOT))
+                n += 1
+    return n
 
 
 def _ask(c: TestClient, token: str, question: str) -> tuple[int, str, str]:
@@ -246,6 +338,10 @@ def main():
     print("\n=== M5a 自然语言探针组（真机）%s ===" % ("［对照组：M4c 命令名形态］" if CONTROL else ""))
     print("隔离账号：%s | SKIP_LLM=%s | M5_CONTROL=%s\n" % (USER, SKIP_LLM, CONTROL))
     ensure_tables()
+
+    swept = _sweep_stale(keep=USER)
+    check("历史残留已回收（被 kill 的那轮留下的账号/目录）", True,
+          "本轮回收 %d 项" % swept if swept else "无残留")
 
     c = TestClient(server.app)
     rr = c.post("/api/register", json={"username": USER, "password": PWD, "role": "personal"})

@@ -20,6 +20,7 @@
 import io
 import os
 import re
+import subprocess
 import sys
 import time
 
@@ -110,7 +111,14 @@ def main():
     check("★ doLogin 里已无 /api/register 调用（自动建号已移除）",
           "api/register" not in login_body)
     check("doLogin 处理 404（账号不存在）分支", "r.status === 404" in login_body)
-    check("doLogin 成功分支仍写 sessionStorage", "sessionStorage.setItem('zx_token'" in login_body)
+    # ★ 2026-09-23 修正过期断言：桌面版把 sessionStorage 换成了 _store 抽象
+    #   （storeSet/storeClear：桌面走 localStorage、网页走 sessionStorage），
+    #   字面量 `sessionStorage.setItem('zx_token'` 在 doLogin 里已经不存在了。
+    #   断言意图是「登录成功后 token 被持久化」，按抽象层断言才对（否则是个假失败）。
+    check("doLogin 成功分支持久化 token（storeSet('zx_token')）",
+          "storeSet('zx_token'" in login_body)
+    check("doLogin 里没有绕过抽象层直写 storage（防回归）",
+          "sessionStorage.setItem" not in login_body and "localStorage.setItem" not in login_body)
 
     m_reg = re.search(r"async function doRegister\(\)[\s\S]*?\n    \}", SRC)
     reg_body = m_reg.group(0) if m_reg else ""
@@ -156,6 +164,49 @@ def main():
     check("测试账号已全部删除（不留残留）",
           not (_account_names() & {REAL, TYPO, "x_%s" % SUF, "合法用户_%s" % SUF}),
           sorted(_account_names() & {REAL, TYPO}))
+
+    # ------------------------------------------------------------------ [7]
+    # ★ 2026-09-23 用户报障修的回归：会话必须**跨后端重启**仍然有效。
+    #   背景：会话原来是进程内内存字典（`_SESSIONS = {}`），而桌面壳每次重开都会**新起一个
+    #   后端进程** —— 前端 localStorage 里还留着旧 token，于是表现为「界面已登录、数据全是 0」
+    #   （用户截图：兴趣/关注/收藏全 0、天气卡报「未登录或登录已失效」；手动重登即恢复）。
+    #   这里用**真·新进程**校验，而不是 reload 模块（reload 语义不可靠，验不出真问题）。
+    print("\n[7] ★ 会话跨后端重启仍然有效（桌面版「记住登录」的前提）")
+    _r = c.post("/api/login", json={"username": "尼古喵喵", "password": "123456"})
+    _tok = (_r.json() or {}).get("token") if _r.status_code == 200 else None
+    check("用真实账号登录拿到 token", bool(_tok), _r.status_code)
+    if _tok:
+        _conn = get_personal_conn()
+        try:
+            _row = _conn.execute("SELECT account_id FROM sessions WHERE token=?", (_tok,)).fetchone()
+        finally:
+            _conn.close()
+        check("★ 会话已落库（sessions 表里有这一行；内存版不会有）",
+              bool(_row), dict(_row) if _row else None)
+
+        _code = ("import sys; sys.path.insert(0, %r)\n"
+                 "from api.account import get_session\n"
+                 "s = get_session(%r)\n"
+                 "print('SESSION_OK', s['account_id'], s['username'])\n") % (ROOT, _tok)
+        _pr = subprocess.run([sys.executable, "-c", _code], cwd=ROOT, capture_output=True,
+                             text=True, encoding="utf-8", errors="replace", timeout=180)
+        _out = (_pr.stdout or "") + (_pr.stderr or "")
+        check("★★ 全新进程（= 后端重启）里旧 token 仍然有效", "SESSION_OK" in _out,
+              _out.strip().splitlines()[-1][:120] if _out.strip() else "（无输出）")
+
+        _r2 = c.get("/api/me/overview", params={"token": _tok})
+        check("★ 用旧 token 取总览是 200（不是 401）", _r2.status_code == 200, _r2.status_code)
+        _d2 = _r2.json() if _r2.status_code == 200 else {}
+        _counts = {k: len(_d2.get(k) or []) for k in ("interests", "watchlist", "products")}
+        check("★ 取到的是真数据而不是空（用户报障的现象就是全 0）",
+              any(_counts.values()), _counts)
+
+        c.post("/api/logout", params={"token": _tok})
+        _pr2 = subprocess.run([sys.executable, "-c", _code], cwd=ROOT, capture_output=True,
+                              text=True, encoding="utf-8", errors="replace", timeout=180)
+        _out2 = (_pr2.stdout or "") + (_pr2.stderr or "")
+        check("退出后旧 token 在新进程里失效（不再出现 SESSION_OK）",
+              "SESSION_OK" not in _out2, "returncode=%s" % _pr2.returncode)
 
     print("\n" + "=" * 60)
     print("登录/注册两卡分离 e2e：通过 %d，失败 %d" % (len(PASS), len(FAIL)))

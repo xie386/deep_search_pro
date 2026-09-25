@@ -407,16 +407,25 @@ def _result(ok: bool, *, stdout: str = "", stderr: str = "", error: str | None =
 
 
 def execute(command: str, args: list[str] | None = None, timeout: int | None = None,
-            username: str | None = None, account_id: int | None = None) -> dict:
+            username: str | None = None, account_id: int | None = None,
+            adhoc: dict | None = None) -> dict:
     """执行一条白名单命令。返回结构化结果，永不抛异常（安全拒绝也走 ok=False）。
 
     `account_id` 决定「已接入的第三方 CLI」动态白名单；拿不到就不放行（fail closed）。
+
+    `adhoc`：**仅供服务端「CLI 能力描述草稿」接口**用于「用户正在表单里编、还没保存」的 CLI
+    （形态 `{bin: 解析后的只读规则}`）。它**不放宽任何口径**——仍然逐条走
+    `cli_registry.readonly_verdict`（未列出的子命令、落盘参数照旧拒绝），只是把用户此刻
+    表单里的清单当作该 CLI 的规则；调用方（`api/customize.cli_ability_generate`）只拿它跑
+    `<bin> <cmd> --help`（只读探测）。Agent 侧的工具入口**不传**这个参数。
     """
     args = list(args or [])
     command = (command or "").strip()
     sandbox = sandbox_dir(username)
     meta = ALLOWED_COMMANDS.get(command)
     dyn = None if meta is not None else cli_registry.allowed_for_agent(account_id).get(command)
+    if dyn is None and meta is None and adhoc and command in adhoc:
+        dyn = {"readonly": adhoc[command], "adhoc": True}
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
     uname = _safe_username(username)
 
@@ -484,7 +493,8 @@ def execute(command: str, args: list[str] | None = None, timeout: int | None = N
                 "rejected": msg, "cwd": str(sandbox)})
         return _result(False, error=msg, command=command, args=args, cwd=str(sandbox))
 
-    runtime_cap = int(meta["max_runtime"]) if meta is not None else int(dyn["max_runtime"])
+    # adhoc（服务端草稿接口）只给了 readonly、没有 max_runtime → 用默认上限兜底
+    runtime_cap = int(meta["max_runtime"]) if meta is not None else int(dyn.get("max_runtime") or 30)
     limit = max(1, min(int(timeout or DEFAULT_TIMEOUT), runtime_cap))
     try:
         proc = subprocess.run([exe, *args], cwd=str(sandbox), capture_output=True,
@@ -509,7 +519,7 @@ def execute(command: str, args: list[str] | None = None, timeout: int | None = N
              "returncode": proc.returncode, "elapsed": round(el, 2), "cwd": str(sandbox),
              "stdout_len": len(stdout), "stderr_len": len(stderr)}
     if dyn is not None:
-        entry["third_party"] = dyn["cli_id"]
+        entry["third_party"] = dyn.get("cli_id") or ("adhoc:" + command)
     _audit(entry)
     return _result(proc.returncode == 0, stdout=stdout, stderr=stderr,
                    returncode=proc.returncode, elapsed=el, command=command, args=args,

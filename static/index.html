@@ -244,6 +244,9 @@
       position: relative; overflow: hidden;
       transition: all .4s ease;
       text-decoration: none;
+      font-family: inherit;            /* ↓ 三行：让 <button> 版和原来的 <a> 版长得一模一样 */
+      appearance: none; -webkit-appearance: none;
+      line-height: 1.2;
     }
     .dl-btn::before {
       content: ""; position: absolute; inset: 0;
@@ -642,6 +645,11 @@
     /* M5：能力描述（工具智能路由——决定 AI 何时想起用这个 CLI） */
     .cli-ability-help { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
     .cli-ability-help .sk-tip { flex: 1 1 320px; margin: 0; line-height: 1.6; }
+    /* 草稿证据与审计（2026-09-24）：告诉用户「读了哪份文档、覆盖几条」，以及审计发现的可疑映射 */
+    .cli-draft-note { flex: 1 1 100%; font-size: 12px; line-height: 1.6; }
+    .cli-draft-note .ev { color: var(--muted); }
+    .cli-draft-note .warn { color: #d97706; }
+    .cli-draft-note ul { margin: 4px 0 0; padding-left: 18px; }
     .cli-ability { white-space: pre-wrap; font-size: 12px; line-height: 1.65; color: var(--text);
                    background: rgba(34,130,244,.06); border-left: 3px solid #2282f4;
                    border-radius: 0 8px 8px 0; padding: 8px 12px; margin-top: 6px; }
@@ -1156,6 +1164,210 @@
       box-shadow: 0 10px 30px rgba(0,0,0,.5); animation: slide-in .3s ease;
     }
     .toast.err { background: rgba(69,10,10,.95); border-color: #b91c1c; color: #fecaca; }
+
+
+    /* ============================================================================
+       015 号设计：表单「色块跟踪」体系（理念派生自 014 purple-slide-login）
+       ---------------------------------------------------------------------------
+       核心三条（与 014 同源，只是把「纵向滑落的紫带」改造成「横向滑过来的绿块」）：
+         ① 一块跟踪色块：谁被悬停/聚焦，绿块就从左侧滑过来吞掉那一段（纯 CSS，零 JS）；
+            机制同 014：色块是**负数 z-index 的伪元素**，会盖住宿主自己的背景
+            （CSS 绘制顺序里 negative-z 子元素在元素背景之后绘制），所以输入框一旦透明化
+            绿块就直接透出来——这就是「反相」的实现。
+         ② 反相是唯一反馈语言：被跟踪时输入框让位给绿块、文字/下划线转墨色、硬投影收掉。
+         ③ 表单面是「纸片」：墨色硬边 + 对角切角（左上/右下小圆角、右上/左下大圆角）+ 左侧实心硬边。
+       配色（用户指定）：表单基色 #FFF81F ／ 跟踪色块 #88F529
+       作用范围：个人信息表单、报告（Digest 订阅）、定制助手三处的表单卡片与「行」；
+                 默认输入框组件（.m-input / textarea.ta）全局替换为 004 neon-shadow 的
+                 **无包裹层版**（原组件靠 topline/underline 两个 span，这里改用 background-image
+                 渐变做同一件事，不必给项目里 80+ 个输入框加 DOM）。
+       ============================================================================ */
+    :root {
+      --form-base: #FFF81F;      /* 表单基色（淡黄） */
+      --form-track: #88F529;     /* 跟踪色块（绿） */
+      --form-ink: #111a06;       /* 黄/绿底上的墨色（与 #FFF81F 对比度 ≈ 16:1） */
+      --form-ink-soft: rgba(17, 26, 6, .74);
+      --form-paper: #FFFDF2;     /* 输入框纸面 */
+    }
+
+    /* ---------- ① 表单面：黄底 + 极淡斜纹 + 顶部高光 + 墨色硬边/对角切角 ---------- */
+    .p-card, .cust-card, .sub-card {
+      position: relative;
+      background-color: var(--form-base);
+      background-image:
+        repeating-linear-gradient(135deg, rgba(17, 26, 6, .045) 0 2px, transparent 2px 9px),
+        linear-gradient(180deg, #FFFBA6 0%, #FFF81F 46%, #FFEE55 100%);
+      border: 2px solid var(--form-ink);
+      border-radius: 4px 18px 4px 18px;
+      box-shadow: -9px 0 0 0 var(--form-ink), -9px 6px 6px rgba(0, 0, 0, .18),
+                  inset 0 2px 0 rgba(255, 255, 255, .5);
+      color: var(--form-ink);
+    }
+    .p-card h3, .cust-card h3 { color: var(--form-ink); }
+    /* 小标题前的绿色标签（黄底上的绿，呼应跟踪色） */
+    .p-card h3::before, .cust-card h3::before {
+      content: ""; width: 10px; height: 10px; border-radius: 2px;
+      background: var(--form-track); border: 2px solid var(--form-ink);
+      box-shadow: 2px 2px 0 0 var(--form-ink);
+      flex: 0 0 auto;
+    }
+    /* 黄底上次级文字要加深，否则发灰看不清 */
+    .cust-tip, .fg label, .list-edit-row + .add-form label, .p-card .muted, .cust-card .muted,
+    .sub-card .muted, .p-card .hint, .cust-card .hint {
+      color: var(--form-ink-soft);
+    }
+    /* 订阅卡的结构行在项目里**本来没有 CSS**（靠输入框默认 inline-block 偶然对齐）→ 顺手写实 */
+    .sub-list { display: flex; flex-direction: column; }
+    .sub-card { display: flex; gap: 12px; align-items: flex-start; }
+    .sub-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 9px; }
+    .sub-row1, .sub-row2 { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .sub-card .sub-ck { margin-top: 2px; }
+    /* 「个人选购 / 公司竞品」由淡灰小字改成墨边小胶囊（黄底上才立得住） */
+    .sub-scope {
+      flex: 0 0 auto; padding: 4px 9px; border: 2px solid var(--form-ink); border-radius: 3px;
+      background: var(--form-paper); color: var(--form-ink); font-weight: 700; font-size: 11.5px;
+    }
+    .sub-en { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; color: var(--form-ink); }
+
+    /* ---------- ② 跟踪色块：从左侧滑过来吞掉「你正在操作的那一段」 ---------- */
+    .list-edit-row, .list-edit-col, .prov-row, .sub-card, .add-form .fg, .soul-switch {
+      position: relative;
+      isolation: isolate;
+      border-radius: 8px;
+    }
+    .list-edit-row::before, .list-edit-col::before, .prov-row::before,
+    .add-form .fg::before, .soul-switch::before {
+      content: ""; position: absolute; inset: -5px; z-index: -1; border-radius: 8px;
+      background: var(--form-track); box-shadow: inset 0 0 0 2px var(--form-ink);
+      transform: scaleX(.02); transform-origin: left center; opacity: 0;
+      transition: transform .30s cubic-bezier(.22, 1, .36, 1), opacity .18s ease;
+    }
+    /* 订阅卡的跟踪块沿用卡片的对角切角，避免绿块与纸片边缘错位 */
+    .sub-card::before {
+      content: ""; position: absolute; inset: -2px; z-index: -1; border-radius: 14px 4px 14px 4px;
+      background: var(--form-track); box-shadow: inset 0 0 0 2px var(--form-ink);
+      transform: scaleX(.02); transform-origin: left center; opacity: 0;
+      transition: transform .34s cubic-bezier(.22, 1, .36, 1), opacity .2s ease;
+    }
+    .list-edit-row:hover::before, .list-edit-row:focus-within::before,
+    .list-edit-col:hover::before, .list-edit-col:focus-within::before,
+    .prov-row:hover::before, .prov-row:focus-within::before,
+    .add-form .fg:hover::before, .add-form .fg:focus-within::before,
+    .soul-switch:hover::before, .soul-switch:focus-within::before,
+    .sub-card:hover::before, .sub-card:focus-within::before {
+      transform: scaleX(1);
+      opacity: 1;
+    }
+
+    /* ---------- ③ 反相：被跟踪时输入框让位给绿块，文字与下划线转墨色 ---------- */
+    .list-edit-row:hover .m-input, .list-edit-row:focus-within .m-input,
+    .list-edit-col:hover .m-input, .list-edit-col:focus-within .m-input,
+    .prov-row:hover .m-input, .prov-row:focus-within .m-input,
+    .add-form .fg:hover .m-input, .add-form .fg:focus-within .m-input,
+    .soul-switch:hover .m-input, .soul-switch:focus-within .m-input,
+    .sub-card:hover .m-input, .sub-card:focus-within .m-input {
+      background-color: transparent;
+      box-shadow: none;
+      border-color: var(--form-ink);
+      background-image: linear-gradient(var(--form-ink), var(--form-ink));
+      background-size: 100% 3px;
+      color: var(--form-ink);
+    }
+    .sub-card:hover select.m-input, .sub-card:focus-within select.m-input,
+    .prov-row:hover select.m-input {
+      background-image: linear-gradient(var(--form-ink), var(--form-ink)),
+                        url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%23111a06' stroke-width='2.2' stroke-linecap='square'/></svg>");
+    }
+    .list-edit-row:hover .m-input::placeholder, .prov-row:hover .m-input::placeholder,
+    .sub-card:hover .m-input::placeholder, .add-form .fg:hover .m-input::placeholder {
+      color: rgba(17, 26, 6, .58);
+    }
+
+    /* ---------- ④ 默认输入框组件（004 neon-shadow 的无包裹层版） ---------- */
+    .m-input, .fg .m-input, select.m-input, textarea.ta, textarea.m-input {
+      border: 2px solid var(--form-ink);
+      border-top: none;
+      border-bottom: none;
+      border-radius: 3px;
+      padding: 8px 10px 9px;
+      background-color: var(--form-paper);
+      color: var(--form-ink);
+      font-family: inherit;
+      box-shadow: 3px 3px 0 0 var(--form-ink);
+      background-image: linear-gradient(var(--form-track), var(--form-track));
+      background-repeat: no-repeat;
+      background-position: left bottom;
+      background-size: 0% 3px;
+      outline: none;
+      transition: box-shadow .26s ease, background-size .45s cubic-bezier(.22, 1, .36, 1),
+                  background-color .26s ease, border-color .26s ease, color .26s ease;
+    }
+    .m-input::placeholder, textarea.ta::placeholder { color: var(--form-ink-soft); }
+    /* 聚焦：硬投影收掉（004 的标志性动作）+ 绿色下划线从左展开 */
+    .m-input:focus, textarea.ta:focus {
+      box-shadow: none;
+      background-color: #FFFFFF;
+      background-size: 100% 4px;
+      border-color: var(--form-ink);
+    }
+    /* 下拉框：去掉原生外观换成墨色雪佛龙（否则 background-image 会吃掉原生箭头） */
+    select.m-input {
+      appearance: none; -webkit-appearance: none; padding-right: 30px;
+      background-image: linear-gradient(var(--form-track), var(--form-track)),
+                        url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%23111a06' stroke-width='2.2' stroke-linecap='square'/></svg>");
+      background-repeat: no-repeat, no-repeat;
+      background-position: left bottom, right 9px center;
+      background-size: 0% 3px, 12px 8px;
+    }
+    select.m-input:focus { background-size: 100% 3px, 12px 8px; }
+    select.m-input option { color: var(--form-ink); background: var(--form-paper); }
+    /* 多行文本：块状元素保留上下描边（开口形态只适合单行输入） */
+    textarea.ta, textarea.m-input {
+      border-top: 2px solid var(--form-ink); border-bottom: 2px solid var(--form-ink);
+    }
+
+    /* ---------- ⑤ 表单内的按钮：同一套硬投影，悬停/按下时「压下去」 ---------- */
+    .p-card .mini-btn, .cust-card .mini-btn, .sub-card .mini-btn {
+      border: 2px solid var(--form-ink); border-radius: 3px;
+      padding: 7px 12px; font-size: 12.5px; font-weight: 700;
+      background: var(--form-paper); color: var(--form-ink);
+      box-shadow: 3px 3px 0 0 var(--form-ink);
+      transition: box-shadow .22s ease, transform .14s ease, background .22s ease, color .22s ease;
+    }
+    .p-card .mini-btn:hover, .cust-card .mini-btn:hover, .sub-card .mini-btn:hover {
+      background: var(--form-ink); color: var(--form-base);
+      transform: translate(2px, 2px); box-shadow: 1px 1px 0 0 var(--form-ink);
+    }
+    .p-card .mini-btn:active, .cust-card .mini-btn:active, .sub-card .mini-btn:active {
+      transform: translate(3px, 3px); box-shadow: none;
+    }
+    /* 危险按钮：投影改红（黄底上仍看得清），悬停反相成红底黄字 */
+    .p-card .mini-btn.danger, .p-card .mini-btn.del,
+    .cust-card .mini-btn.del, .sub-card .mini-btn.del {
+      border-color: #A8220F; color: #A8220F; box-shadow: 3px 3px 0 0 #A8220F;
+    }
+    .p-card .mini-btn.danger:hover, .p-card .mini-btn.del:hover,
+    .cust-card .mini-btn.del:hover, .sub-card .mini-btn.del:hover {
+      background: #A8220F; color: var(--form-base); box-shadow: 1px 1px 0 0 #A8220F;
+    }
+    /* 「使用中 / 启用」：绿色实心（跟踪色的静态用法） */
+    .cust-card .mini-btn.act.on, .sub-card .mini-btn.act.on {
+      background: var(--form-track); color: var(--form-ink); box-shadow: 3px 3px 0 0 var(--form-ink);
+    }
+    .p-card .del-x, .cust-card .del-x { color: var(--form-ink-soft); font-size: 17px; line-height: 1; }
+    .p-card .del-x:hover, .cust-card .del-x:hover { color: #A8220F; }
+
+    /* ---------- ⑥ 勾选标记跟着跟踪色 ---------- */
+    .sub-card .brut-mark, .p-card .brut-mark { border-color: var(--form-ink); }
+    .sub-card input:checked ~ .brut-mark, .p-card input:checked ~ .brut-mark {
+      background: var(--form-track); border-color: var(--form-ink);
+    }
+
+    /* ---------- ⑦ 新增行/区域的虚线分隔：黄底上用墨色虚点更干净 ---------- */
+    .add-form { border-top: 2px dashed rgba(17, 26, 6, .3); }
+    .prov-row, .list-edit-row { row-gap: 10px; }
+    .prov-row .m-input { min-width: 96px; }
+    .prov-row .prov-key { min-width: 130px; }
   </style>
 </head>
 <body>
@@ -1996,16 +2208,21 @@
             <td>{{ r.item_count }}</td>
             <td>{{ r.created_at }}</td>
             <td>
-              <a v-if="r.download_md" :href="r.download_md" class="dl-btn">
+              <button v-if="r.download_md" type="button" class="dl-btn" @click="openReport(r)">
+                <span class="dl-circle"></span>
+                <svg class="dl-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 6.5C10.5 5 8.4 4.2 5 4.2v13.6c3.4 0 5.5.8 7 2.3 1.5-1.5 3.6-2.3 7-2.3V4.2c-3.4 0-5.5.8-7 2.3z"/><path d="M12 6.5v13.6"/></svg>
+                <span class="dl-text">阅读</span>
+              </button>
+              <button v-if="r.download_md" type="button" class="dl-btn" style="margin-left:8px" @click="downloadReport(r, 'md')">
                 <span class="dl-circle"></span>
                 <svg class="dl-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14m0 0l-4-4m4 4l4-4"/></svg>
                 <span class="dl-text">MD↓</span>
-              </a>
-              <a v-if="r.download_pdf" :href="r.download_pdf" class="dl-btn" style="margin-left:8px">
+              </button>
+              <button v-if="r.download_pdf" type="button" class="dl-btn" style="margin-left:8px" @click="downloadReport(r, 'pdf')">
                 <span class="dl-circle"></span>
                 <svg class="dl-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14m0 0l-4-4m4 4l4-4"/></svg>
                 <span class="dl-text">PDF↓</span>
-              </a>
+              </button>
             </td>
           </tr>
           <tr v-if="reports.length===0"><td colspan="4" class="thinking">还没有报告。点右上「立即生成一期」试试。</td></tr>
@@ -2215,7 +2432,17 @@
                   右侧命令<b>必须来自上面的只读清单</b>——不在清单里的会被自动丢弃（免得教 AI 去调一条会被拒绝的命令）。
                   需要 <b>ID 参数</b>的命令（如 <code>book info</code> / <code>reviews list</code>）要写成<b>两步链</b>：<code>书评怎么样→book resolve 再 reviews list</code>（系统取链上第一步做示例）；直接写详情命令会让 AI 拿着书名去调、必然报参数错。
                 </span>
+                <div class="cli-draft-note" v-if="cliDraftInfo || cliDraftWarns.length">
+                  <div class="ev" v-if="cliDraftInfo">📄 {{ cliDraftInfo }}</div>
+                  <ul v-if="cliDraftWarns.length">
+                    <li class="warn" v-for="(w, i) in cliDraftWarns" :key="i">⚠ {{ w }}</li>
+                  </ul>
+                </div>
               </div>
+              <label class="wide">帮助文本（可选）：文档没写到的命令，把它在本机的 <code>--help</code> 输出粘进来
+                <textarea v-model="cliForm.helpText" rows="3"
+                          placeholder="例：weread reviews list --help 的输出。生成时以「文档 &gt; 粘贴的帮助文本 &gt; 真值表」为准"></textarea>
+              </label>
               <label class="wide">备注
                 <input v-model="cliForm.note" placeholder="版本号 / 遇到的问题，可留空" />
               </label>
@@ -2349,6 +2576,23 @@
         </div>
         <div class="tut-body md-doc" v-if="!tutLoading" v-html="tutHtml"></div>
         <div class="tut-body" v-else><p class="tut-tip">正在读取教程…</p></div>
+      </div>
+    </div>
+
+    <!-- 周报应用内阅读页（M5c）：与教程阅读页**同构**（复用 .tutorial-view/.tut-*/.md-doc 这一套样式），
+         内容来自 output/{user}/ 下已落盘的 md —— 走与「下载」完全相同的 /api/download，仅前端自己渲染。 -->
+    <div class="view tutorial-view" v-show="view === 'reader'">
+      <div class="tut-wrap">
+        <div class="tut-head">
+          <button class="bubbles tut-back" @click="readerBack()"><span class="text">← 返回</span></button>
+          <div class="tut-title">
+            <h2>📖 {{ readerTitle }}</h2>
+            <p class="tut-sub"><code>{{ readerMeta }}</code></p>
+          </div>
+          <button class="bubbles tut-reload" @click="openReport(readerItem, true)"><span class="text">↻ 重新读取</span></button>
+        </div>
+        <div class="tut-body md-doc" v-if="!readerLoading" v-html="readerHtml"></div>
+        <div class="tut-body" v-else><p class="tut-tip">正在读取周报…</p></div>
       </div>
     </div>
 
@@ -2502,9 +2746,104 @@ const { createApp, ref, reactive, computed, nextTick, onMounted, watch } = Vue;
 
 createApp({
   setup() {
-    const token = ref(sessionStorage.getItem('zx_token') || '');
-    const username = ref(sessionStorage.getItem('zx_user') || '');
-    const role = ref(sessionStorage.getItem('zx_role') || 'personal');
+    // ---------- 桌面版适配（P0）----------
+    // 桌面外壳加载页面时带 ?desktop=1。**用 URL 判断而不是 window.pywebview**：
+    // URL 在 setup 阶段同步可读，而 pywebview 是页面加载后才异步注入的（时序坑）。
+    const IS_DESKTOP = /[?&]desktop=1/.test(location.search);
+    // 桌面版用 localStorage（关窗后登录态还在）；网页版保持原样用 sessionStorage（行为不变）
+    const _store = (() => {
+      try { return IS_DESKTOP ? window.localStorage : window.sessionStorage; }
+      catch (e) { return window.sessionStorage; }
+    })();
+    const _USES_LOCAL_STORAGE = IS_DESKTOP;
+    function storeGet(k) { try { return _store.getItem(k) || ''; } catch (e) { return ''; } }
+    function storeSet(k, v) { try { _store.setItem(k, v); } catch (e) {} }
+    function storeClear() { try { _store.clear(); } catch (e) {} }
+    // 取原生能力：浏览器里返回 null，调用处一律 if (api && ...) 兜底
+    function desktopApi() {
+      return (IS_DESKTOP && window.pywebview && window.pywebview.api) ? window.pywebview.api : null;
+    }
+
+    // ★ 统一的「把某个 URL 保存成文件」入口（全站导出/下载都走它）
+    //   桌面版：fetch 回字节 → base64 → 原生「另存为」（**WebView2 不支持浏览器式下载，
+    //           直接给 <a href> 会静默丢弃，文件哪都找不到** —— 实测踩过）
+    //   网页版：<a download> 触发浏览器下载（不再用 location.href，避免整页跳转）
+    async function saveFromUrl(fileUrl, filename) {
+      const api = desktopApi();
+      if (api && api.save_binary_b64) {
+        const resp = await fetch(fileUrl);
+        if (!resp.ok) {
+          const msg = '取回文件失败：HTTP ' + resp.status;
+          showToast(msg, true);
+          return { ok: false, error: msg, native: true };
+        }
+        const buf = new Uint8Array(await resp.arrayBuffer());
+        let bin = ''; const CH = 0x8000;   // 分块拼接，避免超长参数一次性 apply 爆栈
+        for (let i = 0; i < buf.length; i += CH) bin += String.fromCharCode.apply(null, buf.subarray(i, i + CH));
+        const res = await api.save_binary_b64(filename || '导出.md', btoa(bin));
+        if (res && res.ok) { showToast('已保存到：' + res.path); return { ok: true, path: res.path, native: true }; }
+        if (res && res.cancelled) { return { ok: false, cancelled: true, native: true }; }   // 用户取消，不打扰
+        const emsg = (res && res.error) || '未知错误';
+        showToast('保存失败：' + emsg, true);
+        return { ok: false, error: emsg, native: true };
+      }
+      const a = document.createElement('a');
+      a.href = fileUrl;
+      if (filename) a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      showToast('已开始下载：' + (filename || '文件'));
+      return { ok: true, native: false };
+    }
+
+    // 从下载 URL 里取文件名（后端给的 download_md/download_pdf 带 ?name=xxx）
+    function nameFromUrl(fileUrl, fallback) {
+      try {
+        const m = /[?&]name=([^&]+)/.exec(fileUrl || '');
+        if (m) return decodeURIComponent(m[1]);
+      } catch (e) {}
+      return fallback || '导出.md';
+    }
+
+    // 桌面版：把「正在忙什么」写到托盘提示（空串=回到空闲）。网页版是空操作。
+    // 用途：周报要生成几十秒~几分钟，用户多半已把窗口收进托盘/最小化——托盘上能看到进度，
+    // 就不用盯着窗口猜"它到底在干活吗"。
+    function desktopStatus(text) {
+      const api = desktopApi();
+      if (api && api.set_status) { try { api.set_status(text || ''); } catch (e) {} }
+    }
+
+    // ★ 登录态失效处理（2026-09-23 用户报障修）：清掉本地登录态、回登录页并说明原因。
+    //   背景：token 存在 localStorage（桌面版「记住登录」），但后端重启会让旧 token 失效。
+    //   老代码只判"token 非空"就渲染工作台，各接口 401 又被静默吞掉（loadMyData 里
+    //   `if (!r.ok) return;`）→ 用户看到「已登录、但兴趣/关注/收藏全是 0、天气卡报未登录或登录已失效」。
+    //   注意：只清**鉴权相关的键**，不要 storeClear()——那会把背景图等偏好一起清掉。
+    function forceLogout(msg) {
+      try {
+        ['zx_token', 'zx_user', 'zx_role'].forEach(k => _store.removeItem(k));
+      } catch (e) {}
+      if (ws) { try { ws.close(); } catch (e) {} wsTarget = ''; }
+      token.value = ''; username.value = ''; password.value = '';
+      errMsg.value = msg || '';
+      authMode.value = 'login';
+      if (msg) showToast(msg, true);
+    }
+
+    // 启动时验一次登录态：只有后端认这个 token，才算真登录（返回 true=有效）
+    async function verifySession() {
+      try {
+        const r = await fetch('/api/me/overview?token=' + encodeURIComponent(token.value));
+        if (r.status === 401) { forceLogout('登录已失效，请重新登录'); return false; }
+        return r.ok;
+      } catch (e) {
+        return true;   // 网络抖动不当作失效，避免把能用的登录态误踢掉
+      }
+    }
+
+    const token = ref(storeGet('zx_token'));
+    const username = ref(storeGet('zx_user'));
+    const role = ref(storeGet('zx_role') || 'personal');
     const regRole = ref('personal');
     const password = ref('');
     const errMsg = ref('');
@@ -2691,6 +3030,7 @@ createApp({
       const ids = subs.value.filter(s => s._sel && s.enabled).map(s => s.id);
       if (!ids.length) { showToast('请先勾选要生成的订阅', true); return; }
       digestRunning.value = true;
+      desktopStatus('正在生成周报…');
       try {
         const r = await fetch('/api/digest/run?token=' + encodeURIComponent(token.value), {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2702,8 +3042,45 @@ createApp({
         newReports.value = 0;
         await loadReports();
       } catch (e) { showToast('出错：' + e.message, true); }
-      finally { digestRunning.value = false; }
+      finally { digestRunning.value = false; desktopStatus(''); }
     }
+
+    // ---------- 桌面版：托盘调用的 hook（外壳用 window.evaluate_js 触发；网页版存在但无害）----------
+    // ★ 为什么托盘动作走这里而不是外壳自己发请求：前端已有「取订阅 → 生成 → 刷新列表 → 提示」
+    //   的完整逻辑，外壳重写一遍会重复实现，还会把 token 搬到页面之外。
+    async function desktopRunDigest() {
+      if (!token.value) { showToast('请先登录再生成周报', true); return; }
+      if (!subs.value.length) { try { await loadSubs(); } catch (e) {} }
+      const ids = subs.value.filter(s => s.enabled).map(s => s.id);   // 托盘入口：默认全部启用的订阅
+      if (!ids.length) { showToast('没有启用的订阅，请先去「报告」页配置', true); return; }
+      digestRunning.value = true;
+      desktopStatus('正在生成周报…');
+      try {
+        const r = await fetch('/api/digest/run?token=' + encodeURIComponent(token.value), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sub_ids: ids }),
+        });
+        const d = await r.json();
+        if (!r.ok) { showToast(d.detail || '生成失败', true); return; }
+        showToast(`✅ 已生成 ${d.generated}/${d.total} 份报告`);
+        newReports.value = 0;
+        await loadReports();
+        const _api = desktopApi();
+        if (_api && _api.notify && document.hidden) { try { _api.notify('📰 周报已生成', `共 ${d.generated} 份`); } catch (e) {} }
+      } catch (e) { showToast('出错：' + e.message, true); }
+      finally { digestRunning.value = false; desktopStatus(''); }
+    }
+
+    window.__zxDesktop = {
+      version: 1,
+      usesLocalStorage: _USES_LOCAL_STORAGE,
+      account: () => ({ username: username.value, role: role.value, token: !!token.value }),
+      runDigest: () => desktopRunDigest(),
+      goto: (v) => go(v),
+      // 统一落盘入口也挂出来：托盘/外壳与自动化测试都走同一条路径（不绕开原生「另存为」）
+      saveFromUrl: (url, name) => saveFromUrl(url, name),
+      downloadReport: (r, fmt) => downloadReport(r, fmt),
+    };
 
     function showToast(msg, isErr) {
       toast.value = msg; toastErr.value = !!isErr;
@@ -2768,12 +3145,15 @@ createApp({
       const opt = { method, headers: { 'Content-Type': 'application/json' } };
       if (body !== undefined) opt.body = JSON.stringify(body);
       const r = await fetch(url, opt);
+      if (r.status === 401) { forceLogout('登录已失效，请重新登录'); return null; }
       if (!r.ok) { showToast(((await r.json().catch(()=>({})))).detail || '操作失败', true); return null; }
       return r.json();
     }
     async function loadMyData() {
       try {
         const r = await fetch('/api/me/overview?token=' + encodeURIComponent(token.value));
+        // ★ 401 不能静默 return：那会让"登录已失效"表现成"数据全是 0"（用户实测报障）
+        if (r.status === 401) { forceLogout('登录已失效，请重新登录'); return; }
         if (!r.ok) return;
         const d = await r.json();
         d.collection = d.products || [];
@@ -2968,7 +3348,15 @@ createApp({
             const cls = p.event === 'tool_start' ? 'tool' : p.event === 'assistant_call' ? 'assistant' : p.event === 'task_result' ? 'task' : '';
             monitor.value.unshift({ time: nowStr(), msg: p.message, cls });
             if (monitor.value.length > 60) monitor.value.pop();
-            if (p.event === 'report_ready') { newReports.value++; showToast(p.message); loadReports(); }
+            if (p.event === 'report_ready') {
+              newReports.value++; showToast(p.message); loadReports();
+              desktopStatus('');            // 托盘进度收回空闲（定时/手动生成完成都走这里）
+              // 桌面版：窗口不在前台时（收在托盘）弹系统通知——网页 toast 这时候根本看不见
+              const _api = desktopApi();
+              if (_api && _api.notify && document.hidden) {
+                try { _api.notify('📰 周报已生成', p.message || ''); } catch (e) {}
+              }
+            }
           }
         } catch (e) {}
       };
@@ -3010,9 +3398,9 @@ createApp({
         }
         if (!r.ok) { errMsg.value = data.detail || '登录失败'; return; }
         token.value = data.token; role.value = data.account.role;
-        sessionStorage.setItem('zx_token', data.token);
-        sessionStorage.setItem('zx_user', data.account.username);
-        sessionStorage.setItem('zx_role', data.account.role);
+        storeSet('zx_token', data.token);
+        storeSet('zx_user', data.account.username);
+        storeSet('zx_role', data.account.role);
         go('home');
         connectWS(); loadMyData();
         loadReports(); loadSubs(); loadProviders(); loadSouls(); loadMemory(); loadVoicePacks();
@@ -3057,7 +3445,7 @@ createApp({
       fetch('/api/logout?token=' + encodeURIComponent(token.value)).catch(()=>{});
       if (ws) ws.close(); wsTarget = '';
       token.value = ''; role.value = 'personal';
-      sessionStorage.clear();
+      storeClear();
       // 登出即清除页面背景（不删 localStorage key，重新登录时按账号恢复）
       document.body.style.removeProperty('--user-bg');
       document.body.style.setProperty('--bg-opacity', '.6');
@@ -3472,8 +3860,14 @@ createApp({
           } else if (m.role === 'assistant') {
             let c = m.content;
             if (Array.isArray(c)) c = c.map(b => b.text || '').join('');
+            const _txt = String(c || '');
+            // ★ 2026-09-24 报障修复（前端侧）：内容为空的 assistant 消息**不渲染**。
+            //   服务端已不再落库这类消息，但历史里仍有旧数据；且工具轮本身也会产生
+            //   一批 content="\n" 的 assistant —— 原来每条都 push 一张报告卡，
+            //   于是刷新后出现一屏「只有标题、内容为空」的卡片。
+            if (!_txt.trim()) continue;
             // msg_id 必须带上：AI 气泡右上角「删除」按它定位这一轮问答
-            msgs.push({ role: 'agent', text: String(c || ''), title: '', msg_id: m.id });
+            msgs.push({ role: 'agent', text: _txt, title: '', msg_id: m.id });
           }
           // tool / system 消息跳过（过程细节在右栏监控）
         }
@@ -3801,11 +4195,14 @@ createApp({
     const cliRunning = ref(null);
     const cliRunOut = ref({});
     const cliDrafting = ref(false);   // M5：能力描述草稿生成中
+    const cliDraftInfo = ref('');     // 草稿证据回显（读了哪份文档、覆盖几条命令）
+    const cliDraftWarns = ref([]);    // 草稿审计警告（需要 ID 却直调 / 凭空造链 / 命令不在清单里）
     const cliDoneCount = computed(() => cliItems.value.filter(c => c.state !== 'none').length);
 
     function emptyCliForm() {
+      // helpText 是**临时字段**（只用于草稿生成，不落库）：文档没覆盖的命令，用户可以粘 --help 原文
       return { id: null, name: '', bin: '', install_cmd: '', auth_cmd: '', docs: '', readonly: '',
-               state: 'none', note: '', abilities: '' };
+               state: 'none', note: '', abilities: '', helpText: '' };
     }
     const cliForm = ref(emptyCliForm());
 
@@ -3880,15 +4277,31 @@ createApp({
         return;
       }
       cliDrafting.value = true;
+      cliDraftInfo.value = ''; cliDraftWarns.value = [];
       try {
         const r = await fetch('/api/cli/ability_draft?token=' + encodeURIComponent(token.value), {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: f.name, bin: f.bin, readonly: f.readonly }),
+          // docs：让 AI 读官方文档（语义依据）；help_text：文档没覆盖时用户粘的 --help 原文
+          body: JSON.stringify({ name: f.name, bin: f.bin, readonly: f.readonly,
+                                 docs: f.docs, help_text: f.helpText }),
         });
         const d = await r.json();
         if (!r.ok) { cliErr.value = d.detail || '生成失败'; return; }
         cliForm.value.abilities = d.content || '';
-        showToast('已生成草稿：请核对右边命令是否都在只读清单里，再点保存');
+        // 证据与审计回显（2026-09-24）：告诉用户这份草稿**基于什么**写的、哪里可疑
+        const ev = d.evidence || {}, dcs = ev.docs || {}, hp = ev.help || {};
+        if (dcs.ok) {
+          cliDraftInfo.value = '已按官方文档生成：' + (dcs.url || '') + '（文档覆盖 ' + dcs.covered + '/' + ev.commands
+            + ' 条命令' + ((dcs.missing && dcs.missing.length) ? '；未覆盖：' + dcs.missing.join('、') : '') + '）'
+            + (hp.total ? '｜本机 --help 实测 ' + hp.ok + '/' + hp.total + ' 条' : '');
+        } else {
+          cliDraftInfo.value = '未读到官方文档（' + (dcs.note || '未填地址') + '）'
+            + (hp.total ? '；改用本机 --help 实测 ' + hp.ok + '/' + hp.total + ' 条作依据' : '；只能保守生成');
+        }
+        cliDraftWarns.value = d.warnings || [];
+        showToast(cliDraftWarns.value.length
+          ? '草稿已生成，但审计发现 ' + cliDraftWarns.value.length + ' 处可疑，请核对后再保存'
+          : '已生成草稿：请核对右边命令是否都在只读清单里，再点保存');
       } catch (e) { cliErr.value = '生成出错：' + e.message; }
       finally { cliDrafting.value = false; }
     }
@@ -4316,6 +4729,7 @@ createApp({
       messages.value.push({ role: 'user', text: q, skills: usedSkills });
       loading.value = true;
       stopping.value = false;
+      desktopStatus('正在回答…');      // 桌面版：托盘提示跟着回答进度（长回答不用盯窗口）
       thinkingText.value = '';  // 新一轮对话清空思考区
       await nextTick(); scrollToBottom();
       const ctl = new AbortController();  // 中断兜底：后端卡在工具里时可客户端撒手
@@ -4346,7 +4760,7 @@ createApp({
         } else {
           messages.value.push({ role:'agent', text:'⚠️ 请求出错：' + e.message, title:'出错了' });
         }
-      } finally { chatAbort = null; stopping.value = false; loading.value = false; await nextTick(); scrollToBottom(); }
+      } finally { chatAbort = null; stopping.value = false; loading.value = false; desktopStatus(''); await nextTick(); scrollToBottom(); }
     }
 
     // 中断本轮回答：给后端置中断标记（它会在下一次模型调用前停下并落占位回答），
@@ -4396,15 +4810,82 @@ createApp({
           headers:{'Content-Type':'application/json'}, body: JSON.stringify({ content: m.text }) });
         const d = await r.json();
         if (!r.ok) { showToast(d.detail || '导出失败', true); return; }
-        location.href = (fmt !== 'md' && d.download_pdf) ? d.download_pdf : d.download_md;
-        showToast(fmt !== 'md' && d.download_pdf ? 'PDF 已生成并开始下载' : 'Markdown 已下载');
+        const fileUrl = (fmt !== 'md' && d.download_pdf) ? d.download_pdf : d.download_md;
+        const ext = (fmt !== 'md' && d.download_pdf) ? 'pdf' : 'md';
+        const base = (m.title || '情报简报').replace(/[\\/:*?"<>|]/g, '_');
+        await saveFromUrl(fileUrl, base + '.' + ext);   // ★ 桌面版走原生「另存为」，网页版走浏览器下载
         if (fmt !== 'pdf') askIngestExport(m);  // M3：导出后询问是否入库（仅 md 导出可入）
       } catch (e) { showToast('导出出错：' + e.message, true); }
       finally { exporting.value = false; }
     }
+    // 下载已生成的周报（走统一的 saveFromUrl：桌面版原生「另存为」，网页版浏览器下载）
+    async function downloadReport(r, fmt) {
+      const url = (fmt === 'pdf' && r.download_pdf) ? r.download_pdf : r.download_md;
+      if (!url) { showToast('该周报没有可下载的文件', true); return { ok: false, error: 'no-url' }; }
+      const base = (r.title || '周报').replace(/[\\/:*?"<>|]/g, '_');
+      return await saveFromUrl(url, nameFromUrl(url, base + '.' + (fmt === 'pdf' ? 'pdf' : 'md')));
+    }
+    // ---- M5c：周报应用内阅读（读 output/{user}/ 下已落盘的 md，不再只能"下载到本地看"）----
+    //  设计对齐「技能与工具 → CLI 在线教程指南」那一页：同一个 .tutorial-view 壳 + 左上角「← 返回」。
+    //  ★ 数据来源与下载**完全同源**（同一个 /api/download?token&name=），只是这里 fetch 出文本自己渲染 ——
+    //    所以后端零改动，也不会出现"能下载却读不到"的两套逻辑。
+    const readerHtml = ref('');
+    const readerTitle = ref('周报');
+    const readerMeta = ref('');
+    const readerKey = ref('');        // 缓存键 = 该周报的 md URL（不能只看标题：同名周报可能有多份）
+    const readerItem = ref(null);
+    const readerLoading = ref(false);
+    const READER_NO_MD = '该周报在 output/ 下没有 md 文件（只能下载 PDF）';
+
+    async function openReport(r, force) {
+      if (!r) return { ok: false, error: 'no-item' };
+      readerItem.value = r;
+      go('reader');
+      const url = r.download_md;
+      if (!url) { showToast(READER_NO_MD, true); return { ok: false, error: 'no-md' }; }
+      if (readerHtml.value && readerKey.value === url && !force) return { ok: true, cached: true };
+      readerLoading.value = true; readerHtml.value = '';
+      try {
+        const resp = await fetch(url);
+        if (!resp.ok) {
+          const d = await resp.json().catch(() => ({}));
+          showToast(d.detail || ('周报读取失败（HTTP ' + resp.status + '）'), true);
+          return { ok: false, error: 'http-' + resp.status };
+        }
+        const md = await resp.text();
+        readerTitle.value = r.title || '周报';
+        readerMeta.value = (r.item_count ? r.item_count + ' 条 · ' : '') + (r.created_at || '')
+                         + ' · 自 output/ 读取，只读浏览（不改文件）';
+        readerHtml.value = tutRender(md);     // 复用教程页那套零依赖 md 渲染器
+        readerKey.value = url;
+        return { ok: true, chars: md.length };
+      } catch (e) {
+        showToast('周报读取出错：' + e.message, true);
+        return { ok: false, error: 'exception' };
+      } finally { readerLoading.value = false; }
+    }
+    // ★ 视图名是**复数** reports（导航也是这个名字）—— 2026-09-25 用户报障：这里曾误写成
+    //   go('report')，项目里没有 v-show="view === 'report'" → 所有视图都被隐藏 → 整页纯色空白，
+    //   点任意导航按钮才被拉回。已加两条静态断言（frontend_setup_exports_check 的"死路由"+ 本文件）。
+    //   顺带：go('reports') 会改 hash，hashchange 里那条分支会顺手刷新报告列表（newReports=0 + loadReports）。
+    function readerBack() { readerItem.value = null; go('reports'); }
     function scrollToBottom() { if (scroll.value) scroll.value.scrollTop = scroll.value.scrollHeight; }
 
-    onMounted(() => { restoreBg(); if (token.value) { connectWS(); loadReports(); loadSubs(); loadMyData(); loadProviders(); loadSouls(); loadMemory(); loadVoicePacks(); loadSessions(); loadKbStatus(); loadSkills(); } wxStart(); });
+    onMounted(async () => {
+      restoreBg();
+      // M5c：直接刷新/直达 #/reader 时没有"要读哪份周报"这个上下文（readerItem 只存在于内存），
+      //   否则会停在空阅读页且「↻ 重新读取」无从下手 —— 直接送回报告列表并说明入口。
+      if (view.value === 'reader') { view.value = 'report'; showToast('阅读页请从报告列表点「阅读」进入', true); }
+      // ★ 启动时先验登录态（2026-09-23 用户报障修）：localStorage 里的 token 可能已被后端重启弄失效。
+      //   验不过就直接回登录页，而不是"假装已登录"再去各接口吃 401（那正是"数据全是 0"的成因）。
+      if (token.value) {
+        if (await verifySession()) {
+          connectWS(); loadReports(); loadSubs(); loadMyData(); loadProviders(); loadSouls(); loadMemory();
+          loadVoicePacks(); loadSessions(); loadKbStatus(); loadSkills();
+        }
+      }
+      wxStart();
+    });
 
     return {
       token, username, password, regRole, errMsg, busy, role, view, go,
@@ -4426,13 +4907,15 @@ createApp({
       showOnboard, onboardCompany, onboardComps, onboardInterests,
       newInterest, newWatch, newComp, newProd, batchModal, openBatch, submitBatch,
       displayName, greeting,
-      doLogin, doLogout, send, doExport, splitSections, renderRich,
+      doLogin, doLogout, send, doExport, downloadReport, splitSections, renderRich,
       // 2026-09-16 收尾：登录/注册两卡分离（authMode 切卡、注册校验、账号不存在引导）
       authMode, regPwd2, notExist, regReady, regHint, switchAuth, goRegister, doRegister,
       stopping, stopGen, delPair,  // 聊天界面优化：中断本轮回答 / 删除一轮问答
       finishOnboard, skipOnboard, delItem,
       reports, subs, newSubName, newSubScope, newSubLang, selCount, newReports, digestRunning,
       loadReports, loadSubs, updateSub, addSub, delSub, runDigestNow,
+      // M5c 周报应用内阅读（模板里用到的每个标识符都要在这儿出现，否则静默失效）
+      openReport, readerBack, readerHtml, readerLoading, readerTitle, readerMeta, readerItem,
       saveProfile, saveInterest, saveWatch, saveCollection, saveCompetitor, saveCProduct,
       addInterest, addItemSimple, addCompetitor, addProduct,
       // M4a 技能与工具
@@ -4445,7 +4928,7 @@ createApp({
       loadSkills, skillOpen, skillCreate, skillSave, skillDelete, skillSeed, skillTpl, copyCmd,
       loadCliCatalog, cliNew, cliFill, cliEdit, cliCancel, cliSave, cliSetState, cliSaveNote,
       cliDelete, cliRunAll, cliEditing, cliErr, cliForm, cliRunning, cliRunOut, cliParseNotes,
-      cliDrafting, cliAbilityDraft,
+      cliDrafting, cliDraftInfo, cliDraftWarns, cliAbilityDraft,
       openTutorial, loadTutorial, tutBack, tutRender, tutHtml, tutTitle, tutPath, tutUpdated, tutImages, tutMissing, tutLoading,
        // 工作台 时钟 + 天气（012 号设计）
        clockTime, clockDate, wx, wxLoading, wxErr, wxOpen, wxCityEdit, wxCityInput, wxSkin, wxSetSkin, WX_SKINS,

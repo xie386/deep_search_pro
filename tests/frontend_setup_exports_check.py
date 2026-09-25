@@ -163,6 +163,25 @@ def main():
     check("解析到了模板表达式（>0，防止解析器失效导致假通过）", total_refs > 0, total_refs)
     check("解析到了 setup 导出（>100，同上）", len(ret) > 100, len(ret))
 
+    # ------------------------------------------------------------------
+    # 不变量 2：go('x') 的目标必须是**真实存在的视图**（2026-09-25 用户报障固化）
+    #   阅读器「← 返回」写了 go('report')，而项目里的视图名是复数 reports → 没有任何
+    #   v-show 匹配 → 所有视图都被隐藏 → **整页纯色空白**，点任意导航按钮才被拉回来。
+    #   这类"死路由"不报错、不崩溃，只是页面空了，纯静态检查就能逮住。
+    # ------------------------------------------------------------------
+    import re as _re
+    views = set(_re.findall(r"v-show=\"view === '([a-z]+)'\"", html))
+    goto = {m.group(1) for m in _re.finditer(r"go\('([a-z]+)'\)", html)}
+    special = {"shell"}          # go() 内部会把它改写成 skills（见 go() 的分支）
+    dead = sorted(t for t in goto if t not in views and t not in special)
+    print("\n  真实视图 %d 个：%s" % (len(views), ", ".join(sorted(views))))
+    print("  go() 目标 %d 个：%s" % (len(goto), ", ".join(sorted(goto))))
+    for t in dead:
+        print("  ❌ go('%s') 没有对应的 v-show 视图 → 跳过去会是整页空白" % t)
+    check("go() 的目标全部是真实视图（%d 个目标）" % len(goto), not dead, "死路由: %s" % dead if dead else "")
+    check("解析到了 go() 目标与视图名（防止解析失效导致假通过）", len(goto) >= 5 and len(views) >= 5,
+          "goto=%d views=%d" % (len(goto), len(views)))
+
     if missing and "--fix" in sys.argv:
         ins = "".join("        %s,\n" % n for n in sorted(missing))
         io.open(HTML, "w", encoding="utf-8", newline="").write(html[:span[1]] + ins + html[span[1]:])

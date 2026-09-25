@@ -66,18 +66,33 @@ def compose_dynamic_prompt(
     if soul_text:
         parts.append(f"【人格设定】\n{soul_text}")
     if memory_text:
+        # ★ 路径写法必须是「相对 agents_docs 的路径」：read/write_agent_doc 的 filename 参数
+        #   就是按 agents_docs 解析的（tools/writetofile.py::_resolve_safe_path）。早先这里写成
+        #   `agents_docs/{username}/MEMORY.md`，模型照抄传参 → 落到了 agents_docs/agents_docs/{user}/
+        #   （能通过越权校验、返回"写入成功"，但加载器读的是 agents_docs/{user}/MEMORY.md → 永远读不到）。
+        #   实测踩过：agents_docs/agents_docs/尼古喵喵/MEMORY.md 就是这么来的。
         mem_hint = (
-            f"（记忆文件：agents_docs/{username}/MEMORY.md，可用读取/写入文档工具维护）"
+            f"（记忆文件：{username}/MEMORY.md —— 相对 agents_docs 目录的路径，"
+            f"读写文档工具的 filename 直接用这个相对路径，不要带 agents_docs/ 前缀）"
             if username
             else ""
         )
         parts.append(f"【你的用户记忆画像】{mem_hint}\n{memory_text}")
     if cli_brief:
+        # ★ 这三句是「信念锚」，别删：真机探针实测过——把它们拿掉后，10 条自然语言探针里
+        #   有 5 条模型**一个工具都不调**（只是把工具清单当背景资料看），命中率从 9~10/10 掉到 5/10。
+        #   它们只在本区块存在时才有意义（条件性强度要求），所以归属注入块，不进静态提示词。
         parts.append(
             "【可用命令行工具（用户自配的 CLI，只读）】\n"
+            "（本区块出现 = 用户本机**确实装了**下列 CLI，并已放行其中的只读命令——它们是真实可用的工具）\n"
             f"{cli_brief}\n"
+            "用户的问题落在某个能力描述覆盖的领域时，**优先调用 run_shell_command 取真实数据**："
+            "这些是用户自己账号里的私有数据，网络搜索与知识库都拿不到，不要改用它们顶替，也不要凭你自己的知识作答；"
+            "也不要在没有任何工具返回的情况下声称「该命令不可用」或「未登记」。\n"
             "调用方式：`run_shell_command(command=\"<可执行名>\", argv=[...])`。"
             "只读清单内的命令才能执行，写操作与落盘参数会被拒绝；"
+            "多词子命令路径要**整体作为一个 argv 传入**（如 `argv=[\"log\",\"query\"]`），"
+            "不要拆成两次调用（拆开后每一半都不在只读清单里，只会换来两次拒绝）；"
             "被拒绝时如实转述工具返回的错误原文，不要凭知识推断白名单内容。"
         )
     return "\n\n——\n\n".join(parts)

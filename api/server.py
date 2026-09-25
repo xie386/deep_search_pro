@@ -61,6 +61,7 @@ from api.context import set_owner_context, set_thread_context
 import api.me_user_data as me
 from api.monitor import manager, monitor
 from agent import cancel as agent_cancel
+from agent import answer_text
 import api.customize as cust
 import api.voice_tts as vtts
 from deepagents import create_deep_agent
@@ -252,6 +253,25 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
     from agent.thinking_capture import report_thinking_from_messages
     report_thinking_from_messages(result["messages"])
 
+    # ★ 最终答案提取（2026-09-24 用户报障修复）：推理模型偶尔把**可见正文**写进
+    #   reasoning_content 而 content 为空（实测约 1/5）——原来直接取 messages[-1].content
+    #   会拿到空串，气泡没正文、正文只出现在右侧思考面板。统一走 agent.answer_text：
+    #   content → reasoning 回填 → 本轮更早的非工具回答；回填/回溯时会**把文本写回该条消息**，
+    #   否则落库仍是空内容，刷新后又变成空白卡片。
+    #   注：`_boundary` 必须限定在本轮内找，跨轮回溯会把上一轮的旧答案当成这一轮的答案。
+    _boundary = {ctx.final_user_msg or question, question}
+    answer, _ans_src = answer_text.restore_answer(result["messages"], _boundary)
+    if _ans_src == answer_text.SOURCE_REASONING:
+        monitor.report_thinking("（模型未返回正文，已用其思考内容回填答案）")
+    elif _ans_src == answer_text.SOURCE_EARLIER:
+        monitor.report_thinking("（模型未返回正文，已回填本轮更早的一段回答）")
+    elif _ans_src == answer_text.SOURCE_NONE:
+        answer = ("⚠️ 本轮模型没有返回正文（上游偶发把输出放进了思考字段）。可以再问一次；"
+                  "若反复出现，把右侧「模型思考过程」的内容反馈给我，便于继续定位。")
+        monitor.report_thinking("（本轮没有正文可回填，已给出显式提示而非空白回复）")
+        # 补一条带内容的 assistant：既让实时气泡有正文，也保证刷新后不是空卡、且「问-答成对」
+        result["messages"].append(AIMessage(content=answer))
+
     if account_id is not None:
         # M1：本轮持久化（user 提问 + 新增的 assistant/tool 消息）
         try:
@@ -262,7 +282,6 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
             # M4a：技能前缀会改写实际用户文本（ctx.final_user_msg），
             # 故按「装配后的最终文本」定位本轮起点；无技能时二者相等。
             # 若都不匹配（异常），退化为只存最终回答。
-            _boundary = {ctx.final_user_msg or question, question}
             for m in result["messages"]:
                 if isinstance(m, HumanMessage) and m.content in _boundary:
                     seen_q = True
@@ -271,6 +290,11 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
                     new_msgs.append(m)
             if not seen_q:  # 兜底（异常情况）：至少存最终回答
                 new_msgs = [result["messages"][-1]]
+            # ★ 落库前过滤（2026-09-24 报障修复的另一半）：工具轮会产生 content="\n" 的 assistant
+            #   消息，它们本身没有信息量，却会在前端各渲染成一张“只有标题、内容为空”的报告卡
+            #   （实测一轮 7 个工具轮 → 刷新后 8 张卡）。带 tool_calls 的**不能丢**：
+            #   OpenAI 格式要求 tool 消息紧跟带 tool_calls 的 assistant，否则重放历史会被上游 400。
+            new_msgs = answer_text.drop_empty_assistant(new_msgs)
             # token 用量：从最后一条 AIMessage 的 usage_metadata 取（尽力而为）
             tok_usage = 0
             for m in reversed(result["messages"]):
@@ -282,7 +306,7 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
         except Exception as e:
             print(f"[M1] 会话持久化失败（忽略）: {type(e).__name__}: {e}")
 
-    return result["messages"][-1].content
+    return answer
 
 
 # ---------------------------------------------------------------------------
@@ -1185,16 +1209,24 @@ async def cli_list(token: str = Query(...)):
     }
 
 
-@app.post("/api/cli/ability_draft", summary="M5：按 CLI 名称 + 只读清单生成「能力描述」草稿")
+@app.post("/api/cli/ability_draft", summary="M5：按证据（官方文档 + --help 真值）生成「能力描述」草稿")
 async def cli_ability_draft(req: dict = Body(...), token: str = Query(...)):
     """生成能力描述草稿（用户语言：触发关键词 + 用户说法→命令映射）。
 
     **只返回草稿，不写库**——用户在表单里确认/修改后，走 /api/cli/save 保存。
+    证据分层（2026-09-24）：① 文档地址 `docs`（README）当**语义依据**；② 逐条 `<bin> <cmd> --help`
+    当**校验依据**（形态分类 + 生成后审计）；③ 都没有就用 `help_text`（用户粘贴）或保守化。
     描述里的命令必须来自该 CLI 的只读清单（清单为空则拒绝生成，先填清单）。
+    返回值额外带 `evidence`（读了哪份文档、覆盖几条命令）与 `warnings`（审计发现的可疑映射）。
     """
-    get_session(token)
+    sess = get_session(token)
     return cust.cli_ability_generate(req.get("name") or "", req.get("bin") or "",
-                                     req.get("readonly") or "")
+                                     req.get("readonly") or "",
+                                     docs=req.get("docs") or "",
+                                     help_text=req.get("help_text") or "",
+                                     username=sess.get("username"),
+                                     account_id=sess.get("account_id"),
+                                     refresh_docs=bool(req.get("refresh_docs")))
 
 
 @app.post("/api/cli/save", summary="自定义 CLI：新增 / 修改配置")
@@ -1502,6 +1534,22 @@ async def tts_audio(name: str = Query(...), token: str = Query(...)):
 
 # ----------------------------- 静态 SPA -----------------------------
 STATIC_DIR = PROJECT_ROOT / "static"
+
+# ★ HTML 入口**绝不缓存**（2026-09-25 桌面端报障）：桌面壳是 pywebview + `private_mode=False` +
+#   固定 storage_path（为了"记住登录"必须这么设），WebView2 于是会**持久化 HTTP 缓存**；而这里原先
+#   只发 Last-Modified / ETag、没有 Cache-Control，Chromium 就按启发式把它当成"还新鲜"，直接把旧
+#   `index.html` 交给窗口 —— 表现是「同一次前端改动，网页端刷新能看到、桌面端怎么重启都看不到」，
+#   实测缓存里那份 HTML 停在改动之间的某个版本（有 015 样式、没有当时的 阅读 按钮）。
+#   单文件 SPA 的 HTML 是入口，必须每次校验；带版本的静态资源与 API 不受影响（见下面的白名单判断）。
+@app.middleware("http")
+async def _no_store_html_entry(request, call_next):
+    resp = await call_next(request)
+    if request.method in ("GET", "HEAD"):
+        p = request.url.path
+        if p == "/" or p.endswith(".html"):
+            resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            resp.headers["Pragma"] = "no-cache"
+    return resp
 
 
 @app.get("/", summary="前端 SPA 入口")

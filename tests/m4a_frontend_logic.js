@@ -11,10 +11,13 @@ const path = require('path');
 const assert = require('assert');
 
 const HTML = path.join(__dirname, '..', 'static', 'index.html');
-const src = fs.readFileSync(HTML, 'utf8');
+// ⚠️ 统一按 LF 比较：上面的锚点串里含换行符，而 index.html 是否 CRLF 取决于 git 的 core.autocrlf（本项目为 true → 工作区是 CRLF）。
+//    不做归一化的话，锚点会随「文件被谁写过」时通时不通
+//    （实测踩过：一次 CSS 合并把全文转成 CRLF，本套件当场失效）。
+const src = fs.readFileSync(HTML, 'utf8').replace(/\r\n/g, '\n');
 
 const A = '// ==================== M4a：技能与工具 ====================';
-const SEND_END = '      } finally { chatAbort = null; stopping.value = false; loading.value = false; await nextTick(); scrollToBottom(); }\n    }\n';
+const SEND_END = "      } finally { chatAbort = null; stopping.value = false; loading.value = false; desktopStatus(''); await nextTick(); scrollToBottom(); }\n    }\n";
 const i = src.indexOf(A);
 const j = src.indexOf(SEND_END, i);
 if (i < 0 || j < 0) { console.error('未能在 index.html 中定位 M4a 代码块'); process.exit(1); }
@@ -30,6 +33,8 @@ const nextTick = (cb) => { if (typeof cb === 'function') cb(); return Promise.re
 const document = { querySelector: () => null, createElement: () => ({ style: {} }), body: { appendChild() {}, removeChild() {} } };
 const localStorage = { _d: {}, getItem(k) { return this._d[k] || null; }, setItem(k, v) { this._d[k] = v; } };
 function showToast(msg) { logs.push(msg); }
+// 桌面版托盘状态：真实 send() 会调它，这里桩掉并记录（网页版是空操作）
+function desktopStatus(text) { logs.push('status:' + (text || '')); }
 const token = ref('tok-demo');
 const username = ref('尼古喵喵');
 const draft = ref('');
@@ -91,13 +96,13 @@ async function fetch(url, opts) {
 
 // 执行真实抽取代码
 const runner = new Function(
-  'ref', 'computed', 'nextTick', 'document', 'localStorage', 'showToast',
+  'ref', 'computed', 'nextTick', 'document', 'localStorage', 'showToast', 'desktopStatus',
   'token', 'username', 'draft', 'confirm', 'navigator', 'window', 'fetch',
   'loading', 'messages', 'thinkingText', 'activeThread', 'go', 'connectWS', 'scrollToBottom', 'loadSessions',
   'stopping', 'chatAbort', 'watch', '_initHash',
   block + '\nreturn { skills, skPicked, skMenuOpen, skMenuIdx, skFilter, skMenuList, skOnInput, skOnKey, skillPick, skillUnpick, SK_MAX_PICK, cliItems, cliTemplates, cliStates, cliSummary, cliDoneCount, loadCliCatalog, cliNew, cliFill, cliEdit, cliSave, cliSetState, cliSaveNote, cliDelete, cliForm, cliEditing, cliErr, cliDrafting, cliAbilityDraft, SK_MAX, send };'
 );
-const M = runner(ref, computed, nextTick, document, localStorage, showToast,
+const M = runner(ref, computed, nextTick, document, localStorage, showToast, desktopStatus,
                   token, username, draft, confirm, navigator, window, fetch,
                   loading, messages, thinkingText, activeThread, go, connectWS, scrollToBottom, loadSessions,
                   stopping, chatAbort, watch, _initHash);

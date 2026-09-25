@@ -39,7 +39,12 @@ def test_compose_dynamic_prompt_combined():
     s = compose_dynamic_prompt(soul_text="你是女仆", memory_text="喜欢猫", username="alice")
     assert "【人格设定】" in s and "你是女仆" in s
     assert "【你的用户记忆画像】" in s and "喜欢猫" in s
-    assert "agents_docs/alice/MEMORY.md" in s  # 记忆文件路径提示
+    # ★ 2026-09-23 修正：这里原来断言的是 "agents_docs/alice/MEMORY.md"——正是那个「写歪目录」的写法。
+    #   read/write_agent_doc 的 filename 参数是按 agents_docs 解析的**相对路径**，带上 `agents_docs/`
+    #   前缀会被解析成 agents_docs/agents_docs/{user}/MEMORY.md：越权校验通过、返回"写入成功"，
+    #   但加载器读的是 agents_docs/{user}/MEMORY.md → 记忆永远读不到（实测踩过，见 agents_docs/agents_docs/）。
+    #   所以这里断言**正确的相对路径**，并反向断言不再出现带前缀的写法。
+    assert "alice/MEMORY.md" in s and "agents_docs/alice/MEMORY.md" not in s  # 记忆文件路径提示（相对 agents_docs）
     # 顺序：人格在前
     assert s.index("你是女仆") < s.index("喜欢猫")
 
