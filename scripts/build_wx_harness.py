@@ -8,14 +8,14 @@
   - 本机 `agent-browser`/CDP 不可用，改用 **无头 Chrome 截图 + 看图** 做视觉验收。
 
 用法：
-    .venv/Scripts/python.exe scripts/build_wx_harness.py            # 生成 data/_wx_harness.html（展开态）
+    .venv/Scripts/python.exe scripts/build_wx_harness.py            # 生成 front/tutorial/previews/_wx_harness.html（展开态）
     .venv/Scripts/python.exe scripts/build_wx_harness.py pill city   # 追加收起态/换城市态两个页面
     # 截图（Windows，Chrome 路径按需改）：
     chrome --headless=new --disable-gpu --hide-scrollbars --window-size=1300,620 \
-           --virtual-time-budget=3000 --screenshot=data/_wx_shot.png \
-           file:///<项目绝对路径，中文需 URL 编码>/data/_wx_harness.html
+           --virtual-time-budget=3000 --screenshot=tests/test_out/_wx_shot.png \
+           file:///<项目绝对路径，中文需 URL 编码>/front/tutorial/previews/_wx_harness.html
 
-要点：CSS 与卡片标记都**从 static/index.html 现场抽取**，所以只要真页面变了，沙盒必然跟着变（不会漂移）。
+要点：CSS 与卡片标记都**从 front/index.html 现场抽取**，所以只要真页面变了，沙盒必然跟着变（不会漂移）。
 """
 import os
 import re
@@ -23,8 +23,8 @@ import sys
 from urllib.parse import quote
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-HTML_PATH = os.path.join(ROOT, "static", "index.html")
-OUT_DIR = os.path.join(ROOT, "data")
+HTML_PATH = os.path.join(ROOT, "front", "index.html")
+OUT_DIR = os.path.join(ROOT, "front", "tutorial", "previews")
 
 WX_JSON = """{ city:'成都·四川', city_input:'', now:{temp:20.4,feels:21.8,humidity:76,wind:4.8,text:'晴间多云',icon:'🌤️'},
   daily:[{date:'2026-09-11',icon:'☁️',tmax:23.5,tmin:18.0,rain:2},{date:'2026-09-12',icon:'🌦️',tmax:23.4,tmin:16.9,rain:47},{date:'2026-09-13',icon:'🌦️',tmax:24.9,tmin:19.0,rain:55}],
@@ -65,7 +65,7 @@ def build():
 %s
   </div>
 </div>
-<script src="../static/vendor/vue.global.prod.js"></script>
+<script src="../front/vendor/vue.global.prod.js"></script>
 <script>
 Vue.createApp({ setup() {
   const wx = %s;
@@ -96,7 +96,7 @@ Vue.createApp({ setup() {
         print("写好了 %s" % p)
     url = "file:///" + quote(os.path.join(OUT_DIR, "_wx_harness.html").replace("\\", "/"))
     print("\n截图命令示例：\n  chrome --headless=new --disable-gpu --hide-scrollbars "
-          "--window-size=1300,620 --virtual-time-budget=3000 --screenshot=data/_wx_shot.png\n      %s" % url)
+          "--window-size=1300,620 --virtual-time-budget=3000 --screenshot=tests/test_out/_wx_shot.png\n      %s" % url)
 
 
 if __name__ == "__main__":

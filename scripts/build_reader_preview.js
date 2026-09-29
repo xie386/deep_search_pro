@@ -2,7 +2,7 @@
  * 用 index.html 里的**真实 CSS** + **真实阅读页 markup** + **真实周报正文**（经真实 tutRender 渲染）
  * 输出一张可直接截图的页面，用来肉眼验收样式是否落在该落的地方（返回按钮位置、.md-doc 排版）。
  * 用法：node scripts/build_reader_preview.js
- * 产物：data/reader_preview.html
+ * 产物：front/tutorial/previews/reader_preview.html
  * 说明：静态预览里 Vue 指令跑不了 —— 只做三处「预览专用替换」并在此注明：
  *   ① 去掉 v-show / v-if（保留元素本身）
  *   ② {{ readerTitle }} / {{ readerMeta }} 换成样例值
@@ -13,7 +13,7 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
-const html = fs.readFileSync(path.join(root, 'static', 'index.html'), 'utf8');
+const html = fs.readFileSync(path.join(root, 'front', 'index.html'), 'utf8');
 const css = (html.match(/<style>([\s\S]*?)<\/style>/) || [, ''])[1];
 if (!css) { console.error('❌ 抽不到 <style>'); process.exit(1); }
 
@@ -27,9 +27,10 @@ let view = html.slice(start, html.lastIndexOf('</div>', end) + '</div>'.length);
 view = view.replace(/ v-show="[^"]*"/g, '');       // 预览：去掉 v-show
 
 // ② 真实 tutRender（复用教程页那段真实代码）
-const i1 = html.indexOf('    // ---- M4 收尾：教程指导');
-const j1 = html.indexOf('    async function loadTutorial(force) {', i1);
-const R = new Function('ref', html.slice(i1, j1) + '\nreturn { tutRender };')((v) => ({ value: v }));
+const i1 = html.indexOf('    function esc(s) {');
+const j1 = html.indexOf('    async function loadTutorial(force, kind) {', i1);
+if (i1 < 0 || j1 < 0) { console.error('❌ 定位不到 tutRender/esc（index.html 锚点又变了）'); process.exit(1); }
+const R = new Function('ref', html.slice(i1, j1) + '\nreturn { tutRender, esc };')((v) => ({ value: v }));
 
 // ③ 真实周报正文：output/ 下**最大**那份（目录里也有几十字节的测试存根）
 let best = null, bestSize = -1;
@@ -70,7 +71,7 @@ ${view}
 </body></html>`;
 
 fs.mkdirSync(path.join(root, 'data'), { recursive: true });
-const out = path.join(root, 'data', 'reader_preview.html');
+const out = path.join(root, 'front', 'tutorial', 'previews', 'reader_preview.html');
 fs.writeFileSync(out, page, 'utf8');
 
 // 自检：预览 markup 里的 class 必须来自真实 CSS
@@ -81,4 +82,4 @@ const missing = [...used].filter((c) => !new RegExp('\\.' + c.replace(/[-.]/g, '
 console.log('预览 class 数：', used.size, '| 正文渲染：', body.length, '字符');
 if (missing.length) { console.error('❌ 以下 class 在真实 CSS 里找不到：', missing); process.exit(1); }
 console.log('✅ class 自检通过（全部来自真实 CSS）');
-console.log('产物：data/reader_preview.html', (page.length / 1024).toFixed(1) + ' KB');
+console.log('产物：front/tutorial/previews/reader_preview.html', (page.length / 1024).toFixed(1) + ' KB');

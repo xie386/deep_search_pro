@@ -1,7 +1,7 @@
 # 桌面端看不到前端改动（WebView2 缓存把旧 HTML 喂给了窗口）
 
 > 版本：**v2.5**（小数版 = bug 修补）
-> 日期：2026-09-25　范围：`api/server.py`（HTML 入口不缓存）+ `static/desktop/app.py`（加载 URL 加 nonce）
+> 日期：2026-09-25　范围：`api/server.py`（HTML 入口不缓存）+ `front/desktop/app.py`（加载 URL 加 nonce）
 
 ## 问题
 
@@ -12,7 +12,7 @@
 
 | 证据 | 值 | 说明 |
 |---|---|---|
-| `static/index.html` 最后写入 | **13:01:46** | 改动确实落盘了 |
+| `front/index.html` 最后写入 | **13:01:46** | 改动确实落盘了 |
 | 桌面窗口加载页面 | **13:10:19** | **加载晚于写入 9 分钟** → 不是"改动在加载之后" |
 | WebView2 缓存文件 `EBWebView/Default/Cache/Cache_Data/f_000022` | 含 `form-track` **8 处** | 缓存的 HTML **有** 015 表单样式 → 不是"缓存了几周前的老版本" |
 | 同一个缓存文件 | `readerHtml` / `dl-text">阅读<` **0 处** | 缓存的 HTML **没有** 阅读按钮 → 正好停在两次改动之间 |
@@ -51,7 +51,7 @@ async def _no_store_html_entry(request, call_next):
 而图片/静态 vendor 这类资源改了就是新文件（或新名字），照旧可缓存 —— 用
 `tests/test_spa_cache_headers.py` 里的**反向断言**钉住"不要过度应用"。
 
-### ② 保底：桌面壳加载 URL 加一次性 nonce（`static/desktop/app.py`）
+### ② 保底：桌面壳加载 URL 加一次性 nonce（`front/desktop/app.py`）
 
 ```python
 url = "%s?desktop=1&_=%d" % (base_url, int(time.time()))   # 每次启动都不同 → 必然缓存未命中
@@ -67,7 +67,7 @@ nonce 让"旧条目"在构造上就不可能命中，第一条新响应随即写
 
 | 项 | 结果 |
 |---|---|
-| 新增回归 `tests/test_spa_cache_headers.py` | **5/5 通过**：`/` 与 `/static/index.html` 都带 `no-store`+`no-cache`+`must-revalidate`（HEAD 也带）；**图片与 JSON API 不带**（反向断言，防过度应用）；`HEAD /` = 405 这个 FastAPI 事实也一并钉住 |
+| 新增回归 `tests/test_spa_cache_headers.py` | **5/5 通过**：`/` 与 `/front/index.html` 都带 `no-store`+`no-cache`+`must-revalidate`（HEAD 也带）；**图片与 JSON API 不带**（反向断言，防过度应用）；`HEAD /` = 405 这个 FastAPI 事实也一并钉住 |
 | 真实 uvicorn 实测（非 TestClient） | 起真进程打 `/` → `Cache-Control: no-store, no-cache, must-revalidate, max-age=0` ✅ |
 | 桌面壳自检 | 旧断言里写死的 `"?desktop=1"` 字面量（会被 nonce 改动弄坏）已按**意图**改写，并新增 3 项：URL 带 nonce / 外壳自检容忍额外参数 / 前端正则容忍额外参数 |
 | 生效条件 | 需要**重启后端**（中间件）+ **重启桌面版**（nonce）；已在运行的旧进程不带新头 |

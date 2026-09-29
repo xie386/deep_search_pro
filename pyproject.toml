@@ -16,9 +16,14 @@ dependencies = [
     "langchain-openai>=1.1.12",
     "langgraph>=1.1.3",
     "markdown>=3.10.3",
+    "mcp>=2,<3",
     "mysql-connector-python>=9.6.0",
     "openai>=2.30.0",
     "openpyxl>=3.1.5",
+    "opentelemetry-api<1.45",
+    # ★ 上面那条别删/别放宽：chromadb（知识库向量库）要用
+    #   `opentelemetry.util.types._ExtendedAttributes`，而 1.45 把它移除了 → `m5b_pool_e2e` 直接 ImportError。
+    #   2026-09-27 实测：`uv add mcp` 会顺带把它升到 1.45 踩到这个坑，故固定在此。
     "pandas>=3.0.1",
     "pydantic>=2.12.5",
     "pypdf>=6.9.2",

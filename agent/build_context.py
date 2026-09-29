@@ -46,11 +46,115 @@ class ContextBundle:
     persona_injected: bool = False  # 本次是否注入了动态 SystemMessage（调试/观测用）
 
 
+# ---------------------------------------------------------------- M3-6：记忆注入的两段预算
+# 方案 §5.4：「画像 ≤500 字、笔记 ≤300 字；超限在**装配期**裁剪，而不是靠下游句子过滤」。
+# 为什么要在装配期裁：下游（周报/摘要）按行做字符串过滤会**按内容猜**该丢什么，既不可控又难测；
+# 装配期按"预算 + 优先级"裁，口径唯一、可断言。
+PROFILE_MAX_CHARS = 500      # 画像段硬上限（超出按情报相关维度优先保留）
+NOTES_MAX_CHARS = 300        # 笔记段硬上限
+NOTES_MAX_ITEMS = 5          # 笔记最多取几条（§4.3）
+NOTES_KEEP_RECENT = 3        # ★ 时效兜底：最近 3 条无论相关性都保留（防"刚记的事看不到"）
+# 裁剪优先保留的维度（越靠前越先留）。方案 §5.4 给的是「消费偏好/情报关注点/竞品 > 其他」；
+# 这里把**身份与领域 / 身份变化**也提到前面：身份是最稳定、最有用的上下文，丢它比丢"关注渠道"更糟。
+_PRIORITY_DIMS = ("身份与领域", "身份变化", "消费偏好", "情报关注点", "竞品关注",
+                  "预算范围", "价格敏感度")
+
+
+def _split_memory(memory_text: str) -> tuple[str, str]:
+    """把注入用的 MEMORY.md 文本切成（画像段正文、笔记段正文）。
+
+    解析交给 `tools.memory_profile`（唯一事实源），这里只做取用；失败则整段当画像（保守）。
+    """
+    try:
+        from tools import memory_profile as _mp
+        sec = _mp.split_sections(memory_text)
+        prof, notes = sec.get("profile", "").strip(), sec.get("notes", "").strip()
+        if not prof and not notes and (memory_text or "").strip():
+            # ★ 兜底：文本不是标准格式（老文件 / 用户自己写的花式排版）→ 整段当画像原样注入。
+            #   绝不能返回空 —— 那等于"悄悄把用户的记忆删了"（实测被 test_assembly 的老契约挡下来过）。
+            return (memory_text or "").strip(), ""
+        return prof, notes
+    except Exception:
+        return (memory_text or "").strip(), ""
+
+
+def _bullet_lines(block: str) -> list[str]:
+    return [l.strip() for l in (block or "").split("\n") if l.strip().startswith("-")]
+
+
+def _trim_profile(block: str, limit: int = PROFILE_MAX_CHARS) -> str:
+    """画像段按"情报相关维度优先"裁剪到 limit 字；仍放不下的整行丢弃（不切半行）。
+
+    ★ **放得下就原样返回**（含 `## USER PROFILE（用户画像）` 标题、原顺序、原空行）——
+      不要无缘无故重排：老契约 `test_assembly.py::test_compose_dynamic_prompt_combined`
+      断言的正是"没超预算时逐字一致"，把它排成另一种样子会白白破坏既有契约。
+    """
+    if len(block.strip()) <= limit:
+        return block.strip()
+    lines = _bullet_lines(block)
+    if not lines:
+        return block.strip()
+    order = sorted(range(len(lines)),
+                   key=lambda i: (next((k for k, d in enumerate(_PRIORITY_DIMS) if d in lines[i]),
+                                       len(_PRIORITY_DIMS)), i))
+    kept, used = [], 0
+    for i in order:
+        cost = len(lines[i]) + (1 if kept else 0)
+        if used + cost > limit:
+            continue
+        kept.append((i, lines[i]))
+        used += cost
+    kept.sort()
+    return "\n".join(l for _, l in kept)
+
+
+def _lexical_overlap(text: str, question: str) -> int:
+    """极简词法相关度（v1 只用词法，不引向量 —— 方案 §4.3 明说"若复用成本高，v1 只用词法"）。
+
+    中文按**二元字组**取交集，避免为一个排序引入分词/向量依赖（embedding 冷启动 ~33s）。
+    """
+    q = "".join(ch for ch in (question or "") if ch.strip())
+    if len(q) < 2:
+        return 0
+    grams = {q[i:i + 2] for i in range(len(q) - 1)}
+    t = text or ""
+    return sum(1 for g in grams if g in t)
+
+
+def _trim_notes(block: str, limit: int = NOTES_MAX_CHARS, question: str = "") -> str:
+    """笔记段：按相关度取前 N 条 + 总长 ≤ limit；**最近 3 条无条件保留**（时效兜底）。
+
+    同样**放得下就原样返回**（理由见 `_trim_profile`）。
+    """
+    if len(block.strip()) <= limit and len(_bullet_lines(block)) <= NOTES_MAX_ITEMS:
+        return block.strip()
+    lines = _bullet_lines(block)
+    if not lines:
+        return block.strip()
+    recent = set(range(max(0, len(lines) - NOTES_KEEP_RECENT), len(lines)))
+    scored = sorted(range(len(lines)),
+                    key=lambda i: (0 if i in recent else 1,
+                                   -_lexical_overlap(lines[i], question), i))
+    kept, used = [], 0
+    for i in scored:
+        if len(kept) >= NOTES_MAX_ITEMS:
+            break
+        cost = len(lines[i]) + (1 if kept else 0)
+        if used + cost > limit:
+            continue
+        kept.append((i, lines[i]))
+        used += cost
+    kept.sort()
+    return "\n".join(l for _, l in kept)
+
+
 def compose_dynamic_prompt(
     soul_text: str = "",
     memory_text: str = "",
     username: str = "",
     cli_brief: str = "",
+    profile_signal: str = "",        # M3-5：服务端算好的【画像待更新】信号（没有新数据时是空串）
+    question: str = "",              # M3-6：笔记段按与问句的相关度取前 N（v1 只用词法，不引向量）
 ) -> str:
     """拼装动态注入内容：人格(SOUL) + 记忆画像(MEMORY) + 可用命令行工具(M4c)。
 
@@ -77,13 +181,39 @@ def compose_dynamic_prompt(
             if username
             else ""
         )
-        parts.append(f"【你的用户记忆画像】{mem_hint}\n{memory_text}")
+        _prof, _notes = _split_memory(memory_text)
+        _prof = _trim_profile(_prof, PROFILE_MAX_CHARS)
+        _notes = _trim_notes(_notes, NOTES_MAX_CHARS, question=question)
+        # ★ 笔记段必须带自己的标题：否则模型分不清"用户画像事实"与"助手流水笔记"（旧契约测试
+        #   test_assembly.py::test_compose_dynamic_prompt_combined 就是被这一条挡下来的）。
+        try:
+            from tools.memory_profile import NOTES_HEAD as _NOTES_HEAD
+        except Exception:
+            _NOTES_HEAD = "## MEMORY（助手笔记）"
+        _mem_body = "\n".join(x for x in (_prof, ("%s\n%s" % (_NOTES_HEAD, _notes)) if _notes else "") if x)
+        parts.append(f"【你的用户记忆画像】{mem_hint}\n{_mem_body}")
+        if profile_signal:
+            # M3-5（方案 §3.3）：把"看不见的判断"变成看得见的信号 —— 数字由服务端算好，模型只判断相关性
+            parts.append(profile_signal)
     if cli_brief:
         # ★ 这三句是「信念锚」，别删：真机探针实测过——把它们拿掉后，10 条自然语言探针里
         #   有 5 条模型**一个工具都不调**（只是把工具清单当背景资料看），命中率从 9~10/10 掉到 5/10。
         #   它们只在本区块存在时才有意义（条件性强度要求），所以归属注入块，不进静态提示词。
+        # v3.0 M1：这份简报现在可能同时含 CLI / API / MCP 三种来源的卡片（路由器统一渲染）。
+        # 出现 API/MCP 卡片时换标题并补一句 invoke_tool 用法；**只有 CLI 时文本逐字不变**
+        # （契约测试与"信念锚"的 A/B 结论都建立在那段原文上）。
+        _has_remote = ("API 能力 `" in cli_brief) or ("MCP 能力 `" in cli_brief)
+        _head = ("【用户自配的工具能力（CLI 只读 / API / MCP）】\n"
+                 if _has_remote else
+                 "【可用命令行工具（用户自配的 CLI，只读）】\n")
+        _remote_hint = (
+            "\n需要用到上面形如 `api:<服务名>#<操作名>` 的 **API/MCP 能力**时，调用 "
+            "`invoke_tool(ref=\"…\", params={…})`：ref 与参数**照抄能力卡**，不要自己编；"
+            "卡片上带「⚠️ 会改外部状态」的写能力，先确认用户明确要求再调用；"
+            "被拒绝时如实转述错误原文，不要凭知识推断。" if _has_remote else ""
+        )
         parts.append(
-            "【可用命令行工具（用户自配的 CLI，只读）】\n"
+            _head +
             "（本区块出现 = 用户本机**确实装了**下列 CLI，并已放行其中的只读命令——它们是真实可用的工具）\n"
             f"{cli_brief}\n"
             "用户的问题落在某个能力描述覆盖的领域时，**优先调用 run_shell_command 取真实数据**："
@@ -94,6 +224,7 @@ def compose_dynamic_prompt(
             "多词子命令路径要**整体作为一个 argv 传入**（如 `argv=[\"log\",\"query\"]`），"
             "不要拆成两次调用（拆开后每一半都不在只读清单里，只会换来两次拒绝）；"
             "被拒绝时如实转述工具返回的错误原文，不要凭知识推断白名单内容。"
+            + _remote_hint
         )
     return "\n\n——\n\n".join(parts)
 
@@ -122,6 +253,8 @@ def build_request_context(
     username: str = "",
     skills_text: str = "",
     cli_brief: str = "",
+    profile_signal: str = "",        # M3-5：画像待更新信号（server 层算好传入）
+    sources: "dict[str, str] | None" = None,   # M4-7：注册表收集到的源（None=老路径，逐字等价）
     config: ContextConfig | None = None,
     manager: ContextManager | None = None,
 ) -> ContextBundle:
@@ -141,7 +274,14 @@ def build_request_context(
     cfg = config or default_config
 
     # 1. _apply_persona + _apply_memory：动态内容 → SystemMessage（messages 首条）
-    dynamic_text = compose_dynamic_prompt(soul_text, memory_text, username, cli_brief or "")
+    if sources is not None:
+        # M4-7：soul / memory 改由注册表提供（api/context_providers 注册）。
+        # 只接管这两个"纯账号级"的源；skills / cli_brief / profile_signal 需要本轮特有入参，
+        # 仍由 server 显式传入（见 api/context_providers 的说明）。
+        soul_text = sources.get("soul", "") or ""
+        memory_text = sources.get("memory", "") or ""
+    dynamic_text = compose_dynamic_prompt(soul_text, memory_text, username, cli_brief or "",
+                                          profile_signal=profile_signal, question=new_user_msg)
     persona_msg = SystemMessage(content=dynamic_text) if dynamic_text else None
 
     # 2. 历史（SQLite 持久化）

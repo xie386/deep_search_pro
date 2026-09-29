@@ -54,6 +54,12 @@ nul
 rag_knowledge/db/
 
 # 桌面版外壳日志（本机运行时产物）
-static/desktop/desktop.log
-static/desktop/backend.log
+front/desktop/desktop.log
+front/desktop/backend.log
 data/desktop_webview/
+
+# 教程/天气卡等「机器生成的静态预览」（由 scripts/build_*.js|py 产出，不入库）
+front/tutorial/previews/
+
+# 系统级测试运行的产物（探针日志/结果、预览截图）—— 由 tests 里的脚本产出，不入库
+tests/test_out/

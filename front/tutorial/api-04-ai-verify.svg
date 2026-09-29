@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 500" font-family="Microsoft YaHei, PingFang SC, sans-serif">
+  <rect width="980" height="500" fill="#eceae4"/>
+  <!-- 左：对话区 -->
+  <g transform="translate(20,18)">
+    <rect x="0" y="0" width="600" height="462" rx="12" fill="#fbfdfb" stroke="#d8ded8"/>
+    <text x="18" y="26" font-size="13.5" fill="#5b6b5e" font-weight="bold">AI 助手</text>
+    <!-- 用户气泡 -->
+    <rect x="300" y="44" width="282" height="40" rx="12" fill="#dff0e2" stroke="#a9d0b2"/>
+    <text x="316" y="62" font-size="12.5" fill="#2b3a2e">查一下 122.228.216.223 这个 IP 是哪里的</text>
+    <text x="316" y="78" font-size="11" fill="#6b7a6e">（说人话就行，不用提接口名）</text>
+    <!-- 工具调用条 -->
+    <rect x="18" y="96" width="564" height="58" rx="10" fill="#fdfbf0" stroke="#e5d9a8"/>
+    <text x="34" y="116" font-size="12" fill="#a8620f">🛠️ 正在调用「调用 API/MCP 能力」</text>
+    <text x="34" y="134" font-size="11.5" fill="#5b6b5e">ref=api:xxapi#ipQuery　params={"ip":"122.228.216.223"}</text>
+    <text x="34" y="149" font-size="11" fill="#8a968c">✓ 200 · 193ms · 返回 193 字节</text>
+    <!-- 回答 -->
+    <rect x="18" y="168" width="564" height="112" rx="12" fill="#ffffff" stroke="#d8ded8"/>
+    <text x="34" y="190" font-size="12.5" fill="#2b3a2e">这个 IP（122.228.216.223）归属：**中国浙江温州 电信**</text>
+    <text x="34" y="210" font-size="12.5" fill="#2b3a2e">类型：数据中心</text>
+    <text x="34" y="230" font-size="12.5" fill="#2b3a2e">所属网段：122.228.192.0 – 122.228.255.255</text>
+    <text x="34" y="256" font-size="11.5" fill="#8a968c">数据来自你配置的 API 工具（不是模型自己编的）</text>
+    <!-- 思考折叠 -->
+    <rect x="18" y="292" width="200" height="26" rx="8" fill="#f3f5f3" stroke="#dfe6e0"/>
+    <text x="34" y="310" font-size="11.5" fill="#6b7a6e">💭 思考过程（点击展开）</text>
+    <text x="18" y="344" font-size="12" fill="#5b6b5e">判定"真的调用了"看三处：</text>
+    <text x="18" y="366" font-size="11.5" fill="#6b7a6e">① 这张卡片（工具名 + ref + params + 耗时/状态码）</text>
+    <text x="18" y="386" font-size="11.5" fill="#6b7a6e">② 右侧「工具调用监控」里出现同一条</text>
+    <text x="18" y="406" font-size="11.5" fill="#6b7a6e">③ data/audit/commands.jsonl 里有 tool=invoke_tool 的行</text>
+    <text x="18" y="430" font-size="11.5" fill="#a8620f">④ 数据是"此刻的真实值"（热榜词条天天变、IP 归属地不可编造）</text>
+  </g>
+  <!-- 右：工具调用监控 -->
+  <g transform="translate(640,18)">
+    <rect x="0" y="0" width="320" height="462" rx="12" fill="#fbfdfb" stroke="#d8ded8"/>
+    <text x="18" y="26" font-size="13.5" fill="#5b6b5e" font-weight="bold">工具调用监控</text>
+    <line x1="18" y1="38" x2="302" y2="38" stroke="#e4e9e4"/>
+    <rect x="18" y="52" width="284" height="64" rx="9" fill="#f4fbf5" stroke="#a9c9b0"/>
+    <text x="32" y="72" font-size="12" fill="#2f7a43" font-weight="bold">调用 API/MCP 能力</text>
+    <text x="32" y="90" font-size="11" fill="#6b7a6e">api:xxapi#ipQuery</text>
+    <text x="32" y="106" font-size="11" fill="#8a968c">200 · 193ms · 只读</text>
+    <rect x="18" y="126" width="284" height="52" rx="9" fill="#f7f9f7" stroke="#e4e9e4"/>
+    <text x="32" y="146" font-size="12" fill="#5b6b5e">run_shell_command</text>
+    <text x="32" y="164" font-size="11" fill="#a9b3ab">（上一次会话的 CLI 调用）</text>
+    <text x="18" y="204" font-size="11.5" fill="#6b7a6e">监控里能看到：工具名 / ref / 状态码 / 耗时</text>
+    <text x="18" y="224" font-size="11.5" fill="#6b7a6e">每一次调用都进审计日志，可回查</text>
+    <rect x="18" y="244" width="284" height="86" rx="9" fill="#0b1220" stroke="#26314a"/>
+    <text x="32" y="264" font-size="11" fill="#9fd4ff">data/audit/commands.jsonl</text>
+    <text x="32" y="284" font-size="10.5" fill="#8fbfe8">{"tool":"invoke_tool",</text>
+    <text x="32" y="300" font-size="10.5" fill="#8fbfe8"> "ref":"api:xxapi#ipQuery",</text>
+    <text x="32" y="316" font-size="10.5" fill="#8fbfe8"> "ok":true,"status":200,"ms":193}</text>
+  </g>
+  <text x="20" y="496" font-size="11" fill="#9aa79d">示意图（非真实截图）：在「AI 助手」里用大白话提问，Agent 会挑中你配的工具取真实数据；三处证据可交叉验证。</text>
+</svg>

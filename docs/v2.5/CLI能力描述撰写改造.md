@@ -2,7 +2,7 @@
 
 > **版本** v2.5（十进制：现有功能优化 + bug 修补）　**日期** 2026-09-24　**体例** 问题 → 方案 → 结果
 > **报障** 用户：「我发现它写的子命令描述很多时候都是错误的，和你写出来的差距很大」→ 追问「它到底是实际执行过，还是望文生义」
-> **触及文件** `tools/cli_docs.py`(新) · `tools/cli_registry.py` · `tools/_runtime/shell_runtime.py` · `api/customize.py` · `api/server.py` · `prompt/prompts.yml` · `static/index.html`
+> **触及文件** `tools/cli_docs.py`(新) · `tools/cli_registry.py` · `tools/_runtime/shell_runtime.py` · `api/customize.py` · `api/server.py` · `prompt/prompts.yml` · `front/index.html`
 > **守住它的用例** `tests/test_ability_draft.py`（**24 项**，离线零模型）
 
 ---
@@ -112,7 +112,7 @@ tools/_runtime/shell_runtime.py       # execute(..., adhoc=)：供草稿接口�
 api/customize.py                      # cli_ability_generate 重写：文档 → help → 粘贴文本 → 保守化；返回 evidence + warnings
 api/server.py                         # /api/cli/ability_draft 透传 docs / help_text / 归属上下文，返回证据与审计
 prompt/prompts.yml                    # ability_writer：依据排序 + 两步链硬规则 + 禁止编造链
-static/index.html                     # 传 docs/help_text；回显证据（读了哪份文档、覆盖几条）与审计警告；新增「帮助文本」框
+front/index.html                     # 传 docs/help_text；回显证据（读了哪份文档、覆盖几条）与审计警告；新增「帮助文本」框
 tests/test_ability_draft.py           # 新增 24 项离线回归
 tests/README.md                       # 用例登记
 ```

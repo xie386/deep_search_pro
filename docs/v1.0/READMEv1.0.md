@@ -98,7 +98,7 @@ deep_search_pro/
 ├── pic/                        # 用户上传的背景图片（按 {username}/ 子目录隔离，/pic 静态挂载）
 ├── agents_docs/                # 助手人格 SOUL.md（按 {username}/SOUL.md 隔离，注入 system_prompt）
 │
-├── static/                     # 前端 SPA（免构建 Vue 3）
+├── front/                     # 前端 SPA（免构建 Vue 3）
 │   ├── index.html              #   登录页 + 多页签工作台(工作台/信息/AI助手/报告/定制助手) + WebSocket 实时监控 + 思考过程折叠区 + 背景图库
 │   └── vendor/vue.global.prod.js     # 本地 Vue 3 全局构建
 │
@@ -151,7 +151,7 @@ deep_search_pro/
 | 1️⃣1️⃣ | `agent/subagents/db_agent.py` | **数据库子 Agent 的装配**：与 `network_search_agent.py` 同构，把「提示词 + MySQL 三件套工具」打包成字典。对照阅读，体会「一套装配模式复用到不同专家」。 |
 | 1️⃣2️⃣ | `tools/personal_tools.py` + `tools/schema_personal.py` | **个人侧工具与本地库**（M1.5）：操作 SQLite 个人库，`attributes` 用 JSON 列承载异质规格（耳机 vs 显卡字段完全不同却共用一表）。这是「泛用化 + JSON 扩展」设计的落点。 |
 | 1️⃣3️⃣ | `api/server.py` + `api/account.py` | **Web 服务层**（M2/M3）：① 同步的 `agent.invoke` 为什么必须用 `asyncio.to_thread` 放到线程池？（否则卡死事件循环，WebSocket 推不出去）② startup 时 `manager.set_loop()` 绑定事件循环后，monitor 埋点如何经 `run_coroutine_threadsafe` 从工作线程送回主循环、再按 thread_id 定向推到 WebSocket？③ 账号如何用个人库 `accounts` 表做角色分流？④（M3）`/api/competitors` 为什么不走 agent 直查 MySQL？`/api/export`→`/api/download` 链路如何做「用户目录隔离 + 防目录穿越」校验？ |
-| 1️⃣4️⃣ | `static/index.html` | **前端 SPA**（M2/M3，免构建 Vue 3）：登录页按 role 分流到公司/个人双工作台；WebSocket 收到 `monitor_event` 渲染右栏进度；来源标记 🔍/🗄️/📚 高亮。思考：为什么选全球构建版而不是工程化打包？（M3）回答如何被 `splitSections()` 按 ①~⑤ 序号切成简报卡片分块？组件美化来自 uiverse 库（003 气泡按钮 / 004 硬阴影输入框 / 001 3D 方块加载器），体会「snippet 重配色适配主题」的方法。后续增强：浅绿/白/黄三色系重配色、AI 回复框深底亮字对比、右栏「🤔 模型思考过程」折叠区、顶栏「🎨 背景」图库面板。 |
+| 1️⃣4️⃣ | `front/index.html` | **前端 SPA**（M2/M3，免构建 Vue 3）：登录页按 role 分流到公司/个人双工作台；WebSocket 收到 `monitor_event` 渲染右栏进度；来源标记 🔍/🗄️/📚 高亮。思考：为什么选全球构建版而不是工程化打包？（M3）回答如何被 `splitSections()` 按 ①~⑤ 序号切成简报卡片分块？组件美化来自 uiverse 库（003 气泡按钮 / 004 硬阴影输入框 / 001 3D 方块加载器），体会「snippet 重配色适配主题」的方法。后续增强：浅绿/白/黄三色系重配色、AI 回复框深底亮字对比、右栏「🤔 模型思考过程」折叠区、顶栏「🎨 背景」图库面板。 |
 | 1️⃣5️⃣ | `tests/` | **测试与调试脚本**：与项目代码分离存放。`m3_smoketest.py` 是接口层回归（登录→竞品清单→导出下载）；注意脚本须基于 `__file__` 解析项目根注入 sys.path、并豁免本机 HTTP_PROXY 才能访问 localhost。 |
 | 1️⃣6️⃣ | `api/me_user_data.py` | **用户数据自主管理**（M4 前置）：`/api/me/*` 全套 CRUD，全部按 session 的 account_id 隔离。思考：为什么「增删改走 REST、Agent 工具只读」的读写分离能同时保住数据安全与 Agent 可靠性？ |
 | 1️⃣7️⃣ | `agent/digest_engine.py` + `agent/subagents/digest_agent.py` + `api/digest_scheduler.py` | **Digest 定期推送**（M4，回归主智能体编排）：① 为什么 digest 不自己写检索代码、而是让主 Agent 调度【网络搜索助手】？② 查询批次为何硬上限 ≤8？③ 候选不足 15 条时筛选门槛为何放宽（禁止空周报）？④ APScheduler 为何内嵌 FastAPI 进程而非外部 cron？⑤（时效性修复）`build_batches` 为何弃用「关键词+修饰词」拼接、改用关键词原文？——实测 Tavily 对带修饰词的中文长查询相关性崩坏（返回无关金融/加密货币新闻），且修饰词无法跨领域通用。 |

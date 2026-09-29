@@ -50,7 +50,7 @@
 │   ├── evaluator.py                  #   入库评估（独立小 agent，见批注 7）
 │   └── db/{username}/                #   每用户向量库目录（chroma persist + 入库记录）
 ├── tools/kb_tools.py                 #   query_kb / upload_to_kb 工具封装（M3 工具，放 tools/）
-└── static/…                          #   前端新增「知识库」模块页 + 工作台入口
+└── front/…                          #   前端新增「知识库」模块页 + 工作台入口
 ```
 
 | 阶段 | 文件 | 改动 | 说明 |
@@ -63,7 +63,7 @@
 | ⑥ | `tools/kb_tools.py`（新）| `query_kb`（对话快模式）/ `upload_to_kb` 工具封装 | M3 工具放 tools/ |
 | ⑦ | `api/server.py` | ① tools 挂载：`query_kb` **双挂**（主 Agent/定制 agent 工具 + 周报引擎代码层必查，批注 3）；② `/api/kb/*` 路由（上传/列表/删除/检索测试/创建库）| 见批注 3 方案 |
 | ⑧ | `api/server.py` 导出路径 | 导出 MD 后**弹窗"是否入库"**（批注 4），用户同意才走评估→入库 | 见批注 11 去重 |
-| ⑨ | `static/index.html` | 新增「知识库」模块页（**用户手动维护增删改查 + 首次建库**，批注 1/13）+ 工作台快捷入口 + 导出后入库确认弹窗 | 上传仅 .md（批注 12）|
+| ⑨ | `front/index.html` | 新增「知识库」模块页（**用户手动维护增删改查 + 首次建库**，批注 1/13）+ 工作台快捷入口 + 导出后入库确认弹窗 | 上传仅 .md（批注 12）|
 | ⑩ | `agent/digest_engine.py` | 周报生成前**代码层必查**（周报全模式），候选区注入 | 讨论文档候选 1 落地 |
 | ⑪ | `prompt/prompts.yml` | main_agent 📚 来源激活 + query_kb 纪律段 + 周报知识库段 | ragflow 占位停用 |
 | ⑫ | `tests/test_knowledge_base.py`（单元）| embedding/分块/去重/隔离/清洗/评估 | 规模按单用户 ~100 份（批注 5）|
@@ -307,10 +307,10 @@ def test_account_isolation():
 
 | 文件 | 改动 |
 |---|---|
-| `static/index.html`（CSS） | `.kb-modal-box` 强制亮色文字；加 `z-index:9999` |
-| `static/index.html`（DOM） | `<teleport to="body">` 包裹 kbIngestShow 弹窗 |
-| `static/index.html`（JS） | `kbIngestOpenWith` 加 `message_id`/`already_ingested` 字段；`kbIngestConfirm` 透传 `force`；入库成功回写 `m.kb_ingested` |
-| `static/index.html`（模板） | 弹窗顶部加 ⚠️ 警告条（`v-if="kbIngestCtx.already_ingested"`） |
+| `front/index.html`（CSS） | `.kb-modal-box` 强制亮色文字；加 `z-index:9999` |
+| `front/index.html`（DOM） | `<teleport to="body">` 包裹 kbIngestShow 弹窗 |
+| `front/index.html`（JS） | `kbIngestOpenWith` 加 `message_id`/`already_ingested` 字段；`kbIngestConfirm` 透传 `force`；入库成功回写 `m.kb_ingested` |
+| `front/index.html`（模板） | 弹窗顶部加 ⚠️ 警告条（`v-if="kbIngestCtx.already_ingested"`） |
 | `api/server.py`（kb_ingest） | 加 `message_id`/`force` 参数；查 `kb_ingested` 标志决定是否拒绝；入库成功后回写 1 |
 | `api/server.py`（api_chat） | 返回 `last_msg_id`（从 `cs.get_last_msg_id(thread_id)` 取） |
 | `agent/conversation_store.py` | `save_turn` 返回 `{"ok":True, "last_assistant_msg_id": ...}`；模块级 `_LAST_MSG_ID` 字典 |

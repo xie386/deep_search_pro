@@ -1,19 +1,19 @@
 /* 生成教程页静态预览（把 index.html 的真实 CSS + 真实 tutRender 渲染结果拼成独立页面）
  * 用法：node scripts/build_tutorial_preview.js
- * 产物：data/tutorial_preview.html（图片指向 data/tutorial_assets/ 本地文件）
+ * 产物：front/tutorial/previews/tutorial_preview.html（图片用 ../<文件名> 指向 front/tutorial/）
  */
 const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const html = fs.readFileSync(path.join(ROOT, 'static', 'index.html'), 'utf8');
+const html = fs.readFileSync(path.join(ROOT, 'front', 'index.html'), 'utf8');
 
 // 1) 抽真实 tutRender/esc
-const A = '    // ---- M4 收尾：教程指导';
-const B = '    async function loadTutorial(force) {';
+const A = '    function esc(s) {';
+const B = '    async function loadTutorial(force, kind) {';
 const i = html.indexOf(A), j = html.indexOf(B, i);
 if (i < 0 || j < 0) throw new Error('未找到 tutRender 代码块');
-const M = new Function('ref', html.slice(i, j) + '\nreturn { tutRender };')((v) => ({ value: v }));
+const M = new Function('ref', html.slice(i, j) + '\nreturn { tutRender, esc };')((v) => ({ value: v }));
 
 // 2) 抽页面 CSS（<style> 全量，保证与真实页面同源）
 const styleM = html.match(/<style[^>]*>([\s\S]*?)<\/style>/);
@@ -35,7 +35,7 @@ let view = html.slice(vStart, vEnd);
 const mdRaw = fs.readFileSync(path.join(ROOT, 'docs', 'v2.0', '演示文档', '演示文档.md'), 'utf8');
 const md = mdRaw.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (m, alt, src) => {
   const name = src.replace(/\\/g, '/').split('/').pop();
-  return `![${alt}](./tutorial_assets/${name})`;
+  return `![${alt}](../${name})`;
 });
 const body = M.tutRender(md);
 
@@ -67,6 +67,6 @@ ${view}
 </html>
 `;
 
-const out = path.join(ROOT, 'data', 'tutorial_preview.html');
+const out = path.join(ROOT, 'front', 'tutorial', 'previews', 'tutorial_preview.html');
 fs.writeFileSync(out, page, 'utf8');
 console.log('已生成：' + out + '（' + page.length + ' 字符，图片 ' + (body.match(/<img /g) || []).length + ' 张）');

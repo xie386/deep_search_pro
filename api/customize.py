@@ -162,6 +162,29 @@ class LlmProviderReq(BaseModel):
     base_url: str
     api_key: str
     is_active: bool = False
+    # ★ M6c-5：三处**可选填**单价（固定单位 元/百万 tokens）。留空=None → 只统计 token、不折算金额。
+    price_in_cached: float | None = None
+    price_in_uncached: float | None = None
+    price_out: float | None = None
+
+
+def _norm_prices(req) -> tuple:
+    """三处单价归一化：None 保持 None（留空 ≠ 免费）；负数直接拒（脏数据不进库）。"""
+    vals = []
+    for name, v in (("输入价(缓存命中)", req.price_in_cached),
+                    ("输入价(缓存未命中)", req.price_in_uncached),
+                    ("输出价", req.price_out)):
+        if v is None:
+            vals.append(None)
+            continue
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "%s 要填数字" % name)
+        if f < 0:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "%s 不能是负数（免费请填 0）" % name)
+        vals.append(f)
+    return tuple(vals)
 
 
 def _mask_key(key: str) -> str:
@@ -174,14 +197,20 @@ def _mask_key(key: str) -> str:
     return "****" + key[-4:]
 
 
-def _normalize_provider(p: dict) -> dict:
+def _normalize_provider(p: dict, mask: bool = True) -> dict:
+    # ★ M6c-5：单价必须**出现在出口**里，否则前端永远拿不到（第一版容易只改表不改出参 ✗）
+    # ★ mask=True 是**回显给前端**用的（默认值 = 保持原行为）；
+    #   造模型取配置时必须 mask=False —— 否则掩码串会被当成密钥发给上游（见 get_active_provider）。
     return {
         "id": p["id"],
         "provider_name": p["provider_name"],
         "model_name": p["model_name"],
         "base_url": p["base_url"],
-        "api_key": _mask_key(p["api_key"]),
+        "api_key": _mask_key(p["api_key"]) if mask else p["api_key"],
         "is_active": bool(p["is_active"]),
+        "price_in_cached": p.get("price_in_cached"),
+        "price_in_uncached": p.get("price_in_uncached"),
+        "price_out": p.get("price_out"),
     }
 
 
@@ -206,11 +235,12 @@ def llm_provider_add(req: LlmProviderReq, token: str) -> dict:
         # 若设为启用，先清掉其他启用的
         if req.is_active:
             conn.execute("UPDATE llm_providers SET is_active=0 WHERE owner_id=?", (aid,))
+        p_c, p_u, p_o = _norm_prices(req)
         cur = conn.execute(
-            "INSERT INTO llm_providers (owner_id, provider_name, model_name, base_url, api_key, is_active) "
-            "VALUES (?,?,?,?,?,?)",
+            "INSERT INTO llm_providers (owner_id, provider_name, model_name, base_url, api_key, is_active,"
+            " price_in_cached, price_in_uncached, price_out) VALUES (?,?,?,?,?,?,?,?,?)",
             (aid, req.provider_name.strip(), req.model_name.strip(),
-             req.base_url.strip(), req.api_key.strip(), int(req.is_active)))
+             req.base_url.strip(), req.api_key.strip(), int(req.is_active), p_c, p_u, p_o))
         conn.commit()
         row = conn.execute("SELECT * FROM llm_providers WHERE id=?", (cur.lastrowid,)).fetchone()
         return {"provider": _normalize_provider({k: row[k] for k in row.keys()})}
@@ -229,19 +259,20 @@ def llm_provider_update(pid: int, req: LlmProviderReq, token: str) -> dict:
         if req.is_active:
             conn.execute("UPDATE llm_providers SET is_active=0 WHERE owner_id=?", (aid,))
         new_key = (req.api_key or "").strip()
+        p_c, p_u, p_o = _norm_prices(req)          # ★ 两条分支都要带上单价，别只改一条
         if not new_key or new_key.startswith("****"):
             # 留空 / 掩码串 = 不修改 key（保留原值）
             conn.execute(
-                "UPDATE llm_providers SET provider_name=?, model_name=?, base_url=?, is_active=? "
-                "WHERE id=? AND owner_id=?",
+                "UPDATE llm_providers SET provider_name=?, model_name=?, base_url=?, is_active=?,"
+                " price_in_cached=?, price_in_uncached=?, price_out=? WHERE id=? AND owner_id=?",
                 (req.provider_name.strip(), req.model_name.strip(), req.base_url.strip(),
-                 int(req.is_active), pid, aid))
+                 int(req.is_active), p_c, p_u, p_o, pid, aid))
         else:
             conn.execute(
-                "UPDATE llm_providers SET provider_name=?, model_name=?, base_url=?, api_key=?, is_active=? "
-                "WHERE id=? AND owner_id=?",
+                "UPDATE llm_providers SET provider_name=?, model_name=?, base_url=?, api_key=?, is_active=?,"
+                " price_in_cached=?, price_in_uncached=?, price_out=? WHERE id=? AND owner_id=?",
                 (req.provider_name.strip(), req.model_name.strip(), req.base_url.strip(),
-                 new_key, int(req.is_active), pid, aid))
+                 new_key, int(req.is_active), p_c, p_u, p_o, pid, aid))
         conn.commit()
         row = conn.execute("SELECT * FROM llm_providers WHERE id=?", (pid,)).fetchone()
         return {"provider": _normalize_provider({k: row[k] for k in row.keys()})}
@@ -262,29 +293,46 @@ def llm_provider_delete(pid: int, token: str) -> dict:
 
 
 def llm_provider_set_active(pid: int, token: str) -> dict:
+    """**开关**：没启用 → 启用；已是「使用中」→ **停用**（回到项目自带的 .env 模型）。
+
+    ★ 2026-09-30 用户要求：原来只有"切到另一套"，没有"回到默认" ✗ ——
+      现在再点一次「✓ 使用中」即可停用，默认模型由 `.env` 提供（`get_active_provider` 返回 None 就是它）。
+    """
     aid = _require_account_id(token)
     ensure_tables()
     conn = get_personal_conn()
     try:
-        own = conn.execute("SELECT id FROM llm_providers WHERE id=? AND owner_id=?", (pid, aid)).fetchone()
-        if not own:
+        row = conn.execute("SELECT is_active FROM llm_providers WHERE id=? AND owner_id=?",
+                           (pid, aid)).fetchone()
+        if not row:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "配置不存在")
+        if int(row[0] or 0) == 1:                     # 已启用 → 停用（回到默认模型）
+            conn.execute("UPDATE llm_providers SET is_active=0 WHERE id=? AND owner_id=?", (pid, aid))
+            conn.commit()
+            return {"ok": True, "active": False, "fallback": "项目默认模型（.env）"}
         conn.execute("UPDATE llm_providers SET is_active=0 WHERE owner_id=?", (aid,))
         conn.execute("UPDATE llm_providers SET is_active=1 WHERE id=? AND owner_id=?", (pid, aid))
         conn.commit()
-        return {"ok": True}
+        return {"ok": True, "active": True}
     finally:
         conn.close()
 
 
 def get_active_provider(aid: int) -> Optional[dict]:
-    """查询某账号启用的模型配置（无则 None = 用默认 .env 模型）"""
+    """查询某账号启用的模型配置（无则 None = 用默认 .env 模型）。**返回原样密钥**（造模型要用）。
+
+    ★ 2026-09-30 用户实测定位的真 bug：这里原来对所有调用方都套 `_normalize_provider`，
+      而它内部会 `_mask_key(...)` ✗ —— 于是**把掩码串当密钥发给了上游**：
+        · 上游报 `Your api key: ****f98f is invalid`（掩码**保留尾部 4 位**，看着像真 key，极难看出是本地换掉的 ✗）；
+        · 同一条 key 放 `.env` 能用、放自定义配置就 401（用户 A/B 实测确认）。
+      现在：默认给前端回显时仍然掩码（`_normalize_provider(mask=True)`），**只有这条造模型的路径取原文**。
+    """
     ensure_tables()
     conn = get_personal_conn()
     try:
         row = conn.execute(
             "SELECT * FROM llm_providers WHERE owner_id=? AND is_active=1 LIMIT 1", (aid,)).fetchone()
-        return _normalize_provider({k: row[k] for k in row.keys()}) if row else None
+        return _normalize_provider({k: row[k] for k in row.keys()}, mask=False) if row else None
     finally:
         conn.close()
 
@@ -450,6 +498,95 @@ def cli_ability_generate(name: str, bin_name: str, rules_text: str, *, docs: str
             "commands": len(cmds),
         },
         "warnings": warnings,
+    }
+
+
+# ============================ 能力撰写 AI（API / MCP 工具 · M5c-2'）============================
+def capability_ability_generate(kind: str, slug: str, *, account_id: int | None = None,
+                                refresh_docs: bool = False) -> dict:
+    """按证据为 API/MCP 来源下的**每个工具**生成「工具级描述」草稿。**只生成草稿，不落库。**
+
+    与 CLI 那套（`cli_ability_generate`）同构的证据分层：
+      ① **README / 文档**（来源的 `docs` 字段：http 网址或**本地文件路径**）→ 语义唯一事实来源；
+      ② **工具清单与参数 schema**（服务自己暴露的）→ 形态真值 + 生成后审计；
+      ③ 用户写的**来源级描述** → 用词与语气向它靠拢；
+      ④ 都没有 → 保守化（只按工具名与参数写，宁少勿编）。
+    用户在前端确认 / 改完，走 `POST /api/tools/sources/cap_abilities` 落库（`abilities_user` 列）。
+    """
+    import json as _json
+    import yaml
+    from tools import capability_draft as cdr
+    from tools import source_docs
+    from api import tools_sources as ts
+
+    if account_id is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "缺少账号")
+    src, caps = ts.load_source_and_caps(int(account_id), kind, slug)
+    if not caps:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "这个来源下还没有工具 —— 先「发现工具」/「导入工具」，再让 AI 写描述")
+
+    cfg = {}
+    try:
+        cfg = _json.loads(src.get("config_json") or "{}") or {}
+    except Exception:  # noqa: BLE001
+        cfg = {}
+    transport = "本地 stdio（本机子进程）" if (cfg.get("transport") == "stdio" or cfg.get("command")) \
+        else "远程 Streamable HTTP 服务"
+    # ★ 故意不把 URL / 命令行 / 环境变量写进提示词：MCP 端点常把部署凭证放在路径段里，
+    #   命令行可能带 token，env 里就是密钥 —— 这些一律不进模型上下文。
+    base_dir = (cfg.get("cwd") or "").strip() or None
+
+    # ---- 证据 ①：README / 文档（http 网址或本地文件路径）；证据 ②：官方介绍文案
+    doc = source_docs.resolve(src.get("docs") or "", force=refresh_docs, base_dir=base_dir)
+    doc_text = (doc.get("text") or "").strip() if doc.get("ok") else ""
+    intro_text = (src.get("intro") or "").strip()
+    if not doc_text and not intro_text:
+        # ★ 用户 2026-09-27 定：两个信息源都空 → **不猜着写**，直接告诉用户缺什么
+        #   （第三方 API/MCP 的 README 常只讲接入；这时贴官方介绍文案才是正解）
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "没有填信息来源，无法 AI 预生成 —— 请在来源配置里填「README / 文档地址」"
+            "（远程填网址、本地 stdio 填 README.md 路径），或贴一段「官方介绍文案」（从服务方的"
+            "社区页 / 应用市场页整段复制即可）。两者填一个就能预写。")
+
+    # ---- 证据 ③：工具清单（含参数与现有描述）
+    listing = cdr.tool_listing(caps)
+
+    # ---- 把（官方文案 + README + 工具清单 + 来源级描述）交给纯函数拼（见 tools/capability_draft.py）
+    user_msg, pre_warnings = cdr.build_user_msg(src, caps, doc, intro_text,
+                                                listing=listing, transport=transport)
+    # ---- 生成
+    try:
+        yml_path = _PROJECT_ROOT / "prompt" / "prompts.yml"
+        cfg_yml = yaml.safe_load(yml_path.read_text(encoding="utf-8"))
+        sys_prompt = cfg_yml["capability_writer"]["system_prompt"]
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"读取能力撰写提示词失败：{e}")
+    try:
+        from agent.llm import model as default_model
+        resp = default_model.invoke(
+            [{"role": "system", "content": sys_prompt},
+             {"role": "user", "content": user_msg}]
+        )
+        text = (resp.content or "").strip()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"生成失败：{type(e).__name__}: {e}")
+    if not text:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "模型没有返回内容，请重试")
+
+    # ---- 解析 + 审计（纯代码，零模型）
+    parsed = cdr.parse_draft(text, caps)
+    return {
+        "items": parsed["items"],
+        "evidence": {
+            # ★ 两份依据都要回：前端据此提示"这次是哪份撑起来的"（用户反馈的很实在的一点）
+            "intro": {"chars": len(intro_text)},
+            "docs": {"ok": bool(doc.get("ok")), "url": doc.get("url") or "", "source": doc.get("source") or "",
+                     "note": doc.get("note") or "", "chars": len(doc_text)},
+            "tools": {"total": len(caps), "described": len(parsed["items"])},
+        },
+        "warnings": list(pre_warnings) + list(parsed["warnings"]),
     }
 
 
@@ -767,18 +904,33 @@ def get_skills_text(aid: int, names: list[str] | None) -> str:
 
 # ============================ 记忆画像 MEMORY.md ============================
 def _user_memory_path(username: str) -> Path:
-    return _user_doc_dir(username) / "MEMORY.md"
+    # M4-8：路径的唯一事实源在 tools/user_doc_paths.py（本函数只做 Path 包装，保持旧调用点可用）
+    from tools import user_doc_paths as _paths
+    return Path(_paths.memory_path(username))
 
 
 def ensure_user_memory(username: str):
     """账号创建时调用：生成空 MEMORY.md（已存在则跳过，幂等）"""
     p = _user_memory_path(username)
     if not p.exists():
+        from tools import user_doc_paths as _paths
+        _paths.ensure_user_dir(username)          # M4-8：落盘前显式建目录（原来是旧 _user_doc_dir 顺手建的）
         p.write_text(MEMORY_TEMPLATE, encoding="utf-8")
 
 
 def _memory_initialized(content: str) -> bool:
-    return "memory_init: done" in (content or "")
+    """是否已初始化。★ M3-1 起**两种标记都认**：
+
+    · 老标记 `<!-- memory_init: done -->`（现有文件、`memory_save` 还在维护它）；
+    · 新标记 `<!-- memory_meta: … -->`（M3 的写路径会写它，与老标记并存）。
+    只认老标记的话，一个"只有新标记"的文件会被判成未初始化 → 前端又放出「✨ 初始化用户画像」，
+    用户再点一次就会把已有画像整段覆盖（虽有快照兜底，但这是不该发生的误判）。
+    """
+    text = content or ""
+    if "memory_init: done" in text:
+        return True
+    from tools import memory_profile as mprof
+    return bool(mprof.parse_meta(text).get("has_meta"))
 
 
 def memory_get(token: str) -> dict:
@@ -803,6 +955,10 @@ def memory_save(token: str, req: MemoryReq) -> dict:
     p = _user_memory_path(user)
     # 若用户编辑时把标记弄丢了，从旧内容里找回并保留在文件头
     old = p.read_text(encoding="utf-8") if p.exists() else ""
+    # ★ M3-9（D9）：人工保存属于"四条写路径"之一 → **改动之前**先留一份快照（内容真变了才留）
+    if req.content.strip() != old.strip():
+        from tools import memory_snapshots as ms
+        ms.snapshot(_require_account_id(token), old, ms.REASON_MANUAL_EDIT)
     new_content = req.content
     if _memory_initialized(old) and "memory_init: done" not in new_content:
         new_content = new_content.replace("<!-- memory_init: pending -->", "<!-- memory_init: done -->")
@@ -825,37 +981,11 @@ def memory_initialize(token: str) -> dict:
     if _memory_initialized(old):
         raise HTTPException(status.HTTP_409_CONFLICT, "画像已初始化（仅可初始化一次）；如需调整请直接编辑或让智能体在对话中更新")
 
-    # 收集该账号系统已有信息
+    # 收集该账号系统已有信息（★ M3-2 起改用共用收集器 `tools/profile_evidence.py`，
+    #   初始化器与建议器共用同一套表口径 —— 两处各写一份必然漂移）
     aid = _require_account_id(token)
-    ensure_tables()
-    conn = get_personal_conn()
-    try:
-        interests = conn.execute("SELECT interest_tag, description FROM interests WHERE owner_id=?", (aid,)).fetchall()
-        watchlist = conn.execute("SELECT brand, product, note FROM watchlist WHERE owner_id=?", (aid,)).fetchall()
-        products = conn.execute("SELECT product_name, brand, category, price FROM products WHERE owner_id=?", (aid,)).fetchall()
-        comp_profile = conn.execute("SELECT * FROM company_profile WHERE owner_id=?", (aid,)).fetchall()
-        comp_products = conn.execute("SELECT product_name, category, price FROM company_products WHERE owner_id=?", (aid,)).fetchall()
-        competitors = conn.execute("SELECT comp_name, category, note FROM company_competitors WHERE owner_id=?", (aid,)).fetchall()
-        subs = conn.execute("SELECT name, keywords FROM digest_subs WHERE owner_id=?", (aid,)).fetchall()
-    finally:
-        conn.close()
-
-    profile_lines = []
-    for r in interests:
-        profile_lines.append(f"兴趣：{r['interest_tag']}" + (f"（{r['description']}）" if r['description'] else ""))
-    for r in watchlist:
-        profile_lines.append(f"关注：{r['brand']} {r['product'] or ''}".strip() + (f"（{r['note']}）" if r['note'] else ""))
-    for r in products:
-        price = f"，价格 {r['price']}" if r['price'] else ""
-        profile_lines.append(f"收藏：{r['brand'] or ''}{r['product_name']}（{r['category'] or '未分类'}）{price}")
-    for r in comp_profile:
-        profile_lines.append(f"公司：{dict(r).get('company_name') or '（未填写）'}")
-    for r in comp_products:
-        profile_lines.append(f"公司产品：{r['product_name']}（{r['category'] or '未分类'}）")
-    for r in competitors:
-        profile_lines.append(f"竞品：{r['comp_name']}" + (f"（{r['category']}）" if r['category'] else ""))
-    for r in subs:
-        profile_lines.append(f"订阅：{r['name']}")
+    from tools import profile_evidence as pev
+    profile_lines = pev.table_lines(pev.collect_tables(aid))
 
     data_block = "\n".join(profile_lines) if profile_lines else "（该账号暂无任何资料，画像将保持基础状态）"
 
@@ -881,15 +1011,304 @@ def memory_initialize(token: str) -> dict:
     except Exception as e:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"生成失败：{type(e).__name__}: {e}")
 
-    # 组装新 MEMORY.md：保留模板头 + 标记 done + 生成的画像 + 空笔记段
-    new_content = (
-        "# 用户记忆画像（MEMORY）\n\n"
-        "> 智能体会在对话中自行判断是否需要更新本文件；你也可以在「定制助手」页直接编辑。\n\n"
-        "<!-- memory_init: done -->\n\n"
-        "## USER PROFILE（用户画像）\n\n"
-        f"{text}\n\n"
-        "## MEMORY（助手笔记）\n\n"
-        "（Agent 在对话中自行维护：你的长期偏好、未决问题、重要事实等。）\n"
-    )
+    # ★ M3-9（D9）：初始化也是写路径 → 改动之前先留一份（老文件里那些内容也值得可还原）
+    from tools import memory_profile as mprof
+    from tools import memory_snapshots as ms
+    from tools import profile_evidence as pev
+    ms.snapshot(aid, old, ms.REASON_INIT)
+
+    # 组装新 MEMORY.md：保留模板头 + 标记 done + 生成的画像 + 空笔记段；
+    # 同时补上**新元数据行**（`memory_meta`，与老 `memory_init` 并存 —— 方案 §4.4）。
+    today = mprof.today()
+    head = ("# 用户记忆画像（MEMORY）\n\n"
+            "> 智能体会在对话中自行判断是否需要更新本文件；你也可以在「定制助手」页直接编辑。\n\n"
+            "<!-- memory_init: done -->\n\n"
+            + mprof.PROFILE_HEAD)
+    new_content = mprof.render_file(head, text, pev.refresh_meta(aid, len(profile_lines)))
     p.write_text(new_content, encoding="utf-8")
-    return {"ok": True, "content": new_content, "initialized": True}
+    return {"ok": True, "content": new_content, "initialized": True,
+            "meta": mprof.parse_meta(new_content)}
+
+
+# ============================ M3-9：历史画像与一键还原（D9）============================
+class MemoryRestoreReq(BaseModel):
+    snapshot_id: int
+
+
+def memory_snapshots(token: str) -> dict:
+    """最近 3 份历史画像（新的在前）+ 当前元信息（前端「🕘 历史画像」用）。"""
+    from tools import memory_profile as mprof
+    from tools import memory_snapshots as ms
+    aid = _require_account_id(token)
+    user = _username_by_token(token)
+    ensure_user_memory(user)
+    content = _user_memory_path(user).read_text(encoding="utf-8")
+    meta = mprof.parse_meta(content)
+    items = ms.list_snapshots(aid)
+    for it in items:                    # 展示用字段（前端不拼时间格式）
+        it.setdefault("created_at_text", it.get("created_at") or "")
+    return {
+        "items": items,
+        "snapshots": items,             # ★ 兼容键：前端历史版本列表读的是 `snapshots`（2026-09-27 实测修）
+        "keep": ms.KEEP_LATEST,
+        "meta": {"init": meta["init"], "refreshed": meta["refreshed"],
+                 "sources": meta["sources"], "initialized": meta["initialized"]},
+    }
+
+
+def memory_restore(token: str, req: MemoryRestoreReq) -> dict:
+    """还原到某份历史画像。
+
+    ★ 还原自己也是写路径 → **先把当前版本快照**（reason=restore）→ 可以来回切、不会丢东西。
+    画像段被替换成历史版本，**笔记段与文件头原样保留**；`refreshed` 更新为今天。
+    """
+    from tools import memory_profile as mprof
+    from tools import memory_snapshots as ms
+    aid = _require_account_id(token)
+    user = _username_by_token(token)
+    ensure_user_memory(user)
+    p = _user_memory_path(user)
+    cur = p.read_text(encoding="utf-8")
+    snap = ms.get_snapshot(aid, int(req.snapshot_id or 0))
+    if not snap:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "这份历史画像不存在（或不属于当前账号）")
+    ms.snapshot(aid, cur, ms.REASON_RESTORE)          # 先存当前 → 可来回切
+    meta = mprof.parse_meta(cur)
+    from tools import profile_evidence as pev
+    new_content = mprof.render_file(cur, snap["content"],
+                                    pev.refresh_meta(aid, len(mprof.parse_rows(snap["content"])), meta))
+    p.write_text(new_content, encoding="utf-8")
+    return {"ok": True, "content": new_content, "initialized": True,
+            "restored_from": snap["id"], "snapshot_of": snap["created_at"],
+            "meta": mprof.parse_meta(new_content)}
+
+# ============================ M3-3：画像建议器（只出建议，不落盘）============================
+def _profile_suggestions(cur: list, proposed: list) -> list:
+    """比对「当前画像行」与「AI 给出的目标行」→ 建议列表（``＋新增 / ～更新 / −移除``）。
+
+    · 移除**只针对占位行**（R3 迁移）：老文件里的「暂无」以 `−` 呈现给人工确认，绝不静默删；
+      证据没提到的真实条目一律**保留**（方案 §5.6：`−` 默认不勾）；
+    · 人工行（来源=人工）的更新建议会带 `manual=True`，前端默认不勾（D8 的 `protect_manual`）；
+    · 值没变的条目不进列表（免得界面上一堆"没变化"）。
+    """
+    from tools import memory_profile as mprof
+    out: list[dict] = []
+    cur_by_norm = {(r.get("norm") or ""): r for r in cur}
+    seen: set[str] = set()
+    for p in proposed:
+        norm = p.get("norm") or ""
+        if not norm:
+            continue
+        seen.add(norm)
+        old_row = cur_by_norm.get(norm)
+        base = {"field": p.get("field") or "", "new": p.get("fact") or "",
+                "source": p.get("source") or "", "date": p.get("date") or "",
+                "flagged": bool(p.get("flagged")) or (p.get("field_status") == "new")}
+        if not old_row:
+            out.append(dict(base, op="add", old="", manual=False))
+            continue
+        if (old_row.get("fact") or "").strip() == (p.get("fact") or "").strip():
+            continue                                   # 值没变 → 不进列表
+        out.append(dict(base, op="update", old=old_row.get("fact") or "",
+                        manual=bool(old_row.get("manual"))))
+    for r in cur:
+        if (r.get("norm") or "") in seen:
+            continue
+        if mprof.has_placeholder(r.get("fact") or ""):
+            out.append({"op": "remove", "field": r.get("field") or "", "old": r.get("fact") or "",
+                        "new": "", "source": "", "date": r.get("date") or "",
+                        "manual": bool(r.get("manual")), "flagged": False})
+    return out
+
+
+def memory_suggest(token: str) -> dict:
+    """让人工画像的 AI 给**修订建议**（D2-②）。★ **只返回建议，绝不写文件** —— 落盘走 `/apply` 或 `/import`。
+
+    证据 = 7 张结构化表（带 `兴趣#3` 这类可溯源引用）+ 最近 3 篇周报要点 + 最近 N 条用户消息（D3）。
+    存在意义：补上"数据库事实与周报主题永远不会在对话里被表达"这一路（根因 R1）。
+    """
+    import yaml
+    from tools import memory_profile as mprof
+    from tools import profile_evidence as pev
+
+    aid = _require_account_id(token)
+    user = _username_by_token(token)
+    ensure_user_memory(user)
+    p = _user_memory_path(user)
+    content = p.read_text(encoding="utf-8")
+    cur_rows = mprof.parse_rows(mprof.split_sections(content)["profile"])
+
+    ev = pev.collect(aid)
+    if not (ev["table_lines"] or ev["reports"] or ev["sessions"]) and not cur_rows:
+        # ★ 证据不足时**不猜**（方案 §六 M3-3 的判据）：直接说清楚，别让模型编
+        return {"suggestions": [], "evidence": ev["counts"], "warnings": [],
+                "note": "这个账号既没有结构化资料、也没有周报与会话记录，画像也是空的 —— "
+                        "先积累一些数据（兴趣/收藏/关注，或聊几轮）再来让 AI 提建议。"}
+
+    parts = []
+    parts.append("【用户当前画像】\n%s" % (mprof.render_rows(cur_rows) if cur_rows else "（还没有画像内容）"))
+    parts.append("【证据】\n%s" % pev.render_text(ev))
+    parts.append("# 本次的硬规则\n"
+                 "1. 只输出条目列表（每行 `- 维度：事实（来源：…）`），不要 diff 符号、不要解释、不要开场白；\n"
+                 "2. **证据里没提到的旧条目必须原样保留**（不许擅自删）；\n"
+                 "3. 证据支持的新维度才写；维度名不在清单内时在维度名前加 ⚠️；\n"
+                 "4. 来源必须写（数据库行用它的引用如 `关注#7`、周报写 `周报`、对话写 `会话`、用户自己写的写 `人工`）；\n"
+                 "5. 不要写「暂无 / 待补充」这类占位行。")
+    user_msg = "\n\n".join(parts)
+
+    try:
+        yml_path = _PROJECT_ROOT / "prompt" / "prompts.yml"
+        cfg = yaml.safe_load(yml_path.read_text(encoding="utf-8"))
+        sys_prompt = cfg["memory_suggester"]["system_prompt"]
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"读取画像建议提示词失败：{e}")
+    try:
+        from agent.llm import model as default_model
+        resp = default_model.invoke([{"role": "system", "content": sys_prompt},
+                                     {"role": "user", "content": user_msg}])
+        text = (resp.content or "").strip()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"生成建议失败：{type(e).__name__}: {e}")
+    if not text:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "模型没有返回内容，请重试")
+
+    proposed = mprof.parse_rows(text)
+    warnings: list[str] = []
+    if not proposed:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                            "模型没有给出可解析的条目（期望每行 `- 维度：事实（来源：…）`），请重试")
+    dropped = [t for t in text.split("\n") if t.strip().startswith("-") and mprof.has_placeholder(t)]
+    if dropped:
+        warnings.append("模型输出了 %d 行占位内容，已忽略（缺失的维度不该写占位）" % len(dropped))
+    proposed = [r for r in proposed if not mprof.has_placeholder(r.get("fact") or "")]
+    sugg = _profile_suggestions(cur_rows, proposed)
+    new_dims = [s["field"] for s in sugg if s.get("flagged")]
+    if new_dims:
+        warnings.append("有 %d 个维度不在白名单内（默认不勾选，确认无误再启用）：%s"
+                        % (len(new_dims), "、".join(new_dims[:6])))
+    return {"suggestions": sugg, "evidence": ev["counts"], "warnings": warnings,
+            "raw": text, "profile_rows": len(cur_rows)}
+
+def _apply_items(rows: list, items: list, protect_manual: bool) -> tuple[list, list, list]:
+    """把一批建议作用到画像行上（**纯逻辑**，apply 与 import 共用，避免两条路分叉）。
+
+    返回 `(rows, applied, skipped)`。规则：
+      · `add|update` 走 `upsert`（按维度**就地更新**，同一维度只有一行）；
+      · `remove` 仅当勾中、且不是受保护的人工行；
+      · 未知操作 / 空值 / 人工行 → 进 `skipped` 并写明原因（界面要显示给用户）。
+    """
+    from tools import memory_profile as mprof
+    applied: list[dict] = []
+    skipped: list[dict] = []
+    for it in (items or []):
+        it = it or {}
+        op = (it.get("op") or "add").strip().lower()
+        field = (it.get("field") or "").strip()
+        if op == "remove":
+            norm = mprof._norm_field(field)
+            hit = next((r for r in rows if r.get("norm") == norm), None)
+            if not hit:
+                skipped.append({"op": op, "field": field, "why": "画像里已经没有这个维度了"})
+            elif hit.get("manual") and protect_manual:
+                skipped.append({"op": op, "field": field, "why": "人工行受保护（可关闭保护后再删）"})
+            else:
+                rows = [r for r in rows if r is not hit]
+                applied.append({"op": op, "field": field})
+            continue
+        if op not in ("add", "update"):
+            skipped.append({"op": op, "field": field, "why": "未知操作（只支持 add/update/remove）"})
+            continue
+        rows, act = mprof.upsert(rows, field, it.get("new") or "", source=it.get("source") or "",
+                                 date=it.get("date") or mprof.today(), protect_manual=protect_manual)
+        if act == "skip_manual":
+            skipped.append({"op": op, "field": field, "why": "人工行受保护（默认不覆盖，可关闭保护）"})
+        elif act == "empty":
+            skipped.append({"op": op, "field": field, "why": "新值为空"})
+        else:
+            applied.append({"op": op, "field": field, "action": act})
+    return rows, applied, skipped
+
+
+# ============================ M3-4：应用建议（就地更新 / 保人工行 / 改前快照）============================
+class MemoryApplyReq(BaseModel):
+    items: list[dict] = []               # 前端勾中的建议条目（形状同 /suggest 的 suggestions）
+    protect_manual: bool = True          # ★ 默认保护人工行（D8 的开关）
+
+
+def memory_apply(token: str, req: MemoryApplyReq) -> dict:
+    """把勾选的建议**落到画像文件**。这是四条写路径里唯一"按维度就地更新"的一条（修根因 R2）。
+
+    口径：
+      · `op=add|update` → 按维度 `upsert`（**同一维度只有一行**，值取最新）；
+      · `op=remove` → 仅当该行被勾中才删；人工行在 `protect_manual` 下**不动**；
+      · **改前必快照**（D9）；一条都没应用时**不写文件、不留快照**；
+      · 写回只替换画像段：文件头与**笔记段原样保留**；`memory_meta` 的 `refreshed` 更新为今天。
+    """
+    from tools import memory_profile as mprof
+    from tools import memory_snapshots as ms
+    aid = _require_account_id(token)
+    user = _username_by_token(token)
+    ensure_user_memory(user)
+    p = _user_memory_path(user)
+    cur = p.read_text(encoding="utf-8")
+    rows = mprof.parse_rows(mprof.split_sections(cur)["profile"], dedupe=True)
+
+    rows, applied, skipped = _apply_items(rows, req.items, req.protect_manual)
+
+    if not applied:
+        return {"ok": True, "wrote": False, "applied": [], "skipped": skipped,
+                "meta": mprof.parse_meta(cur)}
+
+    ms.snapshot(aid, cur, ms.REASON_SUGGEST_IMPORT)      # ★ 改之前先留档（D9）
+    meta = mprof.parse_meta(cur)
+    from tools import profile_evidence as pev
+    new_content = mprof.render_file(cur, rows, pev.refresh_meta(aid, len(rows), meta))
+    p.write_text(new_content, encoding="utf-8")
+    return {"ok": True, "wrote": True, "applied": applied, "skipped": skipped,
+            "content": new_content, "meta": mprof.parse_meta(new_content),
+            "rows": len(rows)}
+
+
+# ============================ M3-10：一键导入整份建议（D8）============================
+class MemoryImportReq(BaseModel):
+    items: list[dict] = []               # AI 建议的**整份**（= 全选）
+    protect_manual: bool = True          # ★ 默认保护人工行（D8 的默认值）
+    confirm: bool = False                # ★ 必须显式确认（整份覆盖的破坏面最大）
+
+
+def memory_import(token: str, req: MemoryImportReq) -> dict:
+    """一键导入「AI 建议画像」= 全选应用（D8）。与 `/apply` 共用内核，差别在**整份 + 需确认 + 报计数**。
+
+    为什么要独立端点（而不是让前端"全选后再调 apply"）：
+      · **必须显式 `confirm`** —— 整份覆盖破坏面最大，不能让一次误点就落盘；
+      · 返回**确认面板要用的计数**（将更新几个维度、其中几个是人工行），前端据此弹确认框（§5.6）；
+      · 与 `/apply` 共用 `_apply_items` → "保人工行 / 就地更新 / 改前快照"三件事不会分叉。
+    """
+    from tools import memory_profile as mprof
+    from tools import memory_snapshots as ms
+    if not req.confirm:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "一键导入需要显式确认（confirm=true）—— 这会整份应用建议，请先看过差异")
+    aid = _require_account_id(token)
+    user = _username_by_token(token)
+    ensure_user_memory(user)
+    p = _user_memory_path(user)
+    cur = p.read_text(encoding="utf-8")
+    rows = mprof.parse_rows(mprof.split_sections(cur)["profile"], dedupe=True)
+
+    manual_hit = sum(1 for it in (req.items or [])
+                     if (it or {}).get("op") in ("add", "update") and bool((it or {}).get("manual")))
+    rows, applied, skipped = _apply_items(rows, req.items, req.protect_manual)
+    if not applied:
+        return {"ok": True, "wrote": False, "applied": [], "skipped": skipped,
+                "dimensions": 0, "manual_kept": manual_hit, "imported": len(req.items or []),
+                "meta": mprof.parse_meta(cur)}
+
+    ms.snapshot(aid, cur, ms.REASON_SUGGEST_IMPORT)      # ★ 改之前先留档（D9）
+    meta = mprof.parse_meta(cur)
+    from tools import profile_evidence as pev
+    new_content = mprof.render_file(cur, rows, pev.refresh_meta(aid, len(rows), meta))
+    p.write_text(new_content, encoding="utf-8")
+    return {"ok": True, "wrote": True, "applied": applied, "skipped": skipped,
+            "dimensions": len(applied), "manual_kept": manual_hit, "imported": len(req.items or []),
+            "content": new_content, "meta": mprof.parse_meta(new_content), "rows": len(rows)}

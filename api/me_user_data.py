@@ -41,6 +41,8 @@ class CompanyProductReq(BaseModel):
     currency: str = "CNY"
     attributes: Optional[str] = None       # JSON 文本
     status: str = "active"
+    price_kind: Optional[str] = None    # Q6：'simple' / 'rule'；两个 price_* 都不给=不动价格字段
+    price_text: Optional[str] = None    # Q6：复杂价格规则正文
 
 
 class CompetitorReq(BaseModel):
@@ -64,12 +66,36 @@ class WatchlistReq(BaseModel):
     note: Optional[str] = None
 
 
+def _norm_price(price, price_kind, price_text):
+    """Q6 显式三态归一化：返回 `(price, kind, text, touch)`。
+
+    · `price_kind='rule'`  → 数值列**置空**、写 price_text（拍板口径：复杂价不用数值）
+    · `price_kind='simple'`→ 写数值、清 price_text
+    · **两个 price_* 都没给** → `touch=False`：**不动**价格三列（防止"只改个名字就把规则价抹掉"的数据丢失）
+    """
+    kind = (price_kind or "").strip() or None
+    text = (price_text or "").strip() or None
+    if price is None and price_kind is None and price_text is None:
+        return None, None, None, False      # ★ 三者皆空才算"没提价格"（否则"只给数值价"会被吞掉）
+    if kind not in (None, "simple", "rule"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "price_kind 只能是 simple 或 rule")
+    if kind == "rule":
+        if not text:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "复杂价格规则需要填写规则内容")
+        return None, "rule", text, True
+    if price is not None:
+        return float(price), "simple", None, True
+    return None, None, None, True          # 显式清空（回到未定价）
+
+
 class PersonalProductReq(BaseModel):
     product_name: str
     brand: Optional[str] = None
     category: Optional[str] = None
     price: Optional[float] = None
     attributes: Optional[str] = None
+    price_kind: Optional[str] = None    # Q6：'simple' / 'rule'；两个 price_* 都不给=不动价格字段
+    price_text: Optional[str] = None    # Q6：复杂价格规则正文
 
 
 def _require_account_id(token: str) -> int:
@@ -150,28 +176,38 @@ def cproducts_list(token: str) -> list:
 
 def cproducts_add(req: CompanyProductReq, token: str) -> dict:
     aid = _require_account_id(token)
+    price, kind, text, _t = _norm_price(req.price, req.price_kind, req.price_text)   # Q6 三态
     conn = _db()
     try:
         cur = conn.execute(
-            "INSERT INTO company_products (owner_id, product_name, category, price, currency, attributes, status) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (aid, req.product_name, req.category, req.price, req.currency, req.attributes, req.status),
+            "INSERT INTO company_products (owner_id, product_name, category, price, price_kind, price_text,"
+            " currency, attributes, status) VALUES (?,?,?,?,?,?,?,?,?)",
+            (aid, req.product_name, req.category, price, kind, text, req.currency, req.attributes, req.status),
         )
         conn.commit()
-        return {"id": cur.lastrowid}
+        return {"id": cur.lastrowid, "price_kind": kind or None}
     finally:
         conn.close()
 
 
 def cproducts_update(pid: int, req: CompanyProductReq, token: str) -> dict:
     aid = _require_account_id(token)
+    price, kind, text, touch = _norm_price(req.price, req.price_kind, req.price_text)
     conn = _db()
     try:
-        cur = conn.execute(
-            "UPDATE company_products SET product_name=?, category=?, price=?, currency=?, attributes=?, status=? "
-            "WHERE id=? AND owner_id=?",
-            (req.product_name, req.category, req.price, req.currency, req.attributes, req.status, pid, aid),
-        )
+        if touch:
+            cur = conn.execute(
+                "UPDATE company_products SET product_name=?, category=?, price=?, price_kind=?, price_text=?,"
+                " currency=?, attributes=?, status=? WHERE id=? AND owner_id=?",
+                (req.product_name, req.category, price, kind, text, req.currency, req.attributes, req.status,
+                 pid, aid),
+            )
+        else:
+            cur = conn.execute(
+                "UPDATE company_products SET product_name=?, category=?, currency=?, attributes=?, status=?"
+                " WHERE id=? AND owner_id=?",
+                (req.product_name, req.category, req.currency, req.attributes, req.status, pid, aid),
+            )
         conn.commit()
         if cur.rowcount == 0:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "产品不存在或不属于当前账号")
@@ -338,13 +374,20 @@ def watchlist_update(wid: int, req: WatchlistReq, token: str) -> dict:
 
 def pproducts_update(pid: int, req: PersonalProductReq, token: str) -> dict:
     aid = _require_account_id(token)
+    price, kind, text, touch = _norm_price(req.price, req.price_kind, req.price_text)
     conn = _db()
     try:
-        cur = conn.execute(
-            "UPDATE products SET product_name=?, brand=?, category=?, price=?, attributes=? "
-            "WHERE id=? AND owner_id=?",
-            (req.product_name, req.brand, req.category, req.price, req.attributes, pid, aid),
-        )
+        if touch:                       # ★ 前端没提价格 → 不动价格三列（防"改名抹掉规则价"）
+            cur = conn.execute(
+                "UPDATE products SET product_name=?, brand=?, category=?, price=?, price_kind=?, price_text=?,"
+                " attributes=? WHERE id=? AND owner_id=?",
+                (req.product_name, req.brand, req.category, price, kind, text, req.attributes, pid, aid),
+            )
+        else:
+            cur = conn.execute(
+                "UPDATE products SET product_name=?, brand=?, category=?, attributes=? WHERE id=? AND owner_id=?",
+                (req.product_name, req.brand, req.category, req.attributes, pid, aid),
+            )
         conn.commit()
         if cur.rowcount == 0:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "商品不存在或不属于当前账号")
@@ -404,14 +447,16 @@ def pproducts_list(token: str) -> list:
 
 def pproducts_add(req: PersonalProductReq, token: str) -> dict:
     aid = _require_account_id(token)
+    price, kind, text, _t = _norm_price(req.price, req.price_kind, req.price_text)   # Q6 三态
     conn = _db()
     try:
         cur = conn.execute(
-            "INSERT INTO products (owner_id, product_name, brand, category, price, attributes) VALUES (?,?,?,?,?,?)",
-            (aid, req.product_name, req.brand, req.category, req.price, req.attributes),
+            "INSERT INTO products (owner_id, product_name, brand, category, price, price_kind, price_text,"
+            " attributes) VALUES (?,?,?,?,?,?,?,?)",
+            (aid, req.product_name, req.brand, req.category, price, kind, text, req.attributes),
         )
         conn.commit()
-        return {"id": cur.lastrowid}
+        return {"id": cur.lastrowid, "price_kind": kind or None}
     finally:
         conn.close()
 

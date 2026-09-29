@@ -1,0 +1,249 @@
+{
+ "_comment": "M5c-3 离线路由基准题库。每条的 expect 是【可接受】的工具 ref 集合（命中其中任一个就算对）；噪声题 expect 为空且要求『不该路由』。改题库要连 baseline 一起重跑。",
+ "questions": [
+  {
+   "id": "city-basic",
+   "cat": "明确",
+   "q": "查一下广州这个城市的基本信息",
+   "expect": [
+    "mcp:city/search_city"
+   ]
+  },
+  {
+   "id": "city-climate",
+   "cat": "明确",
+   "q": "广州夏天热不热，回南天是什么意思",
+   "expect": [
+    "mcp:city/search_city"
+   ]
+  },
+  {
+   "id": "city-en",
+   "cat": "明确",
+   "q": "Shanghai 这个城市在哪个省",
+   "expect": [
+    "mcp:city/search_city"
+   ]
+  },
+  {
+   "id": "train-code",
+   "cat": "明确",
+   "q": "成都东站的车站代码是多少",
+   "expect": [
+    "mcp:12306-mcp/get-station-code-by-names",
+    "mcp:12306-mcp/get-station-by-telecode"
+   ]
+  },
+  {
+   "id": "train-city-code",
+   "cat": "明确",
+   "q": "广州有哪些火车站",
+   "expect": [
+    "mcp:12306-mcp/get-stations-code-in-city",
+    "mcp:12306-mcp/get-station-code-of-citys"
+   ]
+  },
+  {
+   "id": "train-stations",
+   "cat": "明确",
+   "q": "G3705 这趟车经过哪些站",
+   "expect": [
+    "mcp:12306-mcp/get-train-route-stations"
+   ]
+  },
+  {
+   "id": "train-date",
+   "cat": "明确",
+   "q": "今天几号",
+   "expect": [
+    "mcp:12306-mcp/get-current-date"
+   ]
+  },
+  {
+   "id": "douyin-hot",
+   "cat": "明确",
+   "q": "今天抖音热榜有什么",
+   "expect": [
+    "api:xxapi#douyinHot"
+   ]
+  },
+  {
+   "id": "ip-lookup",
+   "cat": "明确",
+   "q": "查一下 8.8.8.8 这个 IP 的归属地",
+   "expect": [
+    "api:xxapi#ipQuery"
+   ]
+  },
+  {
+   "id": "steam-price",
+   "cat": "明确",
+   "q": "艾尔登法环现在卖多少钱",
+   "expect": [
+    "api:steam#searchGame",
+    "api:steam#gameDetail"
+   ]
+  },
+  {
+   "id": "steam-detail",
+   "cat": "明确",
+   "q": "帮我查 Steam 上 appid 1245620 的游戏详情",
+   "expect": [
+    "api:steam#gameDetail"
+   ]
+  },
+  {
+   "id": "weread",
+   "cat": "明确",
+   "q": "微信读书里有没有讲旅行的书",
+   "expect": [
+    "weread"
+   ]
+  },
+  {
+   "id": "bili",
+   "cat": "明确",
+   "q": "B站上有什么讲编程的视频",
+   "expect": [
+    "bili"
+   ]
+  },
+  {
+   "id": "wechat",
+   "cat": "明确",
+   "q": "帮我翻一下我和朋友的聊天记录",
+   "expect": [
+    "wechat-cli"
+   ]
+  },
+  {
+   "id": "bnf-subject",
+   "cat": "明确",
+   "q": "法国国家图书馆里有没有讲巴黎公社的资料",
+   "expect": [
+    "mcp:bnf/search_by_subject",
+    "mcp:bnf/search_by_title",
+    "mcp:bnf/advanced_search",
+    "mcp:bnf/natural_language_search"
+   ]
+  },
+  {
+   "id": "bnf-report",
+   "cat": "明确",
+   "q": "帮我用法语资料做一份关于雨果的研究报告",
+   "expect": [
+    "mcp:bnf/sequential_reporting",
+    "mcp:bnf/natural_language_search"
+   ]
+  },
+  {
+   "id": "pdd-search",
+   "cat": "明确",
+   "q": "拼多多上磁吸手机壳怎么样",
+   "expect": [
+    "mcp:pdd/search_goods"
+   ]
+  },
+  {
+   "id": "pdd-deals",
+   "cat": "明确",
+   "q": "拼多多百亿补贴有什么值得买的",
+   "expect": [
+    "mcp:pdd/explore_deals",
+    "mcp:pdd/search_goods"
+   ]
+  },
+  {
+   "id": "trip-main",
+   "cat": "跨工具",
+   "q": "我现在的位置是四川成都，可能要去广州实习，帮我把广州这个城市的信息、出行路线和火车票价都查一下",
+   "expect": [
+    "mcp:city/search_city",
+    "mcp:route/plan_route",
+    "mcp:12306-mcp/get-tickets",
+    "mcp:12306-mcp/get-station-code-of-citys"
+   ]
+  },
+  {
+   "id": "trip-tickets",
+   "cat": "跨工具",
+   "q": "帮我看看成都东到广州南明天还有没有票",
+   "expect": [
+    "mcp:12306-mcp/get-tickets",
+    "mcp:12306-mcp/get-station-code-by-names",
+    "mcp:12306-mcp/get-stations-code-in-city"
+   ]
+  },
+  {
+   "id": "trip-route",
+   "cat": "跨工具",
+   "q": "帮我规划一条从成都到广州的驾车路线，要看距离和耗时",
+   "expect": [
+    "mcp:route/plan_route"
+   ]
+  },
+  {
+   "id": "trip-mixed",
+   "cat": "跨工具",
+   "q": "帮我看下去广州的票，顺便查下那边的天气",
+   "expect": [
+    "mcp:12306-mcp/get-tickets",
+    "mcp:city/search_city"
+   ]
+  },
+  {
+   "id": "trip-transfer",
+   "cat": "跨工具",
+   "q": "从成都坐火车去广州，中途要换乘哪些车",
+   "expect": [
+    "mcp:12306-mcp/get-interline-tickets",
+    "mcp:12306-mcp/get-train-route-stations"
+   ]
+  },
+  {
+   "id": "compare-price",
+   "cat": "跨工具",
+   "q": "拼多多和 Steam 上同一款游戏哪个便宜",
+   "expect": [
+    "mcp:pdd/search_goods",
+    "api:steam#searchGame"
+   ]
+  },
+  {
+   "id": "noise-who",
+   "cat": "噪声",
+   "q": "你是谁",
+   "expect": []
+  },
+  {
+   "id": "noise-mood",
+   "cat": "噪声",
+   "q": "今天心情有点好",
+   "expect": []
+  },
+  {
+   "id": "noise-bio",
+   "cat": "噪声",
+   "q": "什么是光合作用",
+   "expect": []
+  },
+  {
+   "id": "noise-code",
+   "cat": "噪声",
+   "q": "用 python 写个快速排序",
+   "expect": []
+  },
+  {
+   "id": "noise-translate",
+   "cat": "噪声",
+   "q": "把这句话翻译成英文：今天天气不错",
+   "expect": []
+  },
+  {
+   "id": "noise-weather",
+   "cat": "噪声",
+   "q": "成都今天天气怎么样",
+   "expect": []
+  }
+ ]
+}

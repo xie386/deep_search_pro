@@ -113,6 +113,7 @@ def run_digest(sub_id: int, owner_id: int, conn=None) -> dict:
     from agent.llm import model
     from agent.prompts import main_agent_content
     from agent.subagents.network_search_agent import network_search_agent
+    from agent.usage_counter import UsageCounterMiddleware   # M4-2：框架级用量计数（C1）
     from agent.subagents.digest_agent import digest_agent
     from tools.schema_personal import get_personal_conn
 
@@ -155,14 +156,14 @@ def run_digest(sub_id: int, owner_id: int, conn=None) -> dict:
         # 注入为情报侧重提示（如价格敏感→降价/优惠类优先），让周报更贴合用户画像。
         profile_hint = ""
         try:
-            _mem_path = Path(__file__).resolve().parents[1] / "agents_docs" / username / "MEMORY.md"
-            if _mem_path.exists():
-                _mem = _mem_path.read_text(encoding="utf-8")
-                if "## USER PROFILE" in _mem:
-                    _seg = _mem.split("## USER PROFILE", 1)[1]
-                    _seg = _seg.split("## ", 1)[0].strip()
-                    if _seg and "（初始为空" not in _seg and "暂无资料" not in _seg:
-                        profile_hint = _seg[:400]
+            # M4-8：路径与正文都走唯一事实源（tools/user_doc_paths.py）——周报与聊天必须读同一份文件
+            from tools import user_doc_paths as _paths
+            _mem = _paths.read_memory_for_agent(user)
+            if "## USER PROFILE" in _mem:
+                _seg = _mem.split("## USER PROFILE", 1)[1]
+                _seg = _seg.split("## ", 1)[0].strip()
+                if _seg and "（初始为空" not in _seg and "暂无资料" not in _seg:
+                    profile_hint = _seg[:400]
         except Exception:
             profile_hint = ""
 
@@ -221,6 +222,7 @@ def run_digest(sub_id: int, owner_id: int, conn=None) -> dict:
             model=model,
             system_prompt=digest_main_prompt,
             subagents=[network_search_agent, digest_agent],
+            middleware=[UsageCounterMiddleware()],   # M4-3（C3）：周报也会联网检索，同样烧额度
         )
         result = agent.invoke({"messages": [HumanMessage(content=task_prompt)]})
         # ★ 2026-09-24：与聊天同一处修复 —— 推理模型偶尔把正文写进 reasoning_content、
@@ -251,7 +253,33 @@ def run_digest(sub_id: int, owner_id: int, conn=None) -> dict:
         user_dir.mkdir(parents=True, exist_ok=True)
         ts = today.strftime("%Y%m%d_%H%M%S")
         md_path = user_dir / f"{scope_label}_{ts}.md"
+        # M5-4：把"还没进过周报"的价格提醒收成附录（同一件事不在两份周报里重复出现）
+        try:
+            from tools.price_ledger import digest_appendix
+            _appendix = digest_appendix(owner_id, mark=False)
+            if _appendix:
+                # ★ Q5 A：板块插在**签名行之前**（原来追加在最后，读起来像"补丁"）
+                _lines = md.rstrip().split("\n")
+                _pos = next((i for i, x in enumerate(_lines)
+                            if "自动生成" in x and x.strip().startswith("*")), len(_lines))
+                md = "\n".join(_lines[:_pos] + _appendix.rstrip().split("\n") + [""] + _lines[_pos:])
+        except Exception as _e:
+            print("[digest] 价格附录跳过:", _e)
         md_path.write_text(md, encoding="utf-8")
+        # M5-5：从**已生成的正文**里抽价格情报（C5：不额外调模型，纯解析）
+        try:
+            from tools.price_mentions import collect_price_mentions
+            _pm = collect_price_mentions(owner_id, None, md)
+            if _pm.get("inserted"):
+                print("[digest] 价格情报入库 %d 条" % _pm["inserted"])
+        except Exception as _e:
+            print("[digest] 价格情报抽取跳过:", _e)
+        # ★ 报告**确实写盘之后**才标 in_digest（否则"标了却没出报告"就永久丢了这条提醒）
+        try:
+            from tools.price_ledger import digest_appendix as _da
+            _da(owner_id, mark=True)
+        except Exception:
+            pass
 
         # 6. 写 digest_reports + 更新 last_run_at
         conn.execute(

@@ -201,7 +201,7 @@ route_tools(account_id, question) -> RouteResult
 top1 与 top3 只差 **0.02~0.06**，绝对值全部落在 **0.53~0.70**。也就是说「相似度 > 0.35」会
 **全部命中**，分层形同虚设；而「相似度 > 0.5」依然全部命中。绝对阈值在这类文本上不可用。
 
-改用**相对信号**（8 工具异构池实测，`tests/_m5b_route_calib.py`）：
+改用**相对信号**（8 工具异构池实测，`tests/live/_m5b_route_calib.py`）：
 
 | 问句 | 向量 top3 | z_top | 词法命中 | 结果 |
 |---|---|---|---|---|
@@ -371,9 +371,9 @@ run_mcp_tool(server_id: str, tool: str, args: dict) -> dict
 | 5 | `tools/_runtime/api_runtime.py`（新建，M5b-3） | `run_api_tool` 执行器（白名单 + 密钥注入 + 闸门 + 审计） | 中 |
 | 6 | `tools/_runtime/mcp_runtime.py`（新建，M5b-4） | `run_mcp_tool` 执行器（连接 + 白名单 + 闸门 + 审计） | 中 |
 | 7 | `tools/api_tool_registry.py` / `tools/mcp_registry.py`（新建） | 配置读写（与 `cli_registry` 同款「配置导向」口径） | 中 |
-| 8 | `static/index.html` | 面板：API / MCP 配置卡 + 统一「能力描述」编辑（复用 M5a 组件） | 中 |
+| 8 | `front/index.html` | 面板：API / MCP 配置卡 + 统一「能力描述」编辑（复用 M5a 组件） | 中 |
 | 9 | `prompt/prompts.yml` | 纪律段补「API/MCP 工具的调用形态 + 不得自造 URL/工具名」 | 小 |
-| 10 | `tests/m5b_pool_e2e.py` / `tests/m5b_router_e2e.py` / `tests/m5b_pressure_probe.py` / `tests/m5b_api_e2e.py` / `tests/m5b_mcp_e2e.py` | 见 §七 | 大 |
+| 10 | `tests/testclient/m5b_pool_e2e.py` / `tests/testclient/m5b_router_e2e.py` / `tests/live/m5b_pressure_probe.py` / `tests/m5b_api_e2e.py` / `tests/m5b_mcp_e2e.py` | 见 §七 | 大 |
 
 ---
 
@@ -381,7 +381,7 @@ run_mcp_tool(server_id: str, tool: str, args: dict) -> dict
 
 ### 7.1 加压探针矩阵（核心验收）
 
-沿用 M5a 探针方法论（`tests/m5_probe_e2e.py`：真桩夹具、**只看首调**、会话真值配对、`M5_CONTROL` 对照组），
+沿用 M5a 探针方法论（`tests/live/m5_probe_e2e.py`：真桩夹具、**只看首调**、会话真值配对、`M5_CONTROL` 对照组），
 把工具数从 3 加压到 **8~10 个（混合来源）**：
 
 | 组 | 工具构成 | 期望 |
@@ -477,7 +477,7 @@ run_mcp_tool(server_id: str, tool: str, args: dict) -> dict
 | `tools/schema_personal.py` | `tool_capabilities`（池快照）+ `tool_pool_meta`（池版本）两表；`purge_account()` 账号清理助手（自省表结构，未来加表不用改） |
 | `tools/capability_pool.py` | `CapabilityEntry` 契约 + `cli_entry()` 适配器 + `pool_entries()` 派生 + `sync_cli_entry()` 增量同步 + `rebuild_pool()` 幂等重建 + `sync_vectors()/ensure_vectors_fresh()/route_scores()` 向量层 |
 | `tools/cli_registry.py` | `save_cli` / `delete_cli` / `set_state` 三处写入口挂钩（完全容错，池坏了不影响配置写入） |
-| `tests/m5b_pool_e2e.py` | **62/62**（表结构 12 / 适配器 16 / 写入口联动 8 / 版本 2 / rebuild 幂等 4 / 向量 9 / 隔离 2 / 不污染 M5a 3 / 清理 2） |
+| `tests/testclient/m5b_pool_e2e.py` | **62/62**（表结构 12 / 适配器 16 / 写入口联动 8 / 版本 2 / rebuild 幂等 4 / 向量 9 / 隔离 2 / 不污染 M5a 3 / 清理 2） |
 
 **两条实施中确定的取舍**：
 
@@ -498,9 +498,9 @@ M5b-3/M5b-4 再加 `tool_api` / `tool_mcp` 时**无需再改**，三个测试的
 |---|---|
 | `tools/tool_router.py` | 快路径 / 混合检索 / 相对置信判定 / 三形态分层渲染 / 预算护栏 / 示例过滤 / 全链兜底；`decide()` 为纯函数（可单测） |
 | `api/server.py` | `_run_agent` 改调 `route_tools(account_id, question)`，仍拼成同一段 `cli_brief` 注入（契约不变） |
-| `tests/_m5b_route_calib.py` | 阈值标定脚本（8 工具异构池，输出 §3.1.1 的表） |
-| `tests/m5b_router_e2e.py` | **34/34**（快路径 4 / 路由命中不猜错 / 反例回退 2 / 护栏 6 / 兜底 5 / RRF 单元 4 / 来源无关 3 / 接线 4 / 清理 2） |
-| `tests/m5b_pressure_probe.py` | 加压真机探针（8 个真桩工具 + 8 正 2 反，判定「只看首调 + 会话真值配对」）；`SKIP_LLM=1` 自检 **6/6** |
+| `tests/live/_m5b_route_calib.py` | 阈值标定脚本（8 工具异构池，输出 §3.1.1 的表） |
+| `tests/testclient/m5b_router_e2e.py` | **34/34**（快路径 4 / 路由命中不猜错 / 反例回退 2 / 护栏 6 / 兜底 5 / RRF 单元 4 / 来源无关 3 / 接线 4 / 清理 2） |
+| `tests/live/m5b_pressure_probe.py` | 加压真机探针（8 个真桩工具 + 8 正 2 反，判定「只看首调 + 会话真值配对」）；`SKIP_LLM=1` 自检 **6/6** |
 
 **8 工具实测结果**：10 条问句中 **8 条走路由**（命中集都含正确工具，0 条猜错）、
 **2 条无关问句全部回退全量**；注入量 1644 字 vs 全量 2499 字。
@@ -516,15 +516,15 @@ M5b-3/M5b-4 再加 `tool_api` / `tool_mcp` 时**无需再改**，三个测试的
 
 | 套件 | 结果 |
 |---|---|
-| `tests/m5b_pool_e2e.py` | 62/62 ✅ |
-| `tests/m5b_router_e2e.py` | 34/34 ✅ |
-| `tests/m4c_cli_e2e.py`（含真机问答） | **109/109** ✅ |
-| `tests/m5_abilities_e2e.py` | **43/43** ✅（其中 1 条断言随接线更新：`_run_agent` 的注入改由 `route_tools` 产出，意图不变） |
-| `tests/m5b_pressure_probe.py`（SKIP_LLM 自检） | 6/6 ✅ |
+| `tests/testclient/m5b_pool_e2e.py` | 62/62 ✅ |
+| `tests/testclient/m5b_router_e2e.py` | 34/34 ✅ |
+| `tests/testclient/m4c_cli_e2e.py`（含真机问答） | **109/109** ✅ |
+| `tests/testclient/m5_abilities_e2e.py` | **43/43** ✅（其中 1 条断言随接线更新：`_run_agent` 的注入改由 `route_tools` 产出，意图不变） |
+| `tests/live/m5b_pressure_probe.py`（SKIP_LLM 自检） | 6/6 ✅ |
 
 ### 11.5 加压探针真机实测（2026-09-16，用户手动跑 + 单条复验）
 
-`tests/m5b_pressure_probe.py`（8 工具 × 8 正例 + 2 反例，纯真机、只看首调）：
+`tests/live/m5b_pressure_probe.py`（8 工具 × 8 正例 + 2 反例，纯真机、只看首调）：
 
 | 轮次 | 正例 | 反例 | 备注 |
 |---|---|---|---|

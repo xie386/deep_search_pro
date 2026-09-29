@@ -12,10 +12,10 @@
 | --- | --- | --- |
 | `api/server.py` | **新增** | FastAPI 应用：REST 登录/注册/登出、REST 问答（`/api/chat`）、WebSocket 进度（`/ws/{thread_id}`）、静态 SPA 托管（`/`）。startup 绑定 `monitor` 的 loop。 |
 | `api/account.py` | **新增** | 账号服务：复用个人库 SQLite 的 `accounts` 表（`CREATE TABLE IF NOT EXISTS`，不破坏样例）；注册/登录/会话校验；token 用 `secrets.token_hex` 存进程内字典。 |
-| `static/index.html` | **新增** | 前端 SPA（Vue 3 全球构建版，免打包）：登录页 + 公司/个人双工作台，右栏 WebSocket 实时滚动工具调用进度，来源标注 🔍/🗄️/📚 高亮，轻量 Markdown/表格渲染。 |
-| `static/vendor/vue.global.prod.js` | **新增** | 本地 Vue 3.5.13 全局构建（157KB），由 FastAPI `/static` 托管，前端免 CDN 直连。 |
+| `front/index.html` | **新增** | 前端 SPA（Vue 3 全球构建版，免打包）：登录页 + 公司/个人双工作台，右栏 WebSocket 实时滚动工具调用进度，来源标注 🔍/🗄️/📚 高亮，轻量 Markdown/表格渲染。 |
+| `front/vendor/vue.global.prod.js` | **新增** | 本地 Vue 3.5.13 全局构建（157KB），由 FastAPI `/static` 托管，前端免 CDN 直连。 |
 | `pyproject.toml` | 依赖已在列 | fastapi / uvicorn 已声明；通过 `uv sync` 正式装进项目 `.venv`。 |
-| `README.md` | 同步更新 | 修正「项目现状」为「M2 进行中/已完成」；结构图补 `api/server.py` / `api/account.py` / `static/`；保留原阅读指南。 |
+| `README.md` | 同步更新 | 修正「项目现状」为「M2 进行中/已完成」；结构图补 `api/server.py` / `api/account.py` / `front/`；保留原阅读指南。 |
 | `docs/里程碑计划.md` | 同步更新 | M2 标记完成。 |
 
 > 未动：公司侧/个人侧 Agent 与工具（`main.py` 的 CLI 交互版仍保留可用）；MCP、用户画像按拍板暂缓。

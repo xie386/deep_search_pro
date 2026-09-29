@@ -1,3 +1,4 @@
+from agent.usage_counter import UsageCounterMiddleware   # M4-2：框架级用量计数（C1）
 from agent.prompts import sub_agents_content
 from tools.personal_tools import (
     list_personal_tables,
@@ -13,4 +14,5 @@ personal_agent = {
     'description': sub_agents_content['personal']['description'],
     'system_prompt': sub_agents_content['personal']['system_prompt'],
     'tools': [list_personal_tables, get_personal_data, query_personal_db],
+    "middleware": [UsageCounterMiddleware()],     # M4-3：子 Agent **不吃**主图的 middleware，必须各自注册（C2）
 }

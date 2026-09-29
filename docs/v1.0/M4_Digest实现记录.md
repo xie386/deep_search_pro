@@ -15,7 +15,7 @@
 | `tools/schema_personal.py` | a-1 | ensure_tables 新增两表：`digest_subs(owner_id, scope, name, keywords JSON, schedule daily\|weekly, enabled, last_run_at, UNIQUE(owner_id,scope))`、`digest_reports(owner_id, title, md_path, pdf_path, item_count, status, coverage_note, created_at)`。 |
 | `api/server.py` | a-2 / c | 新增 4 路由：`GET /api/digest/subs`（无订阅则按角色自动生成默认：公司←company_competitors 竞品名、个人←interests 标签）；`PUT /api/digest/subs`（改关键词≤8/周期/开关）；`POST /api/digest/run`（手动触发，to_thread offload）；`GET /api/reports`（列表+下载链接，复用 /api/download 同目录校验）。startup 启动 APScheduler，shutdown 停止。 |
 | `api/digest_scheduler.py` | c-1 | BackgroundScheduler(Asia/Shanghai)：daily@9:00 跑全部启用订阅、周一 9:00 额外跑 weekly；每份跑完经 monitor 通道 WS 推 `report_ready` 事件给对应 username。 |
-| `static/index.html` | c-2 | 顶栏新增「📰 报告」tab（有新报告时红点 NEW）；新增报告视图：订阅卡片（显示 scope/schedule/启停 + 关键词编辑保存）、报告表格（标题/条数/时间/MD·PDF 下载）；WS 收到 `report_ready` → toast 提醒 + 列表自动刷新 + 红点亮起。 |
+| `front/index.html` | c-2 | 顶栏新增「📰 报告」tab（有新报告时红点 NEW）；新增报告视图：订阅卡片（显示 scope/schedule/启停 + 关键词编辑保存）、报告表格（标题/条数/时间/MD·PDF 下载）；WS 收到 `report_ready` → toast 提醒 + 列表自动刷新 + 红点亮起。 |
 | `tests/m4_engine_test.py` / `tests/m4_rest_test.py` | 验证 | 引擎独立测试（不依赖服务）；REST 全链路冒烟。 |
 
 依赖增量：`apscheduler==3.11.3`（uv add）。

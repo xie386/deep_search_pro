@@ -17,19 +17,34 @@
 from __future__ import annotations
 
 import math
+import os
 import re
 from dataclasses import dataclass, field
 
 from tools import capability_pool as pool_mod
+
+
+def _route_provider() -> str:
+    """工具路由的**仲裁层**实现：`local`（默认，现状）/ `jev`（★ 占位，未实现）。
+
+    见 `docs/v3.0/遗留问题v2.0M5c-路由基准与Jev仲裁预研.md` §3.4：Jev 只在**灰色区间**做
+    `choice(该用哪个工具?)` + `noul(需要工具吗?)` 两个判定，confidence 不够仍回退全量。
+    这里先留出配置缝隙（配置导向、**不许硬编码厂商/端点**），真正的实现等基准数字说话。
+    """
+    return (os.getenv("ZX_TOOL_ROUTE_PROVIDER", "local") or "local").strip().lower()
 
 # ---------------------------------------------------------------- 可调参数（改动须重跑加压探针）
 FAST_PATH_MAX = 4          # 池内条目 ≤ 此数 → 直接走 M5a 全量简报（路由没有收益，省一次 embedding）
 MAX_FULL_CARDS = 3         # 最多给几张完整能力卡
 COMPACT_TOP_N = 2          # 完整卡之后，再给几条紧凑行
 TOTAL_BUDGET_CHARS = 1500  # 注入总量上限（≈750 token）
-Z_STRONG = 2.0             # 向量置信阈值：top1 的 z 分数达到此值才算「有明确目标」
-                           # （2.0 是 8 工具实测标定值：无关问句「你是谁」z=1.57、
-                           #  真命中最低 1.65~1.99，取 2.0 让噪声一律回退全量）
+Z_STRONG = 2.4             # 向量置信阈值：top1 的 z 分数达到此值才算「有明确目标」
+# ★ 2026-09-27 用基准（28 条池 / 30 题，`tests/m5c_router_bench.py`）标定：2.0 → 2.4 时
+#   precision@3 / recall@3 / hit@3 **完全不变**（0.292 / 0.674 / 0.792），
+#   噪声假阳性 0.333 → **0.000**，代价是灰区回退 0.300 → 0.467（灰区要注入整池 16,408 字符 vs 路由时 ~2,700）。
+#   用户 2026-09-27 拍板取 2.4：宁可多花上下文，也不要「自信地选错」。改这个值必须重跑基准。
+#   （历史：2.0 是 8 工具时期的标定值 —— 无关问句「你是谁」z=1.57、真命中最低 1.65~1.99，
+#    池子涨到 28 条后这套数已经失效，按上面的基准扫描重标定。）
 LEX_MIN = 2                # 或：top1 的词法命中 ≥ 此值（更可靠的那一路）
 RRF_K = 60                 # RRF 融合常数（与 M3 检索栈同口径）
 
@@ -73,16 +88,27 @@ def _char_bigrams(text: str) -> set[str]:
 
 
 def lexical_scores(question: str, entries: list[pool_mod.CapabilityEntry]) -> dict[str, float]:
-    """词法命中分：短语命中权重 3、2-gram 重叠权重 1（只统计 ≥2 字的中文/英文片段）。"""
-    q_big = _char_bigrams(question)
+    """词法命中分：短语命中权重 3、2-gram 重叠权重 1（只统计 ≥2 字的中文/英文片段）。
+
+    ★ M5c：打分前先剔除**泛化词**（`capability_pool.GENERIC_TOKENS`：今天/我/有没有/查询/信息…）。
+    实测踩过：CLI 关键词里写着「**今天**B站在火什么」这类**问句模板** →「今天几号」这个完全无关的
+    问句也能让 `cli:bili` 拿到 1.0 分，而短语命中权重 3.0 ≥ `LEX_MIN=2` → **一个泛化词命中就足以
+    判"自信"**，把向量路正确的 top1 在 RRF 里顶掉（基准实测噪声假阳性 50%）。
+    泛化词跨领域零区分度，剔除后：「今天几号」→「几号」；「今天B站在火什么」→「b站在火」→ 不再假命中。
+    只影响**打分**，卡片/提示词里的原文一个字不动。
+    """
+    q_big = _char_bigrams(pool_mod.strip_generic(question))
     out: dict[str, float] = {}
     for e in entries:
         hay = f"{e.name} {e.keywords}"
         score = 0.0
         for ph in _phrase_tokens(e.keywords):
-            if ph and ph in (question or ""):
-                score += 3.0
-        score += float(len(q_big & _char_bigrams(hay)))
+            if not ph or not ph in (question or ""):
+                continue
+            if not pool_mod.strip_generic(ph):     # 整个短语都是泛化词（如「今天」「有没有」）→ 丢弃
+                continue
+            score += 3.0
+        score += float(len(q_big & _char_bigrams(pool_mod.strip_generic(hay))))
         out[f"{e.source}:{e.ref}"] = score
     return out
 
@@ -202,6 +228,26 @@ def route_tools(account_id: int | None, question: str, *,
         return RouteResult(brief=brief, examples=ex, mode="full",
                            tokens_est=int((len(brief) + len(ex)) * 0.5), detail={"reason": reason})
 
+    def _full_pool(ents: list, reason: str) -> RouteResult:
+        """池里**含非 CLI 来源**时的全量简报：必须从统一池渲染。
+
+        为什么：快路径原来直接用 `cli_reg.agent_brief()`（**CLI 专属**），于是"池小"时
+        API/MCP 能力对模型完全隐身——配好了却调不到（真机 e2e 逮到：3 CLI + 1 API = 4 条
+        走快路径，注入文本里没有那条 API 能力）。只有全是 CLI 时仍走 `agent_brief`，
+        保证与 M5a 逐字一致（回归用例钉着）。
+        """
+        brief = "\n".join(e.card_text for e in ents)
+        ex = cli_reg.ability_examples_block(account_id)
+        return RouteResult(brief=brief, examples=ex, mode="full",
+                           tokens_est=int((len(brief) + len(ex)) * 0.5),
+                           detail={"reason": reason, "mixed_sources": True})
+
+    def _full_auto(ents: list, reason: str) -> RouteResult:
+        """有非 CLI 来源 → 统一池渲染；纯 CLI → 保持老行为（逐字一致）。"""
+        if ents and any(e.source != pool_mod.SOURCE_CLI for e in ents):
+            return _full_pool(ents, reason)
+        return _full(reason)
+
     if not account_id:
         return _full("no_account")
     try:
@@ -212,14 +258,26 @@ def route_tools(account_id: int | None, question: str, *,
     if not ents:
         return _full("empty_pool")
     if force_full or len(ents) <= FAST_PATH_MAX or not (question or "").strip():
-        return _full("fast_path" if ents else "empty_pool")
+        return _full_auto(ents, "fast_path" if ents else "empty_pool")
 
     try:
         dense = pool_mod.route_scores(account_id, question)
         dec = decide(question, ents, dense)
         if not dec["confident"]:
-            r = _full("low_confidence")
-            r.detail.update({"z_top": dec["z_top"], "lex_top": dec["lex_top"]})
+            # ★ M5c-4【占位】：灰色区间的「仲裁层」预留位 —— **Jev 只做占位，未实现**。
+            #   设计见 docs/v3.0/遗留问题v2.0M5c-路由基准与Jev仲裁预研.md §3.4：
+            #     provider=local（默认）→ 现状：直接回退全量；
+            #     provider=jev（未来）→ 在此把「问句 + 全池 name/keywords」交给 Jev 的
+            #       choice("该用哪个工具？") + noul("需要工具吗？")，confidence ≥ 阈值 → 按 Jev 排序路由，
+            #       否则仍回退全量；一次调用并行两个问题（延迟只付一次）。
+            #   ★ 铁律：Jev 只影响「工具怎么被想起」，**绝不参与「能不能跑」**（六道闸/只读闸/审计一律不动）。
+            #   ★ 立项条件：M5c-3 基准跑出 precision@3 < 0.7 或 灰区 > 30% 或 噪声假阳性 > 10%（任一），
+            #     且 M5c-1 / M5c-2 已落地（否则是把糊在一起的文本喂给更聪明的判断器）。
+            prov = _route_provider()
+            if prov != "local":
+                print("[M5c] 灰色区间仲裁层 provider=%r 尚未实现（占位），本次按 local 回退全量" % prov)
+            r = _full_auto(ents, "low_confidence")
+            r.detail.update({"z_top": dec["z_top"], "lex_top": dec["lex_top"], "arbiter": prov})
             return r
         brief, full_refs, order = _render_routed(ents, dec["order"])
         ex_all = cli_reg.ability_examples_block(account_id)

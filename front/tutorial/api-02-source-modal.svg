@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 500" font-family="Microsoft YaHei, PingFang SC, sans-serif">
+  <rect width="980" height="500" fill="#e6e9e6"/>
+  <!-- 遮罩后的页面轮廓 -->
+  <rect x="0" y="0" width="980" height="500" fill="#0b1220" opacity="0.30"/>
+  <!-- 弹窗 -->
+  <g transform="translate(90,26)">
+    <rect x="0" y="0" width="800" height="448" rx="18" fill="#ffffff" stroke="#cfe3d1"/>
+    <text x="28" y="38" font-size="18" fill="#2f7a43" font-weight="bold">＋ 新增 API 来源</text>
+    <text x="28" y="64" font-size="12.5" fill="#6b7a6e">这里填的是来源级配置（域名 + 鉴权），它下面的所有工具共用；工具本身由 OpenAPI 文档决定，保存后进「导入工具」。</text>
+
+    <!-- 字段行 1 -->
+    <text x="28" y="94" font-size="12.5" fill="#5b6b5e">短名 *（进工具 ref，ASCII）</text>
+    <rect x="28" y="100" width="230" height="32" rx="7" fill="#fbfdfb" stroke="#c9d6cb"/>
+    <text x="40" y="121" font-size="13" fill="#2b3a2e">xxapi</text>
+    <circle cx="246" cy="94" r="11" fill="#54aa69"/><text x="246" y="98" font-size="12" fill="#fff" text-anchor="middle">1</text>
+
+    <text x="286" y="94" font-size="12.5" fill="#5b6b5e">展示名</text>
+    <rect x="286" y="100" width="230" height="32" rx="7" fill="#fbfdfb" stroke="#c9d6cb"/>
+    <text x="298" y="121" font-size="13" fill="#2b3a2e">小小API（抖音热榜）</text>
+
+    <text x="546" y="94" font-size="12.5" fill="#5b6b5e">超时（秒）</text>
+    <rect x="546" y="100" width="90" height="32" rx="7" fill="#fbfdfb" stroke="#c9d6cb"/>
+    <text x="558" y="121" font-size="13" fill="#2b3a2e">30</text>
+
+    <!-- base_url -->
+    <text x="28" y="160" font-size="12.5" fill="#5b6b5e">base_url *（只写到域名，路径由文档决定）</text>
+    <rect x="28" y="166" width="600" height="32" rx="7" fill="#fbfdfb" stroke="#c9d6cb"/>
+    <text x="40" y="187" font-size="13" fill="#2b3a2e">https://v2.xxapi.cn</text>
+    <circle cx="640" cy="160" r="11" fill="#54aa69"/><text x="640" y="164" font-size="12" fill="#fff" text-anchor="middle">2</text>
+    <text x="660" y="187" font-size="11.5" fill="#a8620f">← 不要带 /api/ip</text>
+
+    <!-- 鉴权 -->
+    <text x="28" y="226" font-size="12.5" fill="#5b6b5e">鉴权方式</text>
+    <rect x="28" y="232" width="230" height="32" rx="7" fill="#fbfdfb" stroke="#c9d6cb"/>
+    <text x="40" y="253" font-size="13" fill="#2b3a2e">无鉴权 ▾</text>
+    <text x="286" y="226" font-size="12.5" fill="#5b6b5e">鉴权参数名（选了鉴权才有）</text>
+    <rect x="286" y="232" width="230" height="32" rx="7" fill="#f3f5f3" stroke="#dfe6e0"/>
+    <text x="298" y="253" font-size="12.5" fill="#a9b3ab">Authorization</text>
+    <text x="546" y="226" font-size="12.5" fill="#5b6b5e">前缀</text>
+    <rect x="546" y="232" width="140" height="32" rx="7" fill="#f3f5f3" stroke="#dfe6e0"/>
+    <text x="558" y="253" font-size="12.5" fill="#a9b3ab">Bearer␣</text>
+
+    <!-- 密钥 -->
+    <text x="28" y="292" font-size="12.5" fill="#5b6b5e">密钥（留空 = 不修改）</text>
+    <rect x="28" y="298" width="230" height="32" rx="7" fill="#fbfdfb" stroke="#c9d6cb"/>
+    <text x="40" y="319" font-size="13" fill="#8a968c">••••••••••</text>
+
+    <text x="286" y="292" font-size="12.5" fill="#5b6b5e">默认请求头（JSON，可空）</text>
+    <rect x="286" y="298" width="400" height="32" rx="7" fill="#fbfdfb" stroke="#c9d6cb"/>
+    <text x="298" y="319" font-size="13" fill="#2b3a2e">{}</text>
+
+    <!-- 能力描述 -->
+    <text x="28" y="358" font-size="12.5" fill="#5b6b5e">能力描述（这句会进能力卡，帮 Agent 判断什么时候该用它）</text>
+    <rect x="28" y="364" width="776" height="32" rx="7" fill="#fdfbf0" stroke="#e5d9a8"/>
+    <text x="40" y="385" font-size="13" fill="#2b3a2e">抖音热榜、抖音热搜、实时热点榜单、抖音热门视频排名</text>
+    <circle cx="816" cy="358" r="11" fill="#d9a441"/><text x="816" y="362" font-size="12" fill="#fff" text-anchor="middle">3</text>
+
+    <!-- 底部 -->
+    <rect x="640" y="410" width="70" height="28" rx="7" fill="#eef5ee" stroke="#cfe3d1"/>
+    <text x="675" y="429" font-size="13" fill="#5b6b5e" text-anchor="middle">取消</text>
+    <rect x="720" y="410" width="84" height="28" rx="7" fill="#54aa69"/>
+    <text x="762" y="429" font-size="13" fill="#ffffff" text-anchor="middle">💾 保存</text>
+    <text x="28" y="429" font-size="11.5" fill="#8a968c">保存后就能贴 OpenAPI 文档导入工具</text>
+  </g>
+  <!-- 标注 -->
+  <g transform="translate(90,486)" font-size="11.5" fill="#3b4a3f">
+    <text x="0" y="0">① 短名 = 工具 ref 的前半段（api:xxapi#…），只能用 ASCII；② base_url 只写到域名；③ 能力描述写得越像"用户会说的话"，Agent 越容易想起它。</text>
+  </g>
+</svg>

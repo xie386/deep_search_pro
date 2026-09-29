@@ -35,6 +35,18 @@ from langchain_core.messages import (
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------- M3-6：记忆注入受预算
+# 方案 §5.4：「SystemMessage 永不丢弃、记忆不在预算模型内」→ 改为**画像/笔记各自有硬上限**，
+# 超限在**装配期**裁剪（`agent/build_context.py`）。数值只此一份来源，别在这里复制第二份。
+# 注意：SystemMessage 仍然永不丢弃（人格与画像丢了比截断更糟），只是注入前先裁到预算内。
+try:
+    from agent.build_context import (NOTES_MAX_CHARS as MEMORY_NOTES_MAX_CHARS,
+                                     PROFILE_MAX_CHARS as MEMORY_PROFILE_MAX_CHARS)
+except Exception:                                    # 防御：极端导入顺序下不阻塞
+    MEMORY_PROFILE_MAX_CHARS, MEMORY_NOTES_MAX_CHARS = 500, 300
+MEMORY_INJECT_BUDGET = {"profile": MEMORY_PROFILE_MAX_CHARS, "notes": MEMORY_NOTES_MAX_CHARS}
+
+
 @dataclass
 class ContextConfig:
     """上下文预算策略（默认值适配免费模型窗口约 8K token）。"""

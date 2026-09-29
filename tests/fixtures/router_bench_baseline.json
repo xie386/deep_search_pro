@@ -1,0 +1,9 @@
+{
+ "precision@3": 0.292,
+ "recall@3": 0.674,
+ "hit@3": 0.792,
+ "gray_ratio": 0.5,
+ "noise_false_positive": 0.0,
+ "pool_size": 28,
+ "questions": 30
+}

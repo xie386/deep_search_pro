@@ -4,7 +4,7 @@
 #   1) REST 登录/注册（账号角色分流，company / personal）
 #   2) REST 问答（POST /api/chat，后台线程跑 agent，多轮按 username 隔离）
 #   3) WebSocket 实时进度（/ws/{thread_id}，把 api/monitor 埋点推到前端右栏）
-#   4) 静态 SPA 托管（static/index.html）
+#   4) 静态 SPA 托管（front/index.html）
 #
 # 设计要点：
 #   - deepagents 的 agent.invoke 是同步阻塞的，必须用 asyncio.to_thread
@@ -52,6 +52,8 @@ from agent.subagents.personal_agent import personal_agent
 # 文档读写工具：主智能体可把知识/笔记保存到 agents_docs（仅限该目录 .md/.txt）
 from tools.readtofile import read_agent_doc, list_agent_docs
 from tools.writetofile import write_agent_doc
+from tools.profile_update import update_user_profile   # M3-5：结构化画像写入（按维度就地更新）
+from tools.price_tool import record_price   # M5-3：记价工具（模糊匹配，多候选让模型问用户）
 from tools.kb_tools import query_kb  # M3：个人知识库检索工具（fast 模式）
 from tools.shell_executor import run_shell_command  # M4b：CLI 沙箱命令工具（与 CLI 面板共用执行器）
 from tools._runtime import shell_runtime as shell_runtime  # M4b：CLI 面板 /api/shell/* 路由用
@@ -59,9 +61,14 @@ from tools import cli_registry as cli_reg  # M4c：第三方 CLI 接入登记（
 from api.account import LoginReq, RegisterReq, login, logout, register, get_session
 from api.context import set_owner_context, set_thread_context
 import api.me_user_data as me
+import api.tools_sources as ts        # v3.0 M1：工具来源（API 适配器配置面）
+from tools.capability_invoke import invoke_tool  # v3.0 M1：API/MCP 能力的唯一调用入口
 from api.monitor import manager, monitor
 from agent import cancel as agent_cancel
 from agent import answer_text
+import api.context as ctx        # M4-3：给计数器提供账号/会话上下文
+from agent import usage_counter   # M4-2/3：用量计数器（计数不依赖各工具自觉上报）
+from agent import context_sources   # M4-7：注入源注册表（收集）
 import api.customize as cust
 import api.voice_tts as vtts
 from deepagents import create_deep_agent
@@ -70,6 +77,102 @@ from agent.reasoning_model import ReasoningChatOpenAI
 from deepagents.middleware._tool_exclusion import _ToolExclusionMiddleware
 
 load_dotenv()
+
+# M4-3：把"当前账号/会话"注入计数器 —— 反过来由 api 层提供读取函数（agent 层不 import api.*）。
+def _usage_context():
+    """给计数器提供 `(account_id, thread_id, turn_index)`。
+
+    ★ 2026-09-28 真机抽样发现的缺口：M4-3 时这里只返回了 2 元组 → `turn_index` 恒为 0，
+      于是 `/api/usage` 的「本轮」等于"所有 turn=0 的行"，**这一维在真机上等于废的**。
+      轮号取会话的 `message_count // 2`（一轮 ≈ user+assistant 两条消息），单调递增、够用；
+      取不到就给 0（不抛，计数器坏了不能拖垮对话）。
+    """
+    aid, tid = ctx.get_owner_context(), ctx.get_thread_context()
+    turn = 0
+    if aid and tid:
+        try:
+            from tools.schema_personal import get_personal_conn
+            conn = get_personal_conn()
+            try:
+                row = conn.execute("SELECT message_count FROM conversations WHERE thread_id=?",
+                                   (tid,)).fetchone()
+            finally:
+                conn.close()
+            if row:
+                n = row[0] if not hasattr(row, "keys") else row["message_count"]
+                turn = max(0, int(n or 0)) // 2
+        except Exception:
+            turn = 0
+    return (aid, tid, turn)
+
+
+usage_counter.set_context_reader(_usage_context)
+
+
+def _usage_provider():
+    """给计数器提供**当前账号生效的模型配置行**（M6c-3：账目按 provider 维度记）。
+
+    取 `is_active DESC, id DESC` 第一条：即"用户当前选中的那套模型配置"。
+    拿不到就返回 None → 该条用量只记 token、provider_id 留空（绝不编造）。
+    """
+    aid = ctx.get_owner_context()
+    if not aid:
+        return None
+    try:
+        from tools.schema_personal import get_personal_conn
+        conn = get_personal_conn()
+        try:
+            row = conn.execute("SELECT * FROM llm_providers WHERE owner_id=?"
+                               " ORDER BY is_active DESC, id DESC LIMIT 1", (int(aid),)).fetchone()
+            return dict(row) if row is not None else None
+        finally:
+            conn.close()
+    except Exception:
+        return None
+
+
+usage_counter.set_provider_resolver(_usage_provider)
+
+
+def _llm_error_hint(err, provider=None) -> str:
+    """把上游的模型调用错误翻成**能照着做**的一句话（2026-09-30 用户实测事故的教训）。
+
+    为什么需要它：当时上游只回 `401 … Your api key: ****f98f is invalid` ✗ ——
+    "掩码保留了尾部 4 位"看着就像真 key，用户根本没想到是**本地把掩码串当密钥发出去了**，
+    也没有任何地方告诉他"这次用的是哪一套自定义配置"。所以这里必须**点出配置**并给出动作。
+    """
+    t = str(err or "")
+    low = t.lower()
+    who = ""
+    try:
+        p = provider or _usage_provider()
+        if p:
+            who = "（用的是自定义配置 #%s「%s / %s」）" % (p.get("id"), p.get("provider_name"),
+                                                          p.get("model_name"))
+        else:
+            who = "（用的是项目默认模型，来自 .env）"
+    except Exception:
+        who = ""
+    if "401" in t or "authenticationerror" in low or "invalid_api_key" in low:
+        return ("密钥无效、或与接口地址不配对%s → 去「定制助手 → 模型选型」用 👁 核对该配置的 key 是否完整；"
+                "或点「✓ 使用中（再点停用）」停用它，先回到项目默认模型" % who)
+    if "402" in t or "insufficient" in low:
+        return "上游账户余额不足%s → 充值或换一套配置" % who
+    if "404" in t or "model_not_found" in low or "does not exist" in low:
+        return "模型名不存在或接口地址不对%s → 核对模型名与 base_url（以厂商文档为准）" % who
+    if "429" in t or "rate limit" in low or "too many requests" in low:
+        return "触发上游限流%s → 等几十秒重试；免费模型限流更频繁" % who
+    if "timeout" in low or "connect" in low or "ssl" in low:
+        return "连不上接口%s → 检查网络与 base_url；本机若开了代理，本地地址要绕开代理" % who
+    return "模型调用失败%s" % who
+
+# M4-7：注册注入源（依赖倒置的另一半）—— import 一次即完成注册。
+# 回退开关 ZX_ASSEMBLY_SOURCES=legacy → 继续走"server 取好再传参"的老路径（逐字不变）。
+import api.context_providers as ctx_providers          # noqa: E402
+import api.price_api as price_ack                      # noqa: E402  (M5-4)
+import api.cost_api as cost_api                        # noqa: E402  (M6c-5)
+ctx_providers.register_all()
+_USE_SOURCES = os.getenv("ZX_ASSEMBLY_SOURCES", "").strip().lower() != "legacy"
 
 # deepagents 内置 filesystem 工具（ls/read_file/glob/grep/write_file/edit_file/delete）
 # 与项目自定义文档工具（read_agent_doc/write_agent_doc，仅限 agents_docs 目录）功能重叠，
@@ -83,8 +186,10 @@ AGENT = create_deep_agent(
     model=model,
     system_prompt=main_agent_content["system_prompt"],
     subagents=[network_search_agent, db_agent, personal_agent],
-    tools=[read_agent_doc, write_agent_doc, list_agent_docs, query_kb, run_shell_command],
-    middleware=[_ToolExclusionMiddleware(excluded=_EXCLUDED_FS_TOOLS)],#去除deepagents内置的filesystem工具，只保留项目自定义的
+    tools=[read_agent_doc, write_agent_doc, list_agent_docs, query_kb, run_shell_command, invoke_tool,
+           update_user_profile, record_price],
+    middleware=[_ToolExclusionMiddleware(excluded=_EXCLUDED_FS_TOOLS),
+                    usage_counter.UsageCounterMiddleware()]   # M4-3：用量计数（框架级，C1）,#去除deepagents内置的filesystem工具，只保留项目自定义的
     # M1：不再用 MemorySaver 承载消息历史（进程重启即丢、无界增长）。
     # 对话历史由 SQLite 持久化（agent/conversation_store.py），每次 invoke 显式传入完整上下文。
 )
@@ -118,8 +223,10 @@ def _build_custom_agent(provider: dict):
         model=custom_model,
         system_prompt=sys_prompt,
         subagents=[network_search_agent, db_agent, personal_agent],
-        tools=[read_agent_doc, write_agent_doc, list_agent_docs, query_kb, run_shell_command],
-        middleware=[_ToolExclusionMiddleware(excluded=_EXCLUDED_FS_TOOLS)],
+        tools=[read_agent_doc, write_agent_doc, list_agent_docs, query_kb, run_shell_command, invoke_tool,
+           update_user_profile, record_price],
+        middleware=[_ToolExclusionMiddleware(excluded=_EXCLUDED_FS_TOOLS),
+                    usage_counter.UsageCounterMiddleware()]   # M4-3：用量计数（框架级，C1）,
     )
 
 
@@ -136,8 +243,9 @@ def _get_memory_text(account_id: int):
         if not row:
             return "", ""
         username = row["username"]
-        p = _cust._user_memory_path(username)
-        return (p.read_text(encoding="utf-8").strip() if p.exists() else ""), username
+        # M4-8：正文读取也走唯一事实源（与周报侧同一个函数 → 不可能读到不同的文件）
+        from tools import user_doc_paths as _paths
+        return _paths.read_memory_for_agent(username), username
     except Exception as e:
         print(f"[memory] 读取 MEMORY.md 失败（忽略）: {e}")
         return "", ""
@@ -221,11 +329,29 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
                     % (_r.detail.get("pool", 0), len(_r.hits)))
         except Exception as e:
             print(f"[M4c/M5] 工具注入生成失败（忽略）: {type(e).__name__}: {e}")
-    ctx = build_request_context(
-        thread_id, account_id, question,
-        soul_text=soul_text, memory_text=memory_text, username=username,
-        skills_text=skills_text, cli_brief=cli_brief,
-    )
+    # M3-5：画像待更新信号（服务端算数字，模型只判断相关性）。没有新数据时是空串，零开销。
+    profile_signal = ""
+    if account_id is not None and memory_text:
+        try:
+            from tools import memory_profile as _mprof
+            from tools import profile_evidence as _pev
+            profile_signal = _pev.staleness(account_id, _mprof.parse_meta(memory_text))
+        except Exception as e:
+            print(f"[M3] 画像待更新信号生成失败（忽略）: {type(e).__name__}: {e}")
+    if _USE_SOURCES:
+        # 新路径：soul/memory 让 build_context 自己从注册表取（server 不再取这两个）
+        ctx = build_request_context(
+            thread_id, account_id, question,
+            username=username, skills_text=skills_text, cli_brief=cli_brief,
+            profile_signal=profile_signal, sources=context_sources.collect(account_id, question),
+        )
+    else:
+        # 老路径（ZX_ASSEMBLY_SOURCES=legacy）：server 取好再传 —— 与改造前逐字一致
+        ctx = build_request_context(
+            thread_id, account_id, question,
+            soul_text=soul_text, memory_text=memory_text, username=username,
+            skills_text=skills_text, cli_brief=cli_brief, profile_signal=profile_signal,
+        )
     if ctx.cli_injected:
         monitor.report_thinking(
             "（已注入可用 CLI 清单 %d 条）"
@@ -401,7 +527,7 @@ async def api_chat(
             print(f"[中断] 占位回答落库失败（忽略）: {type(e).__name__}: {e}")
     except Exception as e:  # 不吞掉错误，给出可读信息
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            f"Agent 执行出错：{type(e).__name__}: {e}")
+                            f"Agent 执行出错：{_llm_error_hint(e)}\n\n{type(e).__name__}: {e}")
     finally:
         monitor.clear_current_thread()
     return {
@@ -797,6 +923,66 @@ async def me_competitors_list(token: str = Query(...)):
 async def me_competitors_batch(req: me.BatchReq, token: str = Query(...)):
     return me.competitors_batch_add(req, token)
 
+# ----------------------------- v3.0 M1：工具来源（API 适配器的配置面） -----------------------------
+@app.get("/api/tools/sources", summary="工具来源列表（API；密钥掩码返回）")
+async def tools_sources(token: str = Query(...)):
+    return ts.sources_list(token)
+
+
+@app.post("/api/tools/source/save", summary="保存/更新一个 API 来源（配置导向，无厂商名）")
+async def tools_source_save(req: ts.ApiSourceReq, token: str = Query(...)):
+    return ts.source_save(req, token)
+
+
+@app.delete("/api/tools/source/{sid}", summary="删除来源（连带其能力）")
+async def tools_source_delete(sid: int, token: str = Query(...)):
+    return ts.source_delete(sid, token)
+
+
+@app.post("/api/tools/source/{sid}/test", summary="来源体检（校验 + 可选可达性探测）")
+async def tools_source_test(sid: int, token: str = Query(...), probe: bool = Query(False)):
+    return ts.source_test(sid, token, probe=probe)
+
+
+@app.get("/api/tools/source/{sid}/candidates", summary="该来源的能力（含未确认候选）")
+async def tools_source_candidates(sid: int, token: str = Query(...)):
+    return ts.candidates_list(sid, token)
+
+
+@app.post("/api/tools/discover", summary="粘贴 OpenAPI → 解析候选（未确认不入池）")
+async def tools_discover(req: ts.DiscoverReq, token: str = Query(...)):
+    return ts.discover(req, token)
+
+
+@app.post("/api/tools/confirm", summary="人工确认候选 → 入池可被 invoke_tool 调用")
+async def tools_confirm(req: ts.ConfirmReq, token: str = Query(...)):
+    return ts.confirm(req, token)
+
+
+@app.post("/api/tools/sources/cap_abilities",
+          summary="M5c-2'：保存工具级描述（用户手写 / 一键导入 AI 草稿）")
+async def tools_cap_abilities(req: ts.CapAbilitiesReq, token: str = Query(...)):
+    """`items` 里 `text` 传空串 = 清除手写、回到自动摘要。写的是 `abilities_user` 列，
+    重新「发现/导入工具」不会冲掉用户写的内容。"""
+    return ts.cap_abilities_save(req, token)
+
+
+@app.post("/api/tools/sources/ability_draft",
+          summary="M5c-2'：按 README/文档 + 工具清单，为每个工具预写中文描述草稿（不落库）")
+async def tools_ability_draft(req: dict = Body(...), token: str = Query(...)):
+    """证据：README/文档（http 网址或**本地文件路径**）+ 工具清单与参数 schema + 来源级描述。
+
+    README 里常有的能力差异（按书名 vs 按作者）只有它写得出来 —— 单靠工具名模型只能猜。
+    返回 `items`（每个工具一段，前端可一键导入并自由编辑）+ `evidence` + `warnings`。
+    """
+    sess = get_session(token)
+    return cust.capability_ability_generate(
+        (req.get("source") or "api").strip().lower() or "api",
+        (req.get("slug") or "").strip(),
+        account_id=sess.get("account_id"),
+        refresh_docs=bool(req.get("refresh_docs")))
+
+
 @app.post("/api/me/collection/batch", summary="批量添加收藏（每行 商品名,品牌,参考价）")
 async def me_collection_batch(req: me.BatchReq, token: str = Query(...)):
     return me.collection_batch_add(req, token)
@@ -1123,6 +1309,116 @@ async def memory_save(req: cust.MemoryReq, token: str = Query(...)):
 async def memory_init(token: str = Query(...)):
     return cust.memory_initialize(token)
 
+
+@app.post("/api/memory/suggest", summary="M3-3：让 AI 给画像提修订建议（★ 只出建议，不落盘）")
+async def memory_suggest(token: str = Query(...)):
+    return cust.memory_suggest(token)
+
+
+@app.post("/api/memory/apply", summary="M3-4：应用勾选的画像建议（就地更新 · 保人工行 · 改前快照）")
+async def memory_apply(req: cust.MemoryApplyReq, token: str = Query(...)):
+    return cust.memory_apply(token, req)
+
+
+@app.post("/api/memory/import", summary="M3-10：一键导入整份 AI 建议（需 confirm · 默认保人工行）")
+async def memory_import(req: cust.MemoryImportReq, token: str = Query(...)):
+    return cust.memory_import(token, req)
+
+
+@app.get("/api/price/history", summary="Q6④：某个对象的全部台账历史价（前端可展开列表）")
+async def price_history(item_type: str = Query(...), item_id: int = Query(...),
+                        token: str = Query(...), limit: int = Query(50)):
+    from api.price_api import history as _h
+    return _h(token, item_type, item_id, limit)
+
+
+@app.post("/api/price/register", summary="Q6④：设为登记价（只改配置，不写台账、不触发提醒）")
+async def price_register(req: price_ack.RegisterReq, token: str = Query(...)):
+    from api.price_api import set_registered as _s
+    return _s(token, req)
+
+
+@app.post("/api/price/history/delete", summary="删除一条台账记录（★ 只能删自己账号的；删完重算最近价）")
+async def price_history_delete(req: price_ack.DelHistReq, token: str = Query(...)):
+    from api.price_api import delete_history as _d
+    return _d(token, req)
+
+
+@app.get("/api/price/source", summary="M5-8：价格源配置列表（阶段 2 预留，配置导向）")
+async def price_sources(token: str = Query(...)):
+    from api.price_api import sources as _s
+    return _s(token)
+
+
+@app.post("/api/price/source", summary="M5-8：新增/更新一个自配价格源")
+async def price_source_save(req: price_ack.SourceReq, token: str = Query(...)):
+    from api.price_api import save_source as _s
+    return _s(token, req)
+
+
+@app.post("/api/price/check", summary="M5-8：立即检查一个商品的价（走自配源；本版为桩）")
+async def price_check(req: price_ack.CheckReq, token: str = Query(...)):
+    from api.price_api import run_check as _r
+    return _r(token, req)
+
+
+@app.get("/api/price/summary", summary="M5-6：价格汇总（监控商品 / 竞品价差 / 资讯价）")
+async def price_summary(token: str = Query(...)):
+    from api.price_api import summary as _s
+    return _s(token)
+
+
+@app.post("/api/price/record", summary="M5-6：前端「更新价格」（与对话记价同一事实源）")
+async def price_record(req: price_ack.RecordReq, token: str = Query(...)):
+    from api.price_api import record as _r
+    return _r(token, req)
+
+
+@app.get("/api/price/alerts", summary="M5-4：待通知的价格提醒（外壳/页面取走 → 提示 → 回执）")
+async def price_alerts(token: str = Query(...)):
+    from api.price_api import alerts as _a
+    return _a(token)
+
+
+@app.post("/api/price/alerts/ack", summary="M5-4：提醒回执（避免重复弹）")
+async def price_alerts_ack(req: price_ack.AckReq, token: str = Query(...)):
+    from api.price_api import ack as _ack
+    return _ack(token, req)
+
+
+@app.get("/api/failures", summary="M6c-6：失败分类汇总（按码计数 + 最近原文）")
+async def failures(token: str = Query(...), days: int = Query(7)):
+    from api.failure_api import failures as _f
+    return _f(token, days)
+
+
+@app.get("/api/cost/summary", summary="M6c-5：成本汇总（按 provider·model 与按天；金额为估算值）")
+async def cost_summary(token: str = Query(...), days: int = Query(30)):
+    from api.cost_api import cost_summary as _s
+    return _s(token, days)
+
+
+@app.post("/api/cost/recalc", summary="M6c-5：按当前单价重算（只影响指定时间窗，写 recalculated_at）")
+async def cost_recalc(req: cost_api.RecalcReq, token: str = Query(...)):
+    from api.cost_api import recalc as _r
+    return _r(token, req.days)
+
+
+@app.get("/api/usage", summary="M4-4：本会话/本轮的用量事件（外部检索次数 + 分类）")
+async def usage(token: str = Query(...), thread_id: str = Query("")):
+    from api.usage_api import usage_report
+    return usage_report(token, thread_id)
+
+
+@app.get("/api/memory/snapshots", summary="M3-9：最近 3 份历史画像（新的在前）+ 当前元信息")
+async def memory_snapshots(token: str = Query(...)):
+    return cust.memory_snapshots(token)
+
+
+@app.post("/api/memory/restore", summary="M3-9：一键还原到某份历史画像（还原前先快照当前版本）")
+async def memory_restore(req: cust.MemoryRestoreReq, token: str = Query(...)):
+    return cust.memory_restore(token, req)
+
 # ----------------------------- 技能 SKILL.md（M4a） -----------------------------
 @app.get("/api/skills", summary="列出我的技能（含简介/字数）")
 async def skills_list(token: str = Query(...)):
@@ -1429,7 +1725,9 @@ TUTORIAL_IMG_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"}
 
 def _tutorial_roots() -> list[Path]:
     """图片允许的来源目录（白名单）——文档同目录 + Typora 贴图目录（作者常把图贴到项目外）。"""
-    roots = [TUTORIAL_DIR]
+    # ★ 统一放 front/tutorial（2026-09-29 用户要求）：教程素材（演示文档引用的截图/svg）现在
+    #   也放这里；`data/tutorial_assets/` 只是**运行时缓存**（data/ 已 gitignore），不再当素材源。
+    roots = [TUTORIAL_DIR, PROJECT_ROOT / "front" / "tutorial"]
     appdata = os.environ.get("APPDATA")
     if appdata:
         roots.append(Path(appdata) / "Typora" / "typora-user-images")
@@ -1533,7 +1831,7 @@ async def tts_audio(name: str = Query(...), token: str = Query(...)):
     return vtts.voice_audio(token, name)
 
 # ----------------------------- 静态 SPA -----------------------------
-STATIC_DIR = PROJECT_ROOT / "static"
+STATIC_DIR = PROJECT_ROOT / "front"
 
 # ★ HTML 入口**绝不缓存**（2026-09-25 桌面端报障）：桌面壳是 pywebview + `private_mode=False` +
 #   固定 storage_path（为了"记住登录"必须这么设），WebView2 于是会**持久化 HTTP 缓存**；而这里原先
@@ -1558,7 +1856,7 @@ async def index():
 
 
 # 挂载静态资源（vendor/vue 等）。注意：放在 / 路由之后，避免覆盖。
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR), html=False), name="static")
+app.mount("/front", StaticFiles(directory=str(STATIC_DIR), html=False), name="front")
 # 背景图目录：pic/{username}/ 按账号隔离
 app.mount("/pic", StaticFiles(directory=str(cust.PIC_DIR), html=False), name="pic")
 TUTORIAL_ASSETS.mkdir(parents=True, exist_ok=True)   # 教程图片缓存目录（静态挂载要求目录存在）

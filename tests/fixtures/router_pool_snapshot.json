@@ -1,0 +1,1483 @@
+[
+ {
+  "source": "cli",
+  "ref": "weread",
+  "name": "微信读书",
+  "keywords": "搜索/找书/这本书是什么/阅读进度/我的书架/最近看的/读书笔记/导出笔记/推荐书/相似的书/书评/阅读统计/这本书读了多久/我的标注/笔记在哪",
+  "abilities": "关键词：搜索/找书/这本书是什么/阅读进度/我的书架/最近看的/读书笔记/导出笔记/推荐书/相似的书/书评/阅读统计/这本书读了多久/我的标注/笔记在哪\n\n搜索书籍→search；这本书讲什么→book resolve 再 book info；我读到哪了→book resolve 再 book progress；我的书架有什么→shelf list；我最近看了什么→shelf recent；给我推荐几本→discover recommend；有没有类似的→book resolve 再 discover similar；我的读书笔记在哪→notes notebooks；把笔记导出来→book resolve 再 notes export；这本书的评论→book resolve 再 reviews list；我整体的阅读数据→readdata summary；这本书读了多久/详细阅读情况→readdata detail",
+  "abilities_tool": "",
+  "invoke_spec": {},
+  "input_schema": {},
+  "read_only": true,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": [
+   [
+    "search"
+   ],
+   [
+    "book",
+    "info"
+   ],
+   [
+    "book",
+    "resolve"
+   ],
+   [
+    "book",
+    "progress"
+   ],
+   [
+    "reviews",
+    "list"
+   ],
+   [
+    "discover",
+    "recommend"
+   ],
+   [
+    "discover",
+    "similar"
+   ],
+   [
+    "shelf",
+    "list"
+   ],
+   [
+    "shelf",
+    "recent"
+   ],
+   [
+    "readdata",
+    "summary"
+   ],
+   [
+    "readdata",
+    "detail"
+   ],
+   [
+    "notes",
+    "notebooks"
+   ],
+   [
+    "notes",
+    "top"
+   ],
+   [
+    "notes",
+    "export"
+   ],
+   [
+    "doctor"
+   ]
+  ]
+ },
+ {
+  "source": "cli",
+  "ref": "wechat-cli",
+  "name": "微信聊天数据",
+  "keywords": "微信/消息/聊天/联系人/群聊/收藏/会话/未读/统计/搜索/历史",
+  "abilities": "关键词：微信/消息/聊天/联系人/群聊/收藏/会话/未读/统计/搜索/历史。\n最近和谁聊过→sessions；帮我找和某人的聊天记录→history；搜某条消息→search；\n查某个群里的消息→search --chat 群名；我的联系人→contacts；查群成员→members --format json；\n我的收藏→favorites；收藏里的文章→favorites --type article；\n有没有新消息→new-messages；哪些会话有未读→unread；聊天统计→stats",
+  "abilities_tool": "",
+  "invoke_spec": {},
+  "input_schema": {},
+  "read_only": true,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": [
+   [
+    "sessions"
+   ],
+   [
+    "history"
+   ],
+   [
+    "search"
+   ],
+   [
+    "contacts"
+   ],
+   [
+    "favorites"
+   ],
+   [
+    "members"
+   ],
+   [
+    "new-messages"
+   ],
+   [
+    "stats"
+   ],
+   [
+    "unread"
+   ]
+  ]
+ },
+ {
+  "source": "cli",
+  "ref": "bili",
+  "name": "哔哩哔哩CLI",
+  "keywords": "B站视频、bilibili、BV号、视频链接、视频讲了什么、总结视频、视频字幕、视频评论、AI总结、B站搜索、找视频、有没有讲XX的视频、XX的教程、UP主、up、UP主资料、UP主视频、XX的作品、XX的视频列表、我收藏的、收藏夹、我看过的、观看历史、稍后再看、我关注的、我关注的人、我的动态、我发的动态、B站热门、排行榜、热门视频、今天B站在火什么、B站top、B站登录、bili能用吗、B站状态",
+  "abilities": "关键词：B站视频、bilibili、BV号、视频链接、视频讲了什么、总结视频、视频字幕、视频评论、AI总结、B站搜索、找视频、有没有讲XX的视频、XX的教程、UP主、up、UP主资料、UP主视频、XX的作品、XX的视频列表、我收藏的、收藏夹、我看过的、观看历史、稍后再看、我关注的、我关注的人、我的动态、我发的动态、B站热门、排行榜、热门视频、今天B站在火什么、B站top、B站登录、bili能用吗、B站状态\n这个视频讲了什么 / 帮我总结这个视频→bili video\nBV开头的视频/完整的bilibili链接→bili video\n提取这个视频的字幕 / 视频里说了什么→bili video\n这个视频的热评 / 评论区→bili video\n记不清BV号的视频（只记得标题或内容）→bili search 再 bili video\n帮我搜B站上关于XX的视频→bili search\nB站有没有讲RAG的视频→bili search\nXX的教程/讲解视频→bili search\nXX这个UP主是谁→bili user\nXX的UP主主页/资料→bili user\nXX发了哪些视频→bili user-videos\n我收藏了什么→bili favorites\n我的收藏夹里的XX视频→bili favorites 再 bili favorites {收藏夹ID}\n我看过哪些视频→bili history\n我的稍后再看→bili watch-later\n我关注了哪些UP主→bili following\n我关注的人最近发了什么→bili feed\n我发过什么动态→bili my-dynamics\nB站今天有什么热门→bili hot\nB站最近的排行榜→bili rank\nbilibili工具现在能用吗→bili status\nB站登录状态→bili status",
+  "abilities_tool": "",
+  "invoke_spec": {},
+  "input_schema": {},
+  "read_only": true,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": [
+   [
+    "video"
+   ],
+   [
+    "search"
+   ],
+   [
+    "user"
+   ],
+   [
+    "user-videos"
+   ],
+   [
+    "feed"
+   ],
+   [
+    "favorites"
+   ],
+   [
+    "history"
+   ],
+   [
+    "watch-later"
+   ],
+   [
+    "following"
+   ],
+   [
+    "my-dynamics"
+   ],
+   [
+    "hot"
+   ],
+   [
+    "rank"
+   ],
+   [
+    "status"
+   ],
+   [
+    "whoami"
+   ]
+  ]
+ },
+ {
+  "source": "api",
+  "ref": "api:steam#gameDetail",
+  "name": "查询Steam游戏详情",
+  "keywords": "",
+  "abilities": "查询Steam游戏详情（按appid）；Steam 游戏价格、Steam 打折与折扣、Steam 游戏详情、Steam 游戏搜索、游戏发行日期与开发商",
+  "abilities_tool": "查询Steam游戏详情（按appid）",
+  "invoke_spec": {
+   "method": "GET",
+   "url_template": "/api/appdetails",
+   "bindings": [
+    {
+     "name": "appids",
+     "location": "query",
+     "required": true
+    },
+    {
+     "name": "filters",
+     "location": "query",
+     "required": false
+    }
+   ],
+   "body_mode": "json",
+   "auth": "inherit",
+   "static_query": {
+    "cc": "cn",
+    "l": "schinese"
+   },
+   "source_id": 396
+  },
+  "input_schema": {
+   "type": "object",
+   "properties": {
+    "appids": {
+     "type": "integer",
+     "description": "Steam AppID（用 searchGame 查到的 id），例如 774361"
+    },
+    "filters": {
+     "type": "string",
+     "enum": [
+      "price_overview",
+      "basic"
+     ],
+     "description": "字段裁剪：price_overview=只返回价格（推荐）；basic=名称类型等；留空=全量（很大）"
+    }
+   },
+   "required": [
+    "appids"
+   ]
+  },
+  "read_only": true,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ },
+ {
+  "source": "api",
+  "ref": "api:steam#searchGame",
+  "name": "搜索Steam游戏（含人民币价格）",
+  "keywords": "",
+  "abilities": "搜索Steam游戏（含人民币价格）；Steam 游戏价格、Steam 打折与折扣、Steam 游戏详情、Steam 游戏搜索、游戏发行日期与开发商",
+  "abilities_tool": "搜索Steam游戏（含人民币价格）",
+  "invoke_spec": {
+   "method": "GET",
+   "url_template": "/api/storesearch/",
+   "bindings": [
+    {
+     "name": "term",
+     "location": "query",
+     "required": true
+    }
+   ],
+   "body_mode": "json",
+   "auth": "inherit",
+   "static_query": {
+    "cc": "cn",
+    "l": "schinese"
+   },
+   "source_id": 396
+  },
+  "input_schema": {
+   "type": "object",
+   "properties": {
+    "term": {
+     "type": "string",
+     "description": "搜索关键词，例如 Blasphemous / Elden Ring / Counter-Strike 2"
+    }
+   },
+   "required": [
+    "term"
+   ]
+  },
+  "read_only": true,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ },
+ {
+  "source": "api",
+  "ref": "api:xxapi#douyinHot",
+  "name": "获取抖音实时热榜",
+  "keywords": "",
+  "abilities": "获取抖音实时热榜；抖音热榜、抖音热搜、实时热点榜单、抖音热门视频/话题排名",
+  "abilities_tool": "获取抖音实时热榜",
+  "invoke_spec": {
+   "method": "GET",
+   "url_template": "/api/douyinhot",
+   "bindings": [],
+   "body_mode": "json",
+   "auth": "inherit",
+   "source_id": 162
+  },
+  "input_schema": {
+   "type": "object",
+   "properties": {},
+   "required": []
+  },
+  "read_only": true,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ },
+ {
+  "source": "api",
+  "ref": "api:xxapi#ipQuery",
+  "name": "查询IP归属地",
+  "keywords": "",
+  "abilities": "查询IP归属地；抖音热榜、抖音热搜、实时热点榜单、抖音热门视频/话题排名",
+  "abilities_tool": "查询IP归属地",
+  "invoke_spec": {
+   "method": "GET",
+   "url_template": "/api/ip",
+   "bindings": [
+    {
+     "name": "ip",
+     "location": "query",
+     "required": true
+    }
+   ],
+   "body_mode": "json",
+   "auth": "inherit",
+   "source_id": 162
+  },
+  "input_schema": {
+   "type": "object",
+   "properties": {
+    "ip": {
+     "type": "string",
+     "description": "要查询的 IP 地址"
+    }
+   },
+   "required": [
+    "ip"
+   ]
+  },
+  "read_only": true,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ },
+ {
+  "source": "mcp",
+  "ref": "mcp:12306-mcp/get-current-date",
+  "name": "get-current-date",
+  "keywords": "",
+  "abilities": "获取当前日期，以上海时区（Asia/Shanghai, UTC+8）为准，返回格式为 \"yyyy-MM-dd\"。主要用于解析用户提到的相对日期（如“明天”、“下周三”），提供准确的日期输入。；查看车票信息,查看当天从出发点到目的地的车票剩余,路程需要中转车票购买规划",
+  "abilities_tool": "获取当前日期，以上海时区（Asia/Shanghai, UTC+8）为准，返回格式为 \"yyyy-MM-dd\"。主要用于解析用户提到的相对日期（如“明天”、“下周三”），提供准确的日期输入。",
+  "invoke_spec": {
+   "server": "12306-mcp",
+   "tool": "get-current-date",
+   "read_only_hint": null,
+   "source_id": 885
+  },
+  "input_schema": {
+   "$schema": "http://json-schema.org/draft-07/schema#",
+   "type": "object",
+   "properties": {}
+  },
+  "read_only": false,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ },
+ {
+  "source": "mcp",
+  "ref": "mcp:12306-mcp/get-interline-tickets",
+  "name": "get-interline-tickets",
+  "keywords": "",
+  "abilities": "查询12306中转余票信息。尚且只支持查询前十条。；查看车票信息,查看当天从出发点到目的地的车票剩余,路程需要中转车票购买规划",
+  "abilities_tool": "查询12306中转余票信息。尚且只支持查询前十条。",
+  "invoke_spec": {
+   "server": "12306-mcp",
+   "tool": "get-interline-tickets",
+   "read_only_hint": null,
+   "source_id": 885
+  },
+  "input_schema": {
+   "$schema": "http://json-schema.org/draft-07/schema#",
+   "type": "object",
+   "properties": {
+    "date": {
+     "type": "string",
+     "minLength": 10,
+     "maxLength": 10,
+     "description": "查询日期，格式为 \"yyyy-MM-dd\"。如果用户提供的是相对日期（如“明天”），请务必先调用 `get-current-date` 接口获取当前日期，并计算出目标日期。"
+    },
+    "fromStation": {
+     "type": "string",
+     "description": "出发地的中文名或站点的 `station_code`（可通过 `get-station-code-by-names` 或 `get-station-code-of-citys` 接口查询得到）"
+    },
+    "toStation": {
+     "type": "string",
+     "description": "到达地的中文名或站点的 `station_code`（可通过 `get-station-code-by-names` 或 `get-station-code-of-citys` 接口查询得到）"
+    },
+    "middleStation": {
+     "type": "string",
+     "default": "",
+     "description": "中转地的中文或站点的 `station_code`（可通过 `get-station-code-by-names` 或 `get-station-code-of-citys` 接口查询得到）。该参数可选。"
+    },
+    "showWZ": {
+     "type": "boolean",
+     "default": false,
+     "description": "是否显示无座车，默认不显示无座车。"
+    },
+    "trainFilterFlags": {
+     "type": "string",
+     "pattern": "^[GDZTKOFS]*$",
+     "maxLength": 8,
+     "default": "",
+     "description": "车次筛选条件，默认为空。从以下标志中选取多个条件组合[G(高铁/城际),D(动车),Z(直达特快),T(特快),K(快速),O(其他),F(复兴号),S(智能动车组)]"
+    },
+    "earliestStartTime": {
+     "type": "number",
+     "minimum": 0,
+     "maximum": 24,
+     "default": 0,
+     "description": "最早出发时间（0-24），默认为0。"
+    },
+    "latestStartTime": {
+     "type": "number",
+     "minimum": 0,
+     "maximum": 24,
+     "default": 24,
+     "description": "最迟出发时间（0-24），默认为24。"
+    },
+    "sortFlag": {
+     "type": "string",
+     "default": "",
+     "description": "排序方式，默认为空，即不排序。仅支持单一标识。可选标志：[startTime(出发时间从早到晚), arriveTime(抵达时间从早到晚), duration(历时从短到长)]"
+    },
+    "sortReverse": {
+     "type": "boolean",
+     "default": false,
+     "description": "是否逆向排序结果，默认为false。仅在设置了sortFlag时生效。"
+    },
+    "limitedNum": {
+     "type": "number",
+     "minimum": 1,
+     "default": 10,
+     "description": "返回的中转余票数量限制，默认为10。"
+    },
+    "format": {
+     "type": "string",
+     "pattern": "^(text|json)$",
+     "default": "text",
+     "description": "返回结果格式，默认为text，建议使用text。可选标志：[text, json]"
+    }
+   },
+   "required": [
+    "date",
+    "fromStation",
+    "toStation"
+   ],
+   "additionalProperties": false
+  },
+  "read_only": false,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ },
+ {
+  "source": "mcp",
+  "ref": "mcp:12306-mcp/get-station-by-telecode",
+  "name": "get-station-by-telecode",
+  "keywords": "",
+  "abilities": "通过车站的 `station_telecode` 查询车站的详细信息，包括名称、拼音、所属城市等。此接口主要用于在已知 `telecode` 的情况下获取更完整的车站数据，或用于特殊查询及调试目的。一般用户对话流程中较少直接触发。；查看车票信息,查看当天从出发点到目的地的车票剩余,路程需要中转车票购买规划",
+  "abilities_tool": "通过车站的 `station_telecode` 查询车站的详细信息，包括名称、拼音、所属城市等。此接口主要用于在已知 `telecode` 的情况下获取更完整的车站数据，或用于特殊查询及调试目的。一般用户对话流程中较少直接触发。",
+  "invoke_spec": {
+   "server": "12306-mcp",
+   "tool": "get-station-by-telecode",
+   "read_only_hint": null,
+   "source_id": 885
+  },
+  "input_schema": {
+   "$schema": "http://json-schema.org/draft-07/schema#",
+   "type": "object",
+   "properties": {
+    "stationTelecode": {
+     "type": "string",
+     "description": "车站的 `station_telecode` (3位字母编码)"
+    }
+   },
+   "required": [
+    "stationTelecode"
+   ],
+   "additionalProperties": false
+  },
+  "read_only": false,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ },
+ {
+  "source": "mcp",
+  "ref": "mcp:12306-mcp/get-station-code-by-names",
+  "name": "get-station-code-by-names",
+  "keywords": "",
+  "abilities": "通过具体的中文车站名查询其 `station_code` 和车站名。；查看车票信息,查看当天从出发点到目的地的车票剩余,路程需要中转车票购买规划",
+  "abilities_tool": "通过具体的中文车站名查询其 `station_code` 和车站名。",
+  "invoke_spec": {
+   "server": "12306-mcp",
+   "tool": "get-station-code-by-names",
+   "read_only_hint": null,
+   "source_id": 885
+  },
+  "input_schema": {
+   "$schema": "http://json-schema.org/draft-07/schema#",
+   "type": "object",
+   "properties": {
+    "stationNames": {
+     "type": "string",
+     "description": "具体的中文车站名称，例如：\"北京南\", \"上海虹桥\"。若要查询多个站点，请用|分割，比如\"北京南|上海虹桥\"。"
+    }
+   },
+   "required": [
+    "stationNames"
+   ],
+   "additionalProperties": false
+  },
+  "read_only": false,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ },
+ {
+  "source": "mcp",
+  "ref": "mcp:12306-mcp/get-station-code-of-citys",
+  "name": "get-station-code-of-citys",
+  "keywords": "",
+  "abilities": "通过中文城市名查询代表该城市的 `station_code`。；查看车票信息,查看当天从出发点到目的地的车票剩余,路程需要中转车票购买规划",
+  "abilities_tool": "通过中文城市名查询代表该城市的 `station_code`。",
+  "invoke_spec": {
+   "server": "12306-mcp",
+   "tool": "get-station-code-of-citys",
+   "read_only_hint": null,
+   "source_id": 885
+  },
+  "input_schema": {
+   "$schema": "http://json-schema.org/draft-07/schema#",
+   "type": "object",
+   "properties": {
+    "citys": {
+     "type": "string",
+     "description": "要查询的城市，比如\"北京\"。若要查询多个城市，请用|分割，比如\"北京|上海\"。"
+    }
+   },
+   "required": [
+    "citys"
+   ],
+   "additionalProperties": false
+  },
+  "read_only": false,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ },
+ {
+  "source": "mcp",
+  "ref": "mcp:12306-mcp/get-stations-code-in-city",
+  "name": "get-stations-code-in-city",
+  "keywords": "",
+  "abilities": "通过中文城市名查询该城市 **所有** 火车站的名称及其对应的 `station_code`，结果是一个包含多个车站信息的列表。；查看车票信息,查看当天从出发点到目的地的车票剩余,路程需要中转车票购买规划",
+  "abilities_tool": "通过中文城市名查询该城市 **所有** 火车站的名称及其对应的 `station_code`，结果是一个包含多个车站信息的列表。",
+  "invoke_spec": {
+   "server": "12306-mcp",
+   "tool": "get-stations-code-in-city",
+   "read_only_hint": null,
+   "source_id": 885
+  },
+  "input_schema": {
+   "$schema": "http://json-schema.org/draft-07/schema#",
+   "type": "object",
+   "properties": {
+    "city": {
+     "type": "string",
+     "description": "中文城市名称，例如：\"北京\", \"上海\""
+    }
+   },
+   "required": [
+    "city"
+   ],
+   "additionalProperties": false
+  },
+  "read_only": false,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ },
+ {
+  "source": "mcp",
+  "ref": "mcp:12306-mcp/get-tickets",
+  "name": "get-tickets",
+  "keywords": "",
+  "abilities": "查询12306余票信息。；查看车票信息,查看当天从出发点到目的地的车票剩余,路程需要中转车票购买规划",
+  "abilities_tool": "查询12306余票信息。",
+  "invoke_spec": {
+   "server": "12306-mcp",
+   "tool": "get-tickets",
+   "read_only_hint": null,
+   "source_id": 885
+  },
+  "input_schema": {
+   "$schema": "http://json-schema.org/draft-07/schema#",
+   "type": "object",
+   "properties": {
+    "date": {
+     "type": "string",
+     "minLength": 10,
+     "maxLength": 10,
+     "description": "查询日期，格式为 \"yyyy-MM-dd\"。如果用户提供的是相对日期（如“明天”），请务必先调用 `get-current-date` 接口获取当前日期，并计算出目标日期。"
+    },
+    "fromStation": {
+     "type": "string",
+     "description": "出发地的中文名或站点的 `station_code`（可通过 `get-station-code-by-names` 或 `get-station-code-of-citys` 接口查询得到）"
+    },
+    "toStation": {
+     "type": "string",
+     "description": "到达地的中文名或站点的 `station_code`（可通过 `get-station-code-by-names` 或 `get-station-code-of-citys` 接口查询得到）"
+    },
+    "trainFilterFlags": {
+     "type": "string",
+     "pattern": "^[GDZTKOFS]*$",
+     "maxLength": 8,
+     "default": "",
+     "description": "车次筛选条件，默认为空，即不筛选。支持多个标志同时筛选。例如用户说“高铁票”，则应使用 \"G\"。可选标志：[G(高铁/城际),D(动车),Z(直达特快),T(特快),K(快速),O(其他),F(复兴号),S(智能动车组)]"
+    },
+    "earliestStartTime": {
+     "type": "number",
+     "minimum": 0,
+     "maximum": 24,
+     "default": 0,
+     "description": "最早出发时间（0-24），默认为0。"
+    },
+    "latestStartTime": {
+     "type": "number",
+     "minimum": 0,
+     "maximum": 24,
+     "default": 24,
+     "description": "最迟出发时间（0-24），默认为24。"
+    },
+    "sortFlag": {
+     "type": "string",
+     "default": "",
+     "description": "排序方式，默认为空，即不排序。仅支持单一标识。可选标志：[startTime(出发时间从早到晚), arriveTime(抵达时间从早到晚), duration(历时从短到长)]"
+    },
+    "sortReverse": {
+     "type": "boolean",
+     "default": false,
+     "description": "是否逆向排序结果，默认为false。仅在设置了sortFlag时生效。"
+    },
+    "limitedNum": {
+     "type": "number",
+     "minimum": 0,
+     "default": 0,
+     "description": "返回的余票数量限制，默认为0，即不限制。"
+    },
+    "format": {
+     "type": "string",
+     "pattern": "^(text|csv|json)$",
+     "default": "text",
+     "description": "返回结果格式，默认为text，建议使用text与csv。可选标志：[text, csv, json]"
+    }
+   },
+   "required": [
+    "date",
+    "fromStation",
+    "toStation"
+   ],
+   "additionalProperties": false
+  },
+  "read_only": false,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ },
+ {
+  "source": "mcp",
+  "ref": "mcp:12306-mcp/get-train-route-stations",
+  "name": "get-train-route-stations",
+  "keywords": "",
+  "abilities": "查询特定列车车次在指定区间内的途径车站、到站时间、出发时间及停留时间等详细经停信息。当用户询问某趟具体列车的经停站时使用此接口。；查看车票信息,查看当天从出发点到目的地的车票剩余,路程需要中转车票购买规划",
+  "abilities_tool": "查询特定列车车次在指定区间内的途径车站、到站时间、出发时间及停留时间等详细经停信息。当用户询问某趟具体列车的经停站时使用此接口。",
+  "invoke_spec": {
+   "server": "12306-mcp",
+   "tool": "get-train-route-stations",
+   "read_only_hint": null,
+   "source_id": 885
+  },
+  "input_schema": {
+   "$schema": "http://json-schema.org/draft-07/schema#",
+   "type": "object",
+   "properties": {
+    "trainCode": {
+     "type": "string",
+     "description": "要查询的车次 `train_code`，例如\"G1033\"。"
+    },
+    "departDate": {
+     "type": "string",
+     "minLength": 10,
+     "maxLength": 10,
+     "description": "列车出发的日期 (格式: yyyy-MM-dd)。如果用户提供的是相对日期，请务必先调用 `get-current-date` 解析。"
+    },
+    "format": {
+     "type": "string",
+     "pattern": "^(text|json)$",
+     "default": "text",
+     "description": "返回结果格式，默认为text，建议使用text。可选标志：[text, json]"
+    }
+   },
+   "required": [
+    "trainCode",
+    "departDate"
+   ],
+   "additionalProperties": false
+  },
+  "read_only": false,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ },
+ {
+  "source": "mcp",
+  "ref": "mcp:bnf/advanced_search",
+  "name": "advanced_search",
+  "keywords": "",
+  "abilities": "Perform an advanced search using custom CQL query syntax.\n    \n    This tool allows for complex queries using the CQL (Contextual Query Language) syntax.\n    Examples:\n    - Search for books by Victor Hugo: dc.creator all \"Victor Hugo\" and dc.type all \"monographie\"\n    - Search for maps about Paris: dc.subject all \"Paris\" and dc.type all \"carte\"\n    - Search for documents in English: dc.language all \"eng\"\n    \n    Args:\n        query: Custom CQL query string\n        max_results: Maximum number of results to return (1-50)\n        start_record: Starting record for pagination\n        \n    Returns:\n        Dictionary containing search results and metadata；查法国国家图书馆（Gallica）数字馆藏：按书名/作者/主题/年代/文献类型检索，返回书目元数据",
+  "abilities_tool": "Perform an advanced search using custom CQL query syntax.\n    \n    This tool allows for complex queries using the CQL (Contextual Query Language) syntax.\n    Examples:\n    - Search for books by Victor Hugo: dc.creator all \"Victor Hugo\" and dc.type all \"monographie\"\n    - Search for maps about Paris: dc.subject all \"Paris\" and dc.type all \"carte\"\n    - Search for documents in English: dc.language all \"eng\"\n    \n    Args:\n        query: Custom CQL query string\n        max_results: Maximum number of results to return (1-50)\n        start_record: Starting record for pagination\n        \n    Returns:\n        Dictionary containing search results and metadata",
+  "invoke_spec": {
+   "server": "bnf",
+   "tool": "advanced_search",
+   "read_only_hint": null,
+   "source_id": 936
+  },
+  "input_schema": {
+   "properties": {
+    "query": {
+     "title": "Query",
+     "type": "string"
+    },
+    "max_results": {
+     "default": 10,
+     "title": "Max Results",
+     "type": "integer"
+    },
+    "start_record": {
+     "default": 1,
+     "title": "Start Record",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "query"
+   ],
+   "title": "advanced_searchArguments",
+   "type": "object"
+  },
+  "read_only": false,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ },
+ {
+  "source": "mcp",
+  "ref": "mcp:bnf/natural_language_search",
+  "name": "natural_language_search",
+  "keywords": "",
+  "abilities": "Search the Gallica digital library using natural language.\n    \n    This is a simplified search that uses the 'gallica all' operator to search across all fields.\n    It's the most user-friendly way to search but may not be as precise as the other search methods.\n    \n    Args:\n        query: Natural language search query\n        max_results: Maximum number of results to return (1-50)\n        start_record: Starting record for pagination\n        \n    Returns:\n        Dictionary containing search results and metadata；查法国国家图书馆（Gallica）数字馆藏：按书名/作者/主题/年代/文献类型检索，返回书目元数据",
+  "abilities_tool": "Search the Gallica digital library using natural language.\n    \n    This is a simplified search that uses the 'gallica all' operator to search across all fields.\n    It's the most user-friendly way to search but may not be as precise as the other search methods.\n    \n    Args:\n        query: Natural language search query\n        max_results: Maximum number of results to return (1-50)\n        start_record: Starting record for pagination\n        \n    Returns:\n        Dictionary containing search results and metadata",
+  "invoke_spec": {
+   "server": "bnf",
+   "tool": "natural_language_search",
+   "read_only_hint": null,
+   "source_id": 936
+  },
+  "input_schema": {
+   "properties": {
+    "query": {
+     "title": "Query",
+     "type": "string"
+    },
+    "max_results": {
+     "default": 10,
+     "title": "Max Results",
+     "type": "integer"
+    },
+    "start_record": {
+     "default": 1,
+     "title": "Start Record",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "query"
+   ],
+   "title": "natural_language_searchArguments",
+   "type": "object"
+  },
+  "read_only": false,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ },
+ {
+  "source": "mcp",
+  "ref": "mcp:bnf/search_by_author",
+  "name": "search_by_author",
+  "keywords": "",
+  "abilities": "Search for documents in the Gallica digital library by author.\n    \n    Args:\n        author: The author name to search for\n        exact_match: If True, search for the exact author name; otherwise, search for author containing the words\n        max_results: Maximum number of results to return (1-50)\n        start_record: Starting record for pagination\n        \n    Returns:\n        Dictionary containing search results and metadata；查法国国家图书馆（Gallica）数字馆藏：按书名/作者/主题/年代/文献类型检索，返回书目元数据",
+  "abilities_tool": "Search for documents in the Gallica digital library by author.\n    \n    Args:\n        author: The author name to search for\n        exact_match: If True, search for the exact author name; otherwise, search for author containing the words\n        max_results: Maximum number of results to return (1-50)\n        start_record: Starting record for pagination\n        \n    Returns:\n        Dictionary containing search results and metadata",
+  "invoke_spec": {
+   "server": "bnf",
+   "tool": "search_by_author",
+   "read_only_hint": null,
+   "source_id": 936
+  },
+  "input_schema": {
+   "properties": {
+    "author": {
+     "title": "Author",
+     "type": "string"
+    },
+    "exact_match": {
+     "default": false,
+     "title": "Exact Match",
+     "type": "boolean"
+    },
+    "max_results": {
+     "default": 10,
+     "title": "Max Results",
+     "type": "integer"
+    },
+    "start_record": {
+     "default": 1,
+     "title": "Start Record",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "author"
+   ],
+   "title": "search_by_authorArguments",
+   "type": "object"
+  },
+  "read_only": false,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ },
+ {
+  "source": "mcp",
+  "ref": "mcp:bnf/search_by_date",
+  "name": "search_by_date",
+  "keywords": "",
+  "abilities": "Search for documents in the Gallica digital library by date.\n    \n    Args:\n        date: The date to search for (format: YYYY or YYYY-MM or YYYY-MM-DD)\n        max_results: Maximum number of results to return (1-50)\n        start_record: Starting record for pagination\n        \n    Returns:\n        Dictionary containing search results and metadata；查法国国家图书馆（Gallica）数字馆藏：按书名/作者/主题/年代/文献类型检索，返回书目元数据",
+  "abilities_tool": "Search for documents in the Gallica digital library by date.\n    \n    Args:\n        date: The date to search for (format: YYYY or YYYY-MM or YYYY-MM-DD)\n        max_results: Maximum number of results to return (1-50)\n        start_record: Starting record for pagination\n        \n    Returns:\n        Dictionary containing search results and metadata",
+  "invoke_spec": {
+   "server": "bnf",
+   "tool": "search_by_date",
+   "read_only_hint": null,
+   "source_id": 936
+  },
+  "input_schema": {
+   "properties": {
+    "date": {
+     "title": "Date",
+     "type": "string"
+    },
+    "max_results": {
+     "default": 10,
+     "title": "Max Results",
+     "type": "integer"
+    },
+    "start_record": {
+     "default": 1,
+     "title": "Start Record",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "date"
+   ],
+   "title": "search_by_dateArguments",
+   "type": "object"
+  },
+  "read_only": false,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ },
+ {
+  "source": "mcp",
+  "ref": "mcp:bnf/search_by_document_type",
+  "name": "search_by_document_type",
+  "keywords": "",
+  "abilities": "Search for documents in the Gallica digital library by document type.\n    \n    Args:\n        doc_type: The document type to search for (e.g., monographie, periodique, image, manuscrit, carte, musique, etc.)\n        max_results: Maximum number of results to return (1-50)\n        start_record: Starting record for pagination\n        \n    Returns:\n        Dictionary containing search results and metadata；查法国国家图书馆（Gallica）数字馆藏：按书名/作者/主题/年代/文献类型检索，返回书目元数据",
+  "abilities_tool": "Search for documents in the Gallica digital library by document type.\n    \n    Args:\n        doc_type: The document type to search for (e.g., monographie, periodique, image, manuscrit, carte, musique, etc.)\n        max_results: Maximum number of results to return (1-50)\n        start_record: Starting record for pagination\n        \n    Returns:\n        Dictionary containing search results and metadata",
+  "invoke_spec": {
+   "server": "bnf",
+   "tool": "search_by_document_type",
+   "read_only_hint": null,
+   "source_id": 936
+  },
+  "input_schema": {
+   "properties": {
+    "doc_type": {
+     "title": "Doc Type",
+     "type": "string"
+    },
+    "max_results": {
+     "default": 10,
+     "title": "Max Results",
+     "type": "integer"
+    },
+    "start_record": {
+     "default": 1,
+     "title": "Start Record",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "doc_type"
+   ],
+   "title": "search_by_document_typeArguments",
+   "type": "object"
+  },
+  "read_only": false,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ },
+ {
+  "source": "mcp",
+  "ref": "mcp:bnf/search_by_subject",
+  "name": "search_by_subject",
+  "keywords": "",
+  "abilities": "Search for documents in the Gallica digital library by subject.\n    \n    Args:\n        subject: The subject to search for\n        exact_match: If True, search for the exact subject; otherwise, search for subject containing the words\n        max_results: Maximum number of results to return (1-50)\n        start_record: Starting record for pagination\n        \n    Returns:\n        Dictionary containing search results and metadata；查法国国家图书馆（Gallica）数字馆藏：按书名/作者/主题/年代/文献类型检索，返回书目元数据",
+  "abilities_tool": "Search for documents in the Gallica digital library by subject.\n    \n    Args:\n        subject: The subject to search for\n        exact_match: If True, search for the exact subject; otherwise, search for subject containing the words\n        max_results: Maximum number of results to return (1-50)\n        start_record: Starting record for pagination\n        \n    Returns:\n        Dictionary containing search results and metadata",
+  "invoke_spec": {
+   "server": "bnf",
+   "tool": "search_by_subject",
+   "read_only_hint": null,
+   "source_id": 936
+  },
+  "input_schema": {
+   "properties": {
+    "subject": {
+     "title": "Subject",
+     "type": "string"
+    },
+    "exact_match": {
+     "default": false,
+     "title": "Exact Match",
+     "type": "boolean"
+    },
+    "max_results": {
+     "default": 10,
+     "title": "Max Results",
+     "type": "integer"
+    },
+    "start_record": {
+     "default": 1,
+     "title": "Start Record",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "subject"
+   ],
+   "title": "search_by_subjectArguments",
+   "type": "object"
+  },
+  "read_only": false,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ },
+ {
+  "source": "mcp",
+  "ref": "mcp:bnf/search_by_title",
+  "name": "search_by_title",
+  "keywords": "",
+  "abilities": "Search for documents in the Gallica digital library by title.\n    \n    Args:\n        title: The title to search for\n        exact_match: If True, search for the exact title; otherwise, search for title containing the words\n        max_results: Maximum number of results to return (1-50)\n        start_record: Starting record for pagination\n        \n    Returns:\n        Dictionary containing search results and metadata；查法国国家图书馆（Gallica）数字馆藏：按书名/作者/主题/年代/文献类型检索，返回书目元数据",
+  "abilities_tool": "Search for documents in the Gallica digital library by title.\n    \n    Args:\n        title: The title to search for\n        exact_match: If True, search for the exact title; otherwise, search for title containing the words\n        max_results: Maximum number of results to return (1-50)\n        start_record: Starting record for pagination\n        \n    Returns:\n        Dictionary containing search results and metadata",
+  "invoke_spec": {
+   "server": "bnf",
+   "tool": "search_by_title",
+   "read_only_hint": null,
+   "source_id": 936
+  },
+  "input_schema": {
+   "properties": {
+    "title": {
+     "title": "Title",
+     "type": "string"
+    },
+    "exact_match": {
+     "default": false,
+     "title": "Exact Match",
+     "type": "boolean"
+    },
+    "max_results": {
+     "default": 10,
+     "title": "Max Results",
+     "type": "integer"
+    },
+    "start_record": {
+     "default": 1,
+     "title": "Start Record",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "title"
+   ],
+   "title": "search_by_titleArguments",
+   "type": "object"
+  },
+  "read_only": false,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ },
+ {
+  "source": "mcp",
+  "ref": "mcp:bnf/sequential_reporting",
+  "name": "sequential_reporting",
+  "keywords": "",
+  "abilities": "Generate a research report in a sequential, step-by-step manner using Gallica BnF sources.\n    \n    This tool follows a sequential approach to report generation:\n    1. Initialize with a topic\n    2. Search for sources\n    3. Create bibliography\n    4. Create content sections in order\n    \n    Parameters:\n    - topic: Research topic (only needed for initialization)\n    - page_count: Number of pages for the report (default: 4)\n    - source_count: Number of sources to find (default: 10)\n    - search_sources: Set to True to search for sources after initialization\n    - section_number: Current section number (1-based)\n    - total_sections: Total number of sections in the report\n    - title: Title of the current section\n    - content: Content for the current section\n    - is_bibliography: Whether this section is the bibliography\n    - sources_used: List of source IDs used in this section\n    - next_section_needed: Whether another section is needed\n    - include_graphics: Whether to include images and maps in the report\n    \n    Returns:\n    - Report section data；查法国国家图书馆（Gallica）数字馆藏：按书名/作者/主题/年代/文献类型检索，返回书目元数据",
+  "abilities_tool": "Generate a research report in a sequential, step-by-step manner using Gallica BnF sources.\n    \n    This tool follows a sequential approach to report generation:\n    1. Initialize with a topic\n    2. Search for sources\n    3. Create bibliography\n    4. Create content sections in order\n    \n    Parameters:\n    - topic: Research topic (only needed for initialization)\n    - page_count: Number of pages for the report (default: 4)\n    - source_count: Number of sources to find (default: 10)\n    - search_sources: Set to True to search for sources after initialization\n    - section_number: Current section number (1-based)\n    - total_sections: Total number of sections in the report\n    - title: Title of the current section\n    - content: Content for the current section\n    - is_bibliography: Whether this section is the bibliography\n    - sources_used: List of source IDs used in this section\n    - next_section_needed: Whether another section is needed\n    - include_graphics: Whether to include images and maps in the report\n    \n    Returns:\n    - Report section data",
+  "invoke_spec": {
+   "server": "bnf",
+   "tool": "sequential_reporting",
+   "read_only_hint": null,
+   "source_id": 936
+  },
+  "input_schema": {
+   "properties": {
+    "topic": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Topic"
+    },
+    "page_count": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Page Count"
+    },
+    "source_count": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Source Count"
+    },
+    "search_sources": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Search Sources"
+    },
+    "section_number": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Section Number"
+    },
+    "total_sections": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Total Sections"
+    },
+    "title": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Title"
+    },
+    "content": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Content"
+    },
+    "is_bibliography": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Is Bibliography"
+    },
+    "sources_used": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "integer"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Sources Used"
+    },
+    "next_section_needed": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Next Section Needed"
+    },
+    "include_graphics": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Include Graphics"
+    }
+   },
+   "title": "sequential_reportingArguments",
+   "type": "object"
+  },
+  "read_only": false,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ },
+ {
+  "source": "mcp",
+  "ref": "mcp:city/search_city",
+  "name": "search_city",
+  "keywords": "",
+  "abilities": "按城市名查它的地理信息：标准地名、所属国家与一级行政区、经纬度、人口、地点类型等（字段名已翻成中文）。city_name 支持中英文（如 成都 / Chengdu / 上海 外滩）。feature_code 可选，用来收窄结果类型（如 PPLC=首都、PPLA=一级行政区首府、ADM1=一级行政区）。★ 目前只返回**第一条**匹配结果；想更准就传更完整的名字或用 feature_code 过滤。★ 查不到时返回 null（不是错误）。；查询选定城市的详细地理信息",
+  "abilities_tool": "按城市名查它的地理信息：标准地名、所属国家与一级行政区、经纬度、人口、地点类型等（字段名已翻成中文）。city_name 支持中英文（如 成都 / Chengdu / 上海 外滩）。feature_code 可选，用来收窄结果类型（如 PPLC=首都、PPLA=一级行政区首府、ADM1=一级行政区）。★ 目前只返回**第一条**匹配结果；想更准就传更完整的名字或用 feature_code 过滤。★ 查不到时返回 null（不是错误）。",
+  "invoke_spec": {
+   "server": "city",
+   "tool": "search_city",
+   "read_only_hint": true,
+   "source_id": 984
+  },
+  "input_schema": {
+   "type": "object",
+   "properties": {
+    "city_name": {
+     "title": "City Name",
+     "type": "string"
+    },
+    "max_rows": {
+     "default": 1,
+     "title": "Max Rows",
+     "type": "integer"
+    },
+    "feature_code": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Feature Code"
+    }
+   },
+   "required": [
+    "city_name"
+   ],
+   "title": "search_cityArguments"
+  },
+  "read_only": true,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ },
+ {
+  "source": "mcp",
+  "ref": "mcp:pdd/explore_deals",
+  "name": "explore_deals",
+  "keywords": "",
+  "abilities": "拼多多逛好价 - 按频道浏览拼多多精选好货，无需关键词\n\n这是拼多多最核心的购物发现能力，涵盖多个精选频道。\n不知道买什么的时候，用这个工具逛一逛！\n\n可选频道：\n▸ 排行榜：销量榜、热销榜\n▸ 特色活动：百亿补贴、秒杀、千万补贴、千万神券\n▸ 品质精选：品牌黑标、精选爆品\n▸ 相似推荐：根据已有商品找相似（需配合search_id使用）\n\nArgs:\n    channel: 频道名称，如\"百亿补贴\"、\"秒杀\"、\"销量榜\"、\"热销榜\"、\"千万补贴\"、\"品牌黑标\"、\"精选爆品\"，默认\"销量榜\"\n    limit: 返回数量，默认20，最小10最大100；查拼多多商品：按关键词搜商品比价、看商品详情（价格/优惠券/SKU）、逛好价榜单",
+  "abilities_tool": "拼多多逛好价 - 按频道浏览拼多多精选好货，无需关键词\n\n这是拼多多最核心的购物发现能力，涵盖多个精选频道。\n不知道买什么的时候，用这个工具逛一逛！\n\n可选频道：\n▸ 排行榜：销量榜、热销榜\n▸ 特色活动：百亿补贴、秒杀、千万补贴、千万神券\n▸ 品质精选：品牌黑标、精选爆品\n▸ 相似推荐：根据已有商品找相似（需配合search_id使用）\n\nArgs:\n    channel: 频道名称，如\"百亿补贴\"、\"秒杀\"、\"销量榜\"、\"热销榜\"、\"千万补贴\"、\"品牌黑标\"、\"精选爆品\"，默认\"销量榜\"\n    limit: 返回数量，默认20，最小10最大100",
+  "invoke_spec": {
+   "server": "pdd",
+   "tool": "explore_deals",
+   "read_only_hint": null,
+   "source_id": 883
+  },
+  "input_schema": {
+   "type": "object",
+   "properties": {
+    "channel": {
+     "default": "销量榜",
+     "title": "Channel",
+     "type": "string"
+    },
+    "limit": {
+     "default": 20,
+     "title": "Limit",
+     "type": "integer"
+    }
+   },
+   "title": "explore_dealsArguments"
+  },
+  "read_only": false,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ },
+ {
+  "source": "mcp",
+  "ref": "mcp:pdd/get_goods_detail",
+  "name": "get_goods_detail",
+  "keywords": "",
+  "abilities": "拼多多商品详情 - 通过goods_sign获取商品完整信息\n\n适用场景：已知商品goods_sign（从搜索或逛好价结果获取），\n获取完整商品信息，包括价格、优惠券、SKU规格、商品图片等。\n\nArgs:\n    goods_sign: 商品签名ID（从搜索或逛好价结果获取），如\"E932cKJQRhht7tuxwfDAxrupzXBiZpWMgg_JQPw6VPiN3\"；查拼多多商品：按关键词搜商品比价、看商品详情（价格/优惠券/SKU）、逛好价榜单",
+  "abilities_tool": "拼多多商品详情 - 通过goods_sign获取商品完整信息\n\n适用场景：已知商品goods_sign（从搜索或逛好价结果获取），\n获取完整商品信息，包括价格、优惠券、SKU规格、商品图片等。\n\nArgs:\n    goods_sign: 商品签名ID（从搜索或逛好价结果获取），如\"E932cKJQRhht7tuxwfDAxrupzXBiZpWMgg_JQPw6VPiN3\"",
+  "invoke_spec": {
+   "server": "pdd",
+   "tool": "get_goods_detail",
+   "read_only_hint": null,
+   "source_id": 883
+  },
+  "input_schema": {
+   "type": "object",
+   "properties": {
+    "goods_sign": {
+     "title": "Goods Sign",
+     "type": "string"
+    }
+   },
+   "required": [
+    "goods_sign"
+   ],
+   "title": "get_goods_detailArguments"
+  },
+  "read_only": false,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ },
+ {
+  "source": "mcp",
+  "ref": "mcp:pdd/search_goods",
+  "name": "search_goods",
+  "keywords": "",
+  "abilities": "拼多多商品搜索 - 关键词搜索拼多多商品，支持筛选和排序\n\n适用场景：用户有明确购物需求，输入关键词即可搜索拼多多商品，\n支持按价格/销量排序，支持筛选有券商品和价格区间。\n\nArgs:\n    keyword: 搜索关键词，如\"iPhone 17\"、\"夏季连衣裙\"、\"跑步鞋\"\n    sort_type: 排序方式（可选）：综合排序 / 价格升序 / 价格降序 / 销量排序 / 优惠券面额\n    has_coupon: 仅显示有优惠券的商品（可选）\n    price_min: 最低价格，单位元（可选）\n    price_max: 最高价格，单位元（可选）\n    page: 页码，默认1\n    page_size: 每页数量，默认20，最小10最大100；查拼多多商品：按关键词搜商品比价、看商品详情（价格/优惠券/SKU）、逛好价榜单",
+  "abilities_tool": "拼多多商品搜索 - 关键词搜索拼多多商品，支持筛选和排序\n\n适用场景：用户有明确购物需求，输入关键词即可搜索拼多多商品，\n支持按价格/销量排序，支持筛选有券商品和价格区间。\n\nArgs:\n    keyword: 搜索关键词，如\"iPhone 17\"、\"夏季连衣裙\"、\"跑步鞋\"\n    sort_type: 排序方式（可选）：综合排序 / 价格升序 / 价格降序 / 销量排序 / 优惠券面额\n    has_coupon: 仅显示有优惠券的商品（可选）\n    price_min: 最低价格，单位元（可选）\n    price_max: 最高价格，单位元（可选）\n    page: 页码，默认1\n    page_size: 每页数量，默认20，最小10最大100",
+  "invoke_spec": {
+   "server": "pdd",
+   "tool": "search_goods",
+   "read_only_hint": null,
+   "source_id": 883
+  },
+  "input_schema": {
+   "type": "object",
+   "properties": {
+    "keyword": {
+     "title": "Keyword",
+     "type": "string"
+    },
+    "sort_type": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Sort Type"
+    },
+    "has_coupon": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Has Coupon"
+    },
+    "price_min": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Price Min"
+    },
+    "price_max": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Price Max"
+    },
+    "page": {
+     "default": 1,
+     "title": "Page",
+     "type": "integer"
+    },
+    "page_size": {
+     "default": 20,
+     "title": "Page Size",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "keyword"
+   ],
+   "title": "search_goodsArguments"
+  },
+  "read_only": false,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ },
+ {
+  "source": "mcp",
+  "ref": "mcp:route/plan_route",
+  "name": "plan_route",
+  "keywords": "",
+  "abilities": "规划从起点到终点的路线，返回距离、预计耗时与导航指引。起点/终点/途经点都可以填**地名**（如 北京天安门、成都、Shanghai）或**坐标**（如 116.397,39.908，注意是“经度,纬度”）。profile 可选：driving-car（驾车，默认）/ foot-walking（步行）/ cycling-regular（骑行）等。★ 默认只返回摘要（距离/时长/前 10 条指引）；需要原始的完整坐标轨迹时再传 include_raw=true。★ 返回里 status=error 表示失败（原因在 message 里），不是路线数据。；根据目的地和出发地进行交通工具使用、切换选择,策划最佳旅游/出差路线",
+  "abilities_tool": "规划从起点到终点的路线，返回距离、预计耗时与导航指引。起点/终点/途经点都可以填**地名**（如 北京天安门、成都、Shanghai）或**坐标**（如 116.397,39.908，注意是“经度,纬度”）。profile 可选：driving-car（驾车，默认）/ foot-walking（步行）/ cycling-regular（骑行）等。★ 默认只返回摘要（距离/时长/前 10 条指引）；需要原始的完整坐标轨迹时再传 include_raw=true。★ 返回里 status=error 表示失败（原因在 message 里），不是路线数据。",
+  "invoke_spec": {
+   "server": "route",
+   "tool": "plan_route",
+   "read_only_hint": true,
+   "source_id": 983
+  },
+  "input_schema": {
+   "type": "object",
+   "properties": {
+    "start": {
+     "title": "Start",
+     "type": "string"
+    },
+    "end": {
+     "title": "End",
+     "type": "string"
+    },
+    "waypoints": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Waypoints"
+    },
+    "profile": {
+     "default": "driving-car",
+     "title": "Profile",
+     "type": "string"
+    },
+    "optimize_waypoints": {
+     "default": false,
+     "title": "Optimize Waypoints",
+     "type": "boolean"
+    },
+    "include_raw": {
+     "default": false,
+     "title": "Include Raw",
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "start",
+    "end"
+   ],
+   "title": "plan_routeArguments"
+  },
+  "read_only": true,
+  "confirmed": true,
+  "enabled": true,
+  "invokable": true,
+  "rules": []
+ }
+]

@@ -1,14 +1,14 @@
 /* 生成「时钟 + 天气卡」静态预览（三种状态：收起 / 展开 / 换城市输入）
  * 用 index.html 里的**真实 CSS**渲染，供肉眼验收（不依赖服务与浏览器自动化）。
  * 用法：node scripts/build_weather_preview.js
- * 产物：data/weather_preview.html
+ * 产物：front/tutorial/previews/weather_preview.html
  * 自检：预览用到的每个 class 都必须能在 index.html 的 CSS 里找到，否则报错退出。
  */
 const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
-const html = fs.readFileSync(path.join(root, 'static', 'index.html'), 'utf8');
+const html = fs.readFileSync(path.join(root, 'front', 'index.html'), 'utf8');
 const css = (html.match(/<style>([\s\S]*?)<\/style>/) || [, ''])[1];
 if (!css) { console.error('❌ 抽不到 <style>'); process.exit(1); }
 
@@ -99,7 +99,7 @@ ${css}
 </style></head>
 <body>
 <div class="preview-note">
-  <b>静态预览</b>：CSS 取自 <code>static/index.html</code> 真实样式；鼠标悬浮卡片即可看到气泡展开的实际动效（下方第二/三行用 <code>open</code> 类强制展开，方便截图）。
+  <b>静态预览</b>：CSS 取自 <code>front/index.html</code> 真实样式；鼠标悬浮卡片即可看到气泡展开的实际动效（下方第二/三行用 <code>open</code> 类强制展开，方便截图）。
   时钟为秒级（真实页面每秒跳动 · <code>setInterval(tickClock, 1000)</code>），天气数据为真实接口当日返回（成都 20.4° 晴间多云）。<br/>卡片<b>从药丸下方展开</b>（不再居中越出 hero），悬浮面板浮在下方内容之上，不会被 hero 裁切；配色默认「松绿」对齐项目主色系，可在卡片右下角一键切换。
 </div>
 
@@ -135,7 +135,7 @@ ${hero('下午好，尼古喵喵', dock('<span style="display:none"></span>' + c
 </body></html>`;
 
 fs.mkdirSync(path.join(root, 'data'), { recursive: true });
-fs.writeFileSync(path.join(root, 'data', 'weather_preview.html'), page, 'utf8');
+fs.writeFileSync(path.join(root, 'front', 'tutorial', 'previews', 'weather_preview.html'), page, 'utf8');
 
 // ---- 自检：预览用到的 class 必须都在真实 CSS 里 ----
 const used = new Set();
@@ -146,4 +146,4 @@ const missing = [...used].filter(c => !new RegExp('\\.' + c.replace(/[-.]/g, '\\
 console.log('预览用到 class 数：', used.size);
 if (missing.length) { console.error('❌ 以下 class 在真实 CSS 里找不到：', missing); process.exit(1); }
 console.log('✅ class 自检通过（全部来自真实 CSS）');
-console.log('产物：data/weather_preview.html', (page.length / 1024).toFixed(1) + ' KB');
+console.log('产物：front/tutorial/previews/weather_preview.html', (page.length / 1024).toFixed(1) + ' KB');

@@ -2,14 +2,14 @@
  * 用 index.html 里的**真实 CSS**渲染三处表单（个人信息 / 报告 / 定制助手），
  * 每处并排展示「默认态」与「跟踪态（悬停或聚焦时）」——截图即可肉眼验收，不依赖服务与浏览器自动化。
  * 用法：node scripts/build_form_preview.js
- * 产物：data/form_preview.html
+ * 产物：front/tutorial/previews/form_preview.html
  * 自检：预览用到的每个 class 都必须能在 index.html 的 CSS 里找到，否则报错退出。
  */
 const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
-const html = fs.readFileSync(path.join(root, 'static', 'index.html'), 'utf8');
+const html = fs.readFileSync(path.join(root, 'front', 'index.html'), 'utf8');
 const css = (html.match(/<style>([\s\S]*?)<\/style>/) || [, ''])[1];
 if (!css) { console.error('❌ 抽不到 <style>'); process.exit(1); }
 
@@ -136,7 +136,7 @@ const page = `<!doctype html>
 </body></html>`;
 
 fs.mkdirSync(path.join(root, 'data'), { recursive: true });
-const out = path.join(root, 'data', 'form_preview.html');
+const out = path.join(root, 'front', 'tutorial', 'previews', 'form_preview.html');
 fs.writeFileSync(out, page, 'utf8');
 
 // ---------------- 自检：预览里的 class 必须都来自真实 CSS ----------------
@@ -152,4 +152,4 @@ const missing = [...used].filter((c) => !new RegExp('\\.' + c.replace(/[-.]/g, '
 console.log('预览用到 class 数：', used.size);
 if (missing.length) { console.error('❌ 以下 class 在真实 CSS 里找不到：', missing); process.exit(1); }
 console.log('✅ class 自检通过（全部来自真实 CSS）');
-console.log('产物：data/form_preview.html', (page.length / 1024).toFixed(1) + ' KB');
+console.log('产物：front/tutorial/previews/form_preview.html', (page.length / 1024).toFixed(1) + ' KB');
