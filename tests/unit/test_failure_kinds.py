@@ -202,3 +202,32 @@ def test_failures_endpoint_shape_and_bad_args():
             failure_api.failures("不存在的token", days=7)
     finally:
         purge_account(aid)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# ★ 2026-10-09 真机观感测试抓到的缺陷：`--wait` 生效值是 3，日志却写「等待 180s」
+#   —— 报数用了模块常量 `READY_TIMEOUT`，不是形参 `timeout`。用户看日志会以为等了 180 秒。
+#   守卫：`start_backend` 里凡是报「等待/超时多少秒」的调用，必须引用生效值 `timeout`。
+# ══════════════════════════════════════════════════════════════════════════
+def test_timeout_messages_use_effective_value_not_module_constant():
+    src = open(APP_PY, encoding="utf-8").read()
+    tree = ast.parse(src)
+    fn = next((n for n in ast.walk(tree)
+               if isinstance(n, ast.FunctionDef) and n.name == "start_backend"), None)
+    assert fn is not None, "外壳里找不到 start_backend（改名了？）"
+
+    hits = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call):
+            continue
+        fname = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+        if fname not in ("log", "_log_failure"):
+            continue
+        seg = ast.get_source_segment(src, node) or ""
+        if ("ready_timeout" in seg) or ("等待超时" in seg):
+            hits.append(seg)
+
+    assert len(hits) >= 2, "预期两处报数（失败分类 + 人话日志），实际找到 %d 处：%s" % (len(hits), hits)
+    for seg in hits:
+        assert "READY_TIMEOUT" not in seg, "报数必须用生效值 timeout，不能用模块常量 READY_TIMEOUT：\n%s" % seg
+        assert "timeout" in seg, "报数里没见到生效值 timeout：\n%s" % seg

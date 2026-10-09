@@ -1,0 +1,739 @@
+{
+ "ts": "2026-10-02 14:34:34",
+ "source_sheet": "tests/test_out/m6b_score_sheet_full_final_20261002.md",
+ "probe": "v3-recorder",
+ "scoring": "manual",
+ "count": 43,
+ "scored": 43,
+ "verdict": {
+  "✓": 36,
+  "△": 5,
+  "✗": 2,
+  "未测": 0
+ },
+ "rows": [
+  {
+   "id": 1,
+   "core": true,
+   "q": "我最近在微信读书上看的是什么书",
+   "score": "✓",
+   "note": "详见基线的备注,后续与出现与基线相同的题目我直接采用基线评分,不再备注",
+   "ref_chain": "weread ['shelf', 'recent']",
+   "seq": [
+    "weread shelf recent",
+    "weread shelf list",
+    "weread book resolve 我是异类，你是怪物",
+    "weread book info 3300198106",
+    "weread book progress 3300198106"
+   ],
+   "n_calls": 5,
+   "seq_key": "weread shelf recent || weread shelf list || weread book resolve 我是异类，你是怪物 || weread book info 3300198106 || weread book progress 3300198106"
+  },
+  {
+   "id": 2,
+   "core": false,
+   "q": "微信读书上《人类简史》这本书讲什么",
+   "score": "✓",
+   "note": "",
+   "ref_chain": "weread book resolve（书名→bookId）→ weread book info",
+   "seq": [
+    "weread search 人类简史",
+    "weread book resolve 人类简史",
+    "weread book info 855812"
+   ],
+   "n_calls": 3,
+   "seq_key": "weread search 人类简史 || weread book resolve 人类简史 || weread book info 855812"
+  },
+  {
+   "id": 3,
+   "core": false,
+   "q": "我这个月在微信读书上读了多久",
+   "score": "△",
+   "note": "【二次评分改判】步骤 2/3 是同参数同命令（`readdata detail` ×2），按 #25/#27/#30 的同一口径应为 △。原判：我接weread的初衷只是为了测试CLI工具,我的常用读书软件也不是微信读书,所以查出了0进度后agent使用detail可能是想深入查找遗漏点,属于我个人问题,不是agent问题",
+   "ref_chain": "weread ['readdata', 'summary']",
+   "seq": [
+    "weread readdata summary",
+    "weread readdata detail",
+    "weread readdata detail"
+   ],
+   "n_calls": 3,
+   "seq_key": "weread readdata summary || weread readdata detail || weread readdata detail"
+  },
+  {
+   "id": 4,
+   "core": false,
+   "q": "帮我看看我的读书笔记都在哪",
+   "score": "✓",
+   "note": "理由同上一题",
+   "ref_chain": "weread ['notes', 'notebooks']",
+   "seq": [
+    "weread notes notebooks",
+    "weread readdata summary",
+    "weread shelf recent",
+    "weread book resolve 我是异类，你是怪物",
+    "weread book progress 3300198106"
+   ],
+   "n_calls": 5,
+   "seq_key": "weread notes notebooks || weread readdata summary || weread shelf recent || weread book resolve 我是异类，你是怪物 || weread book progress 3300198106"
+  },
+  {
+   "id": 5,
+   "core": false,
+   "q": "我最近和谁聊过天",
+   "score": "✓",
+   "note": "正确选择(和基线一样,正确简单单一调用我不再写备注)",
+   "ref_chain": "wechat-cli ['sessions']",
+   "seq": [
+    "wechat-cli sessions"
+   ],
+   "n_calls": 1,
+   "seq_key": "wechat-cli sessions"
+  },
+  {
+   "id": 6,
+   "core": true,
+   "q": "帮我找找我和袁战的聊天记录",
+   "score": "✓",
+   "note": "很意外,基线上多次调用但是这次全量测试收住了,看来agent对这个问题的作答有概率性变化(注:我没有更换模型,两次测试都使用的是openRouter的space-bunny-alpha模型)",
+   "ref_chain": "wechat-cli ['history']",
+   "seq": [
+    "wechat-cli sessions",
+    "wechat-cli history 袁战"
+   ],
+   "n_calls": 2,
+   "seq_key": "wechat-cli sessions || wechat-cli history 袁战"
+  },
+  {
+   "id": 7,
+   "core": false,
+   "q": "微信里有没有我还没读的消息",
+   "score": "✓",
+   "note": "",
+   "ref_chain": "wechat-cli ['new-messages']",
+   "seq": [
+    "wechat-cli unread"
+   ],
+   "n_calls": 1,
+   "seq_key": "wechat-cli unread"
+  },
+  {
+   "id": 8,
+   "core": false,
+   "q": "B站我收藏的视频里有没有讲 Rust 的",
+   "score": "✓",
+   "note": "bili的绝大工具默认只返回第一页数据,若数据量超过一页必须加page参数,所以此次部分文件夹多次调用不算冗余",
+   "ref_chain": "bili ['favorites']",
+   "seq": [
+    "bili favorites",
+    "bili favorites 3331667319",
+    "bili favorites 3331667319 --page 2",
+    "bili favorites 2557243719",
+    "bili favorites 2557243719 --page 2",
+    "bili favorites 2557243719 --page 3",
+    "bili favorites 2557243719 --page 4",
+    "bili favorites 161158619 --keyword Rust",
+    "bili favorites --help",
+    "bili favorites 161158619 --page 1",
+    "bili favorites 161158619 --page 2",
+    "bili favorites 161158619 --page 3",
+    "bili favorites 161158619 --page 4",
+    "bili favorites 161158619 --page 5",
+    "bili favorites 161158619 --page 6",
+    "bili favorites 161158619 --page 7",
+    "bili favorites 161158619 --page 8",
+    "bili favorites 161158619 --page 9",
+    "bili favorites 161158619 --page 10",
+    "bili favorites 161158619 --page 11",
+    "bili favorites 161158619 --page 12",
+    "bili favorites 3328626919",
+    "bili favorites 3328626919 --page 1",
+    "bili favorites 808877319 --page 1",
+    "bili favorites 2564728019 --page 1",
+    "bili favorites 1038318819 --page 1",
+    "bili favorites 808877319 --page 2",
+    "bili favorites 808877319 --page 3",
+    "bili favorites 808877319 --page 4",
+    "bili favorites 808877319 --page 5"
+   ],
+   "n_calls": 30,
+   "seq_key": "bili favorites || bili favorites 3331667319 || bili favorites 3331667319 --page 2 || bili favorites 2557243719 || bili favorites 2557243719 --page 2 || bili favorites 2557243719 --page 3 || bili favorites 2557243719 --page 4 || bili favorites 161158619 --keyword Rust || bili favorites --help || bili favorites 161158619 --page 1 || bili favorites 161158619 --page 2 || bili favorites 161158619 --page 3 || bili favorites 161158619 --page 4 || bili favorites 161158619 --page 5 || bili favorites 161158619 --page 6 || bili favorites 161158619 --page 7 || bili favorites 161158619 --page 8 || bili favorites 161158619 --page 9 || bili favorites 161158619 --page 10 || bili favorites 161158619 --page 11 || bili favorites 161158619 --page 12 || bili favorites 3328626919 || bili favorites 3328626919 --page 1 || bili favorites 808877319 --page 1 || bili favorites 2564728019 --page 1 || bili favorites 1038318819 --page 1 || bili favorites 808877319 --page 2 || bili favorites 808877319 --page 3 || bili favorites 808877319 --page 4 || bili favorites 808877319 --page 5"
+  },
+  {
+   "id": 9,
+   "core": true,
+   "q": "B站今天有什么热门视频",
+   "score": "✓",
+   "note": "",
+   "ref_chain": "bili ['hot']",
+   "seq": [
+    "bili hot"
+   ],
+   "n_calls": 1,
+   "seq_key": "bili hot"
+  },
+  {
+   "id": 10,
+   "core": false,
+   "q": "BV1xx411c7mD 这个视频讲了什么",
+   "score": "✓",
+   "note": "",
+   "ref_chain": "bili ['video']",
+   "seq": [
+    "bili video BV1xx411c7mD",
+    "bili video BV1xx411c7mD --with-subtitle",
+    "bili video BV1xx411c7mD --subtitle"
+   ],
+   "n_calls": 3,
+   "seq_key": "bili video BV1xx411c7mD || bili video BV1xx411c7mD --with-subtitle || bili video BV1xx411c7mD --subtitle"
+  },
+  {
+   "id": 11,
+   "core": true,
+   "q": "Steam 上《空洞骑士》卖多少钱",
+   "score": "✓",
+   "note": "steam游戏名搜索引擎只支持原文搜索(游戏名是英文就只能英文搜索,中文就只能中文搜索,不支持翻译后搜索),这算是能力卡信息缺失,不算错误选择",
+   "ref_chain": "api:steam#searchGame",
+   "seq": [
+    "api:steam#searchGame {\"term\": \"空洞骑士\"}",
+    "api:steam#searchGame {\"term\": \"Hollow Knight\"}"
+   ],
+   "n_calls": 2,
+   "seq_key": "api:steam#searchGame {\"term\": \"空洞骑士\"} || api:steam#searchGame {\"term\": \"Hollow Knight\"}"
+  },
+  {
+   "id": 12,
+   "core": false,
+   "q": "Steam 上 appid 是 774361 的游戏什么时候发售",
+   "score": "✓",
+   "note": "问题本身是伪命题,渎神系列游戏最近一次更新也是今年5-6月渎神2新dlc上架,官方并没有新一代渎神3的任何预告,调用序列本身是一个查->发现错->深入证明的过程,故对",
+   "ref_chain": "api:steam#gameDetail",
+   "seq": [
+    "api:steam#gameDetail {\"appids\": 774361}",
+    "api:steam#gameDetail {\"appids\": 774361, \"filters\": \"release_date,price_overview,name,developers\"}",
+    "api:steam#gameDetail {\"appids\": 774361, \"filters\": \"basic\"}",
+    "api:steam#searchGame {\"term\": \"Blasphemous\"}",
+    "curl -s --max-time 15 https://store.steampowered.com/api/appdetails?appids=774361&cc=cn&l=schinese&filters=basic,release_date,price_overview"
+   ],
+   "n_calls": 5,
+   "seq_key": "api:steam#gameDetail {\"appids\": 774361} || api:steam#gameDetail {\"appids\": 774361, \"filters\": \"release_date,price_overview,name,developers\"} || api:steam#gameDetail {\"appids\": 774361, \"filters\": \"basic\"} || api:steam#searchGame {\"term\": \"Blasphemous\"} || curl -s --max-time 15 https://store.steampowered.com/api/appdetails?appids=774361&cc=cn&l=schinese&filters=basic,release_date,price_overview"
+  },
+  {
+   "id": 13,
+   "core": true,
+   "q": "抖音今天最热门的那条视频是什么内容",
+   "score": "✓",
+   "note": "",
+   "ref_chain": "api:xxapi#douyinHot",
+   "seq": [
+    "api:xxapi#douyinHot {}"
+   ],
+   "n_calls": 1,
+   "seq_key": "api:xxapi#douyinHot {}"
+  },
+  {
+   "id": 14,
+   "core": false,
+   "q": "114.114.114.114 这个 IP 是哪儿的",
+   "score": "✓",
+   "note": "",
+   "ref_chain": "api:xxapi#ipQuery",
+   "seq": [
+    "api:xxapi#ipQuery {\"ip\": \"114.114.114.114\"}"
+   ],
+   "n_calls": 1,
+   "seq_key": "api:xxapi#ipQuery {\"ip\": \"114.114.114.114\"}"
+  },
+  {
+   "id": 15,
+   "core": true,
+   "q": "帮我查一下后天成都到重庆还有没有票",
+   "score": "✓",
+   "note": "",
+   "ref_chain": "get-current-date（后天→具体日期）→ get-station-code-of-citys（成都/重庆→站点码）→ get-tickets",
+   "seq": [
+    "mcp:12306-mcp/get-current-date {}",
+    "mcp:12306-mcp/get-station-code-by-names {\"stationNames\": \"成都,重庆\"}",
+    "mcp:12306-mcp/get-station-code-by-names {\"stationNames\": \"成都\"}",
+    "mcp:12306-mcp/get-station-code-by-names {\"stationNames\": \"重庆\"}",
+    "mcp:12306-mcp/get-tickets {\"date\": \"2026-10-04\", \"fromStation\": \"CDW\", \"toStation\": \"CQW\"}"
+   ],
+   "n_calls": 5,
+   "seq_key": "mcp:12306-mcp/get-current-date {} || mcp:12306-mcp/get-station-code-by-names {\"stationNames\": \"成都,重庆\"} || mcp:12306-mcp/get-station-code-by-names {\"stationNames\": \"成都\"} || mcp:12306-mcp/get-station-code-by-names {\"stationNames\": \"重庆\"} || mcp:12306-mcp/get-tickets {\"date\": \"2026-10-04\", \"fromStation\": \"CDW\", \"toStation\": \"CQW\"}"
+  },
+  {
+   "id": 16,
+   "core": false,
+   "q": "从成都坐火车去广州，有哪些需要中转的车次",
+   "score": "✓",
+   "note": "现实上成都到广州确实是直通车,和12题一样,是发现错和深入证明的过程,故无误",
+   "ref_chain": "get-current-date → get-station-code-of-citys（成都/广州）→ get-interline-tickets",
+   "seq": [
+    "mcp:12306-mcp/get-current-date {}",
+    "mcp:12306-mcp/get-station-code-by-names {\"stationNames\": \"成都,广州\"}",
+    "mcp:12306-mcp/get-stations-code-in-city {\"city\": \"成都\"}",
+    "mcp:12306-mcp/get-stations-code-in-city {\"city\": \"广州\"}",
+    "mcp:12306-mcp/get-tickets {\"date\": \"2026-10-02\", \"fromStation\": \"ICW\", \"toStation\": \"IZQ\", \"format\": \"json\"}",
+    "mcp:12306-mcp/get-interline-tickets {\"date\": \"2026-10-02\", \"fromStation\": \"ICW\", \"toStation\": \"IZQ\", \"format\": \"json\"}",
+    "mcp:12306-mcp/get-interline-tickets {\"date\": \"2026-10-02\", \"format\": \"json\", \"fromStation\": \"ICW\", \"toStation\": \"IZQ\", \"limitedNum\": 10,",
+    "mcp:12306-mcp/get-interline-tickets {\"date\": \"2026-10-02\", \"earliestStartTime\": 10, \"format\": \"json\", \"fromStation\": \"ICW\", \"toStation\":"
+   ],
+   "n_calls": 8,
+   "seq_key": "mcp:12306-mcp/get-current-date {} || mcp:12306-mcp/get-station-code-by-names {\"stationNames\": \"成都,广州\"} || mcp:12306-mcp/get-stations-code-in-city {\"city\": \"成都\"} || mcp:12306-mcp/get-stations-code-in-city {\"city\": \"广州\"} || mcp:12306-mcp/get-tickets {\"date\": \"2026-10-02\", \"fromStation\": \"ICW\", \"toStation\": \"IZQ\", \"format\": \"json\"} || mcp:12306-mcp/get-interline-tickets {\"date\": \"2026-10-02\", \"fromStation\": \"ICW\", \"toStation\": \"IZQ\", \"format\": \"json\"} || mcp:12306-mcp/get-interline-tickets {\"date\": \"2026-10-02\", \"format\": \"json\", \"fromStation\": \"ICW\", \"toStation\": \"IZQ\", \"limitedNum\": 10, || mcp:12306-mcp/get-interline-tickets {\"date\": \"2026-10-02\", \"earliestStartTime\": 10, \"format\": \"json\", \"fromStation\": \"ICW\", \"toStation\":"
+  },
+  {
+   "id": 17,
+   "core": true,
+   "q": "G1033 这趟车中间都停哪些站",
+   "score": "✓",
+   "note": "",
+   "ref_chain": "get-current-date → get-train-route-stations（车次 + 日期）",
+   "seq": [
+    "mcp:12306-mcp/get-current-date {}",
+    "mcp:12306-mcp/get-train-route-stations {\"trainCode\": \"G1033\", \"departDate\": \"2026-10-02\"}"
+   ],
+   "n_calls": 2,
+   "seq_key": "mcp:12306-mcp/get-current-date {} || mcp:12306-mcp/get-train-route-stations {\"trainCode\": \"G1033\", \"departDate\": \"2026-10-02\"}"
+  },
+  {
+   "id": 18,
+   "core": false,
+   "q": "「上海虹桥」这个火车站的站点代码是多少",
+   "score": "✓",
+   "note": "",
+   "ref_chain": "get-station-code-by-names（站名→code，**不需要日期** ✓）",
+   "seq": [
+    "mcp:12306-mcp/get-station-code-by-names {\"stationNames\": \"上海虹桥\"}"
+   ],
+   "n_calls": 1,
+   "seq_key": "mcp:12306-mcp/get-station-code-by-names {\"stationNames\": \"上海虹桥\"}"
+  },
+  {
+   "id": 19,
+   "core": false,
+   "q": "上海的车站代码是什么",
+   "score": "✓",
+   "note": "【二次评分：维持 ✓】调研结论（能力卡原文）：`get-station-code-of-citys`=城市→**代表站**码、`get-stations-code-in-city`=城市→**全部车站**列表、`get-station-code-by-names`=**站名**→码 —— 三个都是真工具且语义不同 ✓，agent 首调即选对 `of-citys`，第二次 `in-city` 是补充信息 → 非错误选择。原备注：这个code-in-city和code-of-citys的区别是什么?是某个工具是错误的写法?如果是:√(信息卡错误不是agent的锅),都存在但功能不一样:×(错误选择),都存在且功能一样:△(功能冗余)",
+   "ref_chain": "get-station-code-of-citys（城市→代表站 code ✓ 不需要日期）",
+   "seq": [
+    "mcp:12306-mcp/get-station-code-of-citys {\"citys\": \"上海\"}",
+    "mcp:12306-mcp/get-stations-code-in-city {\"city\": \"上海\"}"
+   ],
+   "n_calls": 2,
+   "seq_key": "mcp:12306-mcp/get-station-code-of-citys {\"citys\": \"上海\"} || mcp:12306-mcp/get-stations-code-in-city {\"city\": \"上海\"}"
+  },
+  {
+   "id": 20,
+   "core": false,
+   "q": "成都有哪几个火车站",
+   "score": "✓",
+   "note": "",
+   "ref_chain": "get-stations-code-in-city（城市→该市全部车站 ✓ 不需要日期）",
+   "seq": [
+    "mcp:12306-mcp/get-stations-code-in-city {\"city\": \"成都\"}"
+   ],
+   "n_calls": 1,
+   "seq_key": "mcp:12306-mcp/get-stations-code-in-city {\"city\": \"成都\"}"
+  },
+  {
+   "id": 21,
+   "core": false,
+   "q": "VNP 这个站码对应的是哪个车站",
+   "score": "✓",
+   "note": "",
+   "ref_chain": "get-station-by-telecode（telecode→车站详情 ✓ 不需要日期）",
+   "seq": [
+    "mcp:12306-mcp/get-station-by-telecode {\"stationTelecode\": \"VNP\"}"
+   ],
+   "n_calls": 1,
+   "seq_key": "mcp:12306-mcp/get-station-by-telecode {\"stationTelecode\": \"VNP\"}"
+  },
+  {
+   "id": 22,
+   "core": false,
+   "q": "下周三具体是几月几号，我要买那天的票",
+   "score": "✓",
+   "note": "",
+   "ref_chain": "get-current-date（本身就这一件事 ✓）",
+   "seq": [
+    "mcp:12306-mcp/get-current-date {}"
+   ],
+   "n_calls": 1,
+   "seq_key": "mcp:12306-mcp/get-current-date {}"
+  },
+  {
+   "id": 23,
+   "core": true,
+   "q": "法国国家图书馆里有没有《悲惨世界》",
+   "score": "✓",
+   "note": "虽然与预期工具不一样,但这个方面也确实能找到想要的信息",
+   "ref_chain": "mcp:bnf/search_by_title",
+   "seq": [
+    "mcp:bnf/natural_language_search {\"query\": \"Les Misérables Victor Hugo\", \"max_results\": 15}",
+    "mcp:bnf/advanced_search {\"query\": \"dc.title all \\\"misérables\\\" and dc.creator all \\\"Hugo\\\"\", \"max_results\": 10}"
+   ],
+   "n_calls": 2,
+   "seq_key": "mcp:bnf/natural_language_search {\"query\": \"Les Misérables Victor Hugo\", \"max_results\": 15} || mcp:bnf/advanced_search {\"query\": \"dc.title all \\\"misérables\\\" and dc.creator all \\\"Hugo\\\"\", \"max_results\": 10}"
+  },
+  {
+   "id": 24,
+   "core": false,
+   "q": "Gallica 上有没有雨果写的资料",
+   "score": "✓",
+   "note": "",
+   "ref_chain": "mcp:bnf/search_by_author",
+   "seq": [
+    "mcp:bnf/search_by_author {\"author\": \"Victor Hugo\", \"max_results\": 20}",
+    "mcp:bnf/natural_language_search {\"query\": \"Victor Hugo 连环画 插图本 画集\", \"max_results\": 10}",
+    "mcp:bnf/natural_language_search {\"query\": \"Victor Hugo editions originales illustrees Les Misérables Notre-Dame de Paris\", \"max_resu"
+   ],
+   "n_calls": 3,
+   "seq_key": "mcp:bnf/search_by_author {\"author\": \"Victor Hugo\", \"max_results\": 20} || mcp:bnf/natural_language_search {\"query\": \"Victor Hugo 连环画 插图本 画集\", \"max_results\": 10} || mcp:bnf/natural_language_search {\"query\": \"Victor Hugo editions originales illustrees Les Misérables Notre-Dame de Paris\", \"max_resu"
+  },
+  {
+   "id": 25,
+   "core": false,
+   "q": "Gallica 里关于巴黎公社的资料有哪些",
+   "score": "△",
+   "note": "出现同参数同命令情况",
+   "ref_chain": "mcp:bnf/search_by_subject",
+   "seq": [
+    "mcp:bnf/natural_language_search {\"query\": \"Commune de Paris 1871 Révolution\", \"max_results\": \"20\"}",
+    "mcp:bnf/natural_language_search {\"max_results\": 20, \"query\": \"Commune de Paris 1871\"}",
+    "mcp:bnf/search_by_title {\"max_results\": 20, \"title\": \"Commune de Paris\"}",
+    "mcp:bnf/search_by_subject {\"max_results\": 20, \"subject\": \"Commune de Paris\"}",
+    "mcp:bnf/natural_language_search {\"max_results\": 15, \"query\": \"journal de la Commune de Paris 1871 archivesmaniaquesBundle archives k",
+    "mcp:bnf/search_by_date {\"date\": 1871, \"max_results\": 15}",
+    "mcp:bnf/search_by_date {\"date\": 1871, \"max_results\": 15}",
+    "mcp:bnf/search_by_date {\"date\": \"1871-05\", \"max_results\": 15}"
+   ],
+   "n_calls": 8,
+   "seq_key": "mcp:bnf/natural_language_search {\"query\": \"Commune de Paris 1871 Révolution\", \"max_results\": \"20\"} || mcp:bnf/natural_language_search {\"max_results\": 20, \"query\": \"Commune de Paris 1871\"} || mcp:bnf/search_by_title {\"max_results\": 20, \"title\": \"Commune de Paris\"} || mcp:bnf/search_by_subject {\"max_results\": 20, \"subject\": \"Commune de Paris\"} || mcp:bnf/natural_language_search {\"max_results\": 15, \"query\": \"journal de la Commune de Paris 1871 archivesmaniaquesBundle archives k || mcp:bnf/search_by_date {\"date\": 1871, \"max_results\": 15} || mcp:bnf/search_by_date {\"date\": 1871, \"max_results\": 15} || mcp:bnf/search_by_date {\"date\": \"1871-05\", \"max_results\": 15}"
+  },
+  {
+   "id": 26,
+   "core": false,
+   "q": "Gallica 里 1914 年的资料有哪些",
+   "score": "✓",
+   "note": "",
+   "ref_chain": "mcp:bnf/search_by_date",
+   "seq": [
+    "mcp:bnf/search_by_date {\"date\": \"1914\"}"
+   ],
+   "n_calls": 1,
+   "seq_key": "mcp:bnf/search_by_date {\"date\": \"1914\"}"
+  },
+  {
+   "id": 27,
+   "core": false,
+   "q": "Gallica 里的手稿类文献有哪些",
+   "score": "△",
+   "note": "同25",
+   "ref_chain": "mcp:bnf/search_by_document_type",
+   "seq": [
+    "mcp:bnf/search_by_document_type {\"doc_type\": \"manuscrit\", \"max_results\": \"20\"}",
+    "mcp:bnf/search_by_document_type {\"doc_type\": \"manuscrit\", \"max_results\": \"20\"}",
+    "mcp:bnf/search_by_document_type \"{\\\"doc_type\\\": \\\"manuscrit\\\", \\\"max_results\\\": 20, \\\"start_record\\\": 1}\""
+   ],
+   "n_calls": 3,
+   "seq_key": "mcp:bnf/search_by_document_type {\"doc_type\": \"manuscrit\", \"max_results\": \"20\"} || mcp:bnf/search_by_document_type {\"doc_type\": \"manuscrit\", \"max_results\": \"20\"} || mcp:bnf/search_by_document_type \"{\\\"doc_type\\\": \\\"manuscrit\\\", \\\"max_results\\\": 20, \\\"start_record\\\": 1}\""
+  },
+  {
+   "id": 28,
+   "core": false,
+   "q": "用法语 CQL 语法在 Gallica 检索 dc.creator=Victor Hugo",
+   "score": "✓",
+   "note": "首调了期望工具,后面的工具属于是想搜集更多雨果信息,操作可以理解,故无误",
+   "ref_chain": "mcp:bnf/advanced_search",
+   "seq": [
+    "mcp:bnf/advanced_search {\"query\": \"dc.creator all \\\"Victor Hugo\\\"\", \"max_results\": 20}",
+    "mcp:bnf/search_by_author {\"max_results\": 20, \"author\": \"Victor Hugo\"}",
+    "mcp:bnf/advanced_search {\"max_results\": 10, \"query\": \"dc.creator all \\\"Victor Hugo\\\" and dc.type all \\\"monographie imprimée\\",
+    "mcp:bnf/advanced_search {\"max_results\": 5, \"query\": \"dc.creator all \\\"Victor Hugo\\\" and dc.type all \\\"monographie\\\"\"}"
+   ],
+   "n_calls": 4,
+   "seq_key": "mcp:bnf/advanced_search {\"query\": \"dc.creator all \\\"Victor Hugo\\\"\", \"max_results\": 20} || mcp:bnf/search_by_author {\"max_results\": 20, \"author\": \"Victor Hugo\"} || mcp:bnf/advanced_search {\"max_results\": 10, \"query\": \"dc.creator all \\\"Victor Hugo\\\" and dc.type all \\\"monographie imprimée\\ || mcp:bnf/advanced_search {\"max_results\": 5, \"query\": \"dc.creator all \\\"Victor Hugo\\\" and dc.type all \\\"monographie\\\"\"}"
+  },
+  {
+   "id": 29,
+   "core": false,
+   "q": "用自然语言在 Gallica 上找关于巴黎公社的资料",
+   "score": "✓",
+   "note": "两次重复调用属于自行检查纠正改进搜索方式,故无误,我在以前的会话提到过对\"巴黎公社\"的好奇被记录进过画像,故使用write_agent_doc大概画像内容匹配后再次添加相关信息以丰富画像细节",
+   "ref_chain": "mcp:bnf/natural_language_search",
+   "seq": [
+    "mcp:bnf/natural_language_search {\"query\": \"Paris Commune de 1870 1871 histoire et documents\", \"max_results\": 20}",
+    "mcp:bnf/natural_language_search {\"max_results\": 10, \"query\": \"récits et mémoires de la Commune de Paris, histoire de la révolution d",
+    "write_agent_doc"
+   ],
+   "n_calls": 3,
+   "seq_key": "mcp:bnf/natural_language_search {\"query\": \"Paris Commune de 1870 1871 histoire et documents\", \"max_results\": 20} || mcp:bnf/natural_language_search {\"max_results\": 10, \"query\": \"récits et mémoires de la Commune de Paris, histoire de la révolution d || write_agent_doc"
+  },
+  {
+   "id": 30,
+   "core": true,
+   "q": "用法语资料帮我做一份关于雨果的研究报告",
+   "score": "✗",
+   "note": "【二次评分改判为 ✗】核 usage_events（会话 id=1529，20 条事件）：本轮**未调 `write_agent_doc`**、参考链路里的 **`sequential_reporting` 一次未调** ✗，只做了 kb/docs 读取 + 7 次 bnf 检索（反复报参数类型错）→ **报告未产出**；全盘扫描确认无任何报告文件 ✓。原判：本身是改错纠错的过程,但是出现了同命令同参数的步骤",
+   "ref_chain": "mcp:bnf/sequential_reporting",
+   "seq": [
+    "query_kb",
+    "list_agent_docs",
+    "read_agent_doc",
+    "mcp:bnf/search_by_author {\"author\": \"Victor Hugo\", \"exact_match\": \"true\", \"max_results\": \"20\"}",
+    "mcp:bnf/search_by_author {\"author\": \"Victor Hugo\", \"exact_match\": \"true\", \"max_results\": \"20\"}",
+    "mcp:bnf/advanced_search {\"max_results\": \"20\", \"query\": \"dc.creator all \\\"Victor Hugo\\\"\"}",
+    "mcp:bnf/advanced_search {\"query\": \"dc.creator all \\\"Victor Hugo\\\"\", \"max_results\": 20}",
+    "mcp:bnf/advanced_search {\"max_results\": \"8\", \"query\": \"dc.title all \\\"Les Misérables\\\" and dc.creator all \\\"Hugo\\\"\"}",
+    "mcp:bnf/advanced_search {\"query\": \"dc.title all \\\"Misérables\\\" and dc.creator all \\\"Hugo\\\"\", \"max_results\": \"8\"}",
+    "mcp:bnf/advanced_search {\"max_results\": \"8\", \"query\": \"dc.title all \\\"Misérables\\\" and dc.creator all \\\"Hugo\\\"\"}"
+   ],
+   "n_calls": 10,
+   "seq_key": "query_kb || list_agent_docs || read_agent_doc || mcp:bnf/search_by_author {\"author\": \"Victor Hugo\", \"exact_match\": \"true\", \"max_results\": \"20\"} || mcp:bnf/search_by_author {\"author\": \"Victor Hugo\", \"exact_match\": \"true\", \"max_results\": \"20\"} || mcp:bnf/advanced_search {\"max_results\": \"20\", \"query\": \"dc.creator all \\\"Victor Hugo\\\"\"} || mcp:bnf/advanced_search {\"query\": \"dc.creator all \\\"Victor Hugo\\\"\", \"max_results\": 20} || mcp:bnf/advanced_search {\"max_results\": \"8\", \"query\": \"dc.title all \\\"Les Misérables\\\" and dc.creator all \\\"Hugo\\\"\"} || mcp:bnf/advanced_search {\"query\": \"dc.title all \\\"Misérables\\\" and dc.creator all \\\"Hugo\\\"\", \"max_results\": \"8\"} || mcp:bnf/advanced_search {\"max_results\": \"8\", \"query\": \"dc.title all \\\"Misérables\\\" and dc.creator all \\\"Hugo\\\"\"}"
+  },
+  {
+   "id": 31,
+   "core": true,
+   "q": "拼多多上搜一下 iPhone 17 的价格",
+   "score": "✓",
+   "note": "虽然从回答上说没有搜到,但属于工具问题,agent确实调用对了期望工具,并多次不同方法尝试",
+   "ref_chain": "mcp:pdd/search_goods",
+   "seq": [
+    "mcp:pdd/search_goods {\"keyword\": \"iPhone 17\", \"sort_type\": \"综合排序\", \"page_size\": \"20\"}",
+    "mcp:pdd/search_goods {\"keyword\": \"iPhone 17\", \"sort_type\": \"综合排序\", \"page_size\": \"20\", \"page\": \"1\"}",
+    "mcp:pdd/search_goods {\"keyword\": \"iPhone 17\", \"sort_type\": \"综合排序\", \"page\": 1, \"page_size\": 20}",
+    "mcp:pdd/search_goods {\"keyword\": \"苹果17手机128G全新\", \"page_size\": \"20\", \"page\": \"1\", \"sort_type\": \"销量排序\"}",
+    "mcp:pdd/search_goods {\"keyword\": \"苹果17手机128G全新\", \"sort_type\": \"销量排序\"}",
+    "mcp:pdd/search_goods {\"keyword\": \"iPhone17 Pro Max 5G手机 全新正品\", \"price_min\": \"3000\", \"sort_type\": \"价格升序\"}"
+   ],
+   "n_calls": 6,
+   "seq_key": "mcp:pdd/search_goods {\"keyword\": \"iPhone 17\", \"sort_type\": \"综合排序\", \"page_size\": \"20\"} || mcp:pdd/search_goods {\"keyword\": \"iPhone 17\", \"sort_type\": \"综合排序\", \"page_size\": \"20\", \"page\": \"1\"} || mcp:pdd/search_goods {\"keyword\": \"iPhone 17\", \"sort_type\": \"综合排序\", \"page\": 1, \"page_size\": 20} || mcp:pdd/search_goods {\"keyword\": \"苹果17手机128G全新\", \"page_size\": \"20\", \"page\": \"1\", \"sort_type\": \"销量排序\"} || mcp:pdd/search_goods {\"keyword\": \"苹果17手机128G全新\", \"sort_type\": \"销量排序\"} || mcp:pdd/search_goods {\"keyword\": \"iPhone17 Pro Max 5G手机 全新正品\", \"price_min\": \"3000\", \"sort_type\": \"价格升序\"}"
+  },
+  {
+   "id": 32,
+   "core": false,
+   "q": "拼多多百亿补贴现在有什么好东西",
+   "score": "✓",
+   "note": "同上",
+   "ref_chain": "mcp:pdd/explore_deals",
+   "seq": [
+    "mcp:pdd/explore_deals {\"channel\": \"百亿补贴\", \"limit\": \"40\"}",
+    "mcp:pdd/explore_deals {\"channel\": \"百亿补贴\", \"limit\": 40}",
+    "mcp:pdd/explore_deals {\"limit\": \"40\"}",
+    "mcp:pdd/explore_deals {}"
+   ],
+   "n_calls": 4,
+   "seq_key": "mcp:pdd/explore_deals {\"channel\": \"百亿补贴\", \"limit\": \"40\"} || mcp:pdd/explore_deals {\"channel\": \"百亿补贴\", \"limit\": 40} || mcp:pdd/explore_deals {\"limit\": \"40\"} || mcp:pdd/explore_deals {}"
+  },
+  {
+   "id": 33,
+   "core": false,
+   "q": "拼多多这个商品 goods_sign 是 E932cKJQRhht7tuxwfDAxrupzXBiZpWMgg_JQPw6VPiN3，帮我看看详情和优惠券",
+   "score": "✓",
+   "note": "同上",
+   "ref_chain": "get_goods_detail（题面已给 goods_sign ✓ 也可先 search_goods 拿 sign）",
+   "seq": [
+    "mcp:pdd/get_goods_detail {\"goods_sign\": \"E932cKJQRhht7tuxwfDAxrupzXBiZpWMgg_JQPw6VPiN3\"}"
+   ],
+   "n_calls": 1,
+   "seq_key": "mcp:pdd/get_goods_detail {\"goods_sign\": \"E932cKJQRhht7tuxwfDAxrupzXBiZpWMgg_JQPw6VPiN3\"}"
+  },
+  {
+   "id": 34,
+   "core": true,
+   "q": "帮我查一下石渠县的地理信息：属于哪个省、经纬度和人口分别是多少",
+   "score": "✓",
+   "note": "",
+   "ref_chain": "mcp:city/search_city（city_name=石渠县）→ 一级行政区 / 经纬度 / 人口",
+   "seq": [
+    "mcp:city/search_city {\"city_name\": \"石渠县\"}"
+   ],
+   "n_calls": 1,
+   "seq_key": "mcp:city/search_city {\"city_name\": \"石渠县\"}"
+  },
+  {
+   "id": 35,
+   "core": true,
+   "q": "从成都开车到稻城亚丁大概要多久",
+   "score": "△",
+   "note": "同基线",
+   "ref_chain": "mcp:route/plan_route",
+   "seq": [
+    "mcp:route/plan_route {\"start\": \"成都\", \"end\": \"稻城亚丁\", \"profile\": \"driving-car\"}",
+    "mcp:route/plan_route {\"end\": \"稻城县\", \"profile\": \"driving-car\", \"start\": \"成都\"}",
+    "mcp:route/plan_route {\"end\": \"100.1010,28.3730\", \"profile\": \"driving-car\", \"start\": \"成都\"}",
+    "mcp:route/plan_route {\"end\": \"稻城\", \"profile\": \"driving-car\", \"start\": \"成都\", \"waypoints\": \"康定,雅江\"}",
+    "mcp:route/plan_route {\"end\": \"稻城\", \"profile\": \"driving-car\", \"start\": \"成都\", \"waypoints\": [\"康定\", \"雅江\"]}",
+    "mcp:route/plan_route {\"end\": \"稻城\", \"profile\": \"driving-car\", \"start\": \"成都\"}"
+   ],
+   "n_calls": 6,
+   "seq_key": "mcp:route/plan_route {\"start\": \"成都\", \"end\": \"稻城亚丁\", \"profile\": \"driving-car\"} || mcp:route/plan_route {\"end\": \"稻城县\", \"profile\": \"driving-car\", \"start\": \"成都\"} || mcp:route/plan_route {\"end\": \"100.1010,28.3730\", \"profile\": \"driving-car\", \"start\": \"成都\"} || mcp:route/plan_route {\"end\": \"稻城\", \"profile\": \"driving-car\", \"start\": \"成都\", \"waypoints\": \"康定,雅江\"} || mcp:route/plan_route {\"end\": \"稻城\", \"profile\": \"driving-car\", \"start\": \"成都\", \"waypoints\": [\"康定\", \"雅江\"]} || mcp:route/plan_route {\"end\": \"稻城\", \"profile\": \"driving-car\", \"start\": \"成都\"}"
+  },
+  {
+   "id": 36,
+   "core": true,
+   "q": "我想下周去广州，帮我查从成都出发的火车票，再规划一条从广州南站到珠江新城的路线",
+   "score": "△",
+   "note": "本身是资源不足深入检查,序列思路无误,但是出现同参数同命令",
+   "ref_chain": "get-current-date → get-station-code-of-citys → get-tickets（12306）＋ plan_route（route）",
+   "seq": [
+    "mcp:12306-mcp/get-current-date {}",
+    "mcp:12306-mcp/get-station-code-of-citys {\"citys\": \"成都\"}",
+    "mcp:12306-mcp/get-station-code-of-citys {\"citys\": \"广州\"}",
+    "mcp:route/plan_route {\"start\": \"广州南站\", \"end\": \"珠江新城\", \"profile\": \"foot-walking\"}",
+    "mcp:12306-mcp/get-stations-code-in-city {\"city\": \"成都\"}",
+    "mcp:12306-mcp/get-stations-code-in-city {\"city\": \"广州\"}",
+    "mcp:route/plan_route {\"end\": \"珠江新城\", \"profile\": \"foot-walking\", \"start\": \"广州南\"}",
+    "mcp:12306-mcp/get-tickets {\"date\": \"2026-10-05\", \"fromStation\": \"成都\", \"toStation\": \"广州\", \"limitedNum\": \"20\"}",
+    "mcp:12306-mcp/get-tickets {\"date\": \"2026-10-08\", \"fromStation\": \"成都\", \"toStation\": \"广州\", \"limitedNum\": \"20\"}",
+    "mcp:route/plan_route {\"end\": \"珠江新城\", \"profile\": \"foot-walking\", \"start\": \"Guangzhou South Railway Station\"}",
+    "mcp:12306-mcp/get-tickets {\"date\": \"2026-10-05\", \"fromStation\": \"成都\", \"limit\": \"20\", \"toStation\": \"广州\"}",
+    "mcp:12306-mcp/get-tickets {\"date\": \"2026-10-08\", \"fromStation\": \"成都\", \"limit\": \"20\", \"toStation\": \"广州\"}",
+    "mcp:route/plan_route {\"end\": \"113.324,23.118\", \"profile\": \"foot-walking\", \"start\": \"113.268,22.990\"}",
+    "mcp:12306-mcp/get-tickets {\"date\": \"2026-10-05\", \"fromStation\": \"成都\", \"limitedNum\": \"20\", \"toStation\": \"广州\"}",
+    "mcp:12306-mcp/get-tickets {\"date\": \"2026-10-08\", \"fromStation\": \"成都\", \"limitedNum\": \"20\", \"toStation\": \"广州\"}",
+    "mcp:city/search_city {\"city_name\": \"珠江新城\"}",
+    "invoke_tool=\"珠江新城</invoke>\\n<invoke name=\"invoke_tool",
+    "mcp:12306-mcp/get-tickets {\"date\": \"108\", \"fromStation\": \"成都\", \"toStation\": \"广州\"}",
+    "mcp:12306-mcp/get-tickets {\"date\": \"2026-10-05\", \"fromStation\": \"SOH\", \"limitedNum\": \"20\"}",
+    "mcp:12306-mcp/get-tickets {\"date\": \"2026-10-05\", \"fromStation\": \"成都\", \"toStation\": \"广州\"}",
+    "mcp:12306-mcp/get-tickets {\"date\": \"2026-10-06\", \"fromStation\": \"成都\", \"toStation\": \"广州\"}",
+    "mcp:12306-mcp/get-tickets {\"date\": \"2026-10-07\", \"fromStation\": \"成都\", \"toStation\": \"广州\"}",
+    "mcp:12306-mcp/get-tickets {\"date\": \"2026-10-08\", \"fromStation\": \"成都\", \"toStation\": \"广州\"}",
+    "mcp:route/plan_route {\"end\": \"113.324,23.118\", \"profile\": \"driving-car\", \"start\": \"113.268,22.990\"}",
+    "mcp:route/plan_route {\"end\": \"Zhujiang New Town\", \"profile\": \"driving-car\", \"start\": \"Guangzhou South Railway Station\"}",
+    "mcp:city/search_city {\"city_name\": \"Guangzhou\", \"feature_code\": \"PPLA\", \"max_rows\": \"5\"}",
+    "mcp:city/search_city {\"city_name\": \"Guangzhou\", \"feature_code\": \"PPLA\", \"max_rows\": \"5\"}",
+    "mcp:route tool {\"end\": \"113.324,23.118\", \"profile\": \"foot-walking/driving-car\", \"start\": \"113.268,22.990\", \"$text\":",
+    "mcp:12306-mcp/get-tickets {\"date\": \"2026-10-09\", \"fromStation\": \"成都\", \"toStation\": \"广州\"}",
+    "mcp:12306-mcp/get-tickets {\"date\": \"2026-10-10\", \"fromStation\": \"成都\", \"toStation\": \"广州\"}",
+    "mcp:12306-mcp/get-tickets {\"date\": \"2026-10-11\", \"fromStation\": \"成都\", \"toStation\": \"广州\"}"
+   ],
+   "n_calls": 31,
+   "seq_key": "mcp:12306-mcp/get-current-date {} || mcp:12306-mcp/get-station-code-of-citys {\"citys\": \"成都\"} || mcp:12306-mcp/get-station-code-of-citys {\"citys\": \"广州\"} || mcp:route/plan_route {\"start\": \"广州南站\", \"end\": \"珠江新城\", \"profile\": \"foot-walking\"} || mcp:12306-mcp/get-stations-code-in-city {\"city\": \"成都\"} || mcp:12306-mcp/get-stations-code-in-city {\"city\": \"广州\"} || mcp:route/plan_route {\"end\": \"珠江新城\", \"profile\": \"foot-walking\", \"start\": \"广州南\"} || mcp:12306-mcp/get-tickets {\"date\": \"2026-10-05\", \"fromStation\": \"成都\", \"toStation\": \"广州\", \"limitedNum\": \"20\"} || mcp:12306-mcp/get-tickets {\"date\": \"2026-10-08\", \"fromStation\": \"成都\", \"toStation\": \"广州\", \"limitedNum\": \"20\"} || mcp:route/plan_route {\"end\": \"珠江新城\", \"profile\": \"foot-walking\", \"start\": \"Guangzhou South Railway Station\"} || mcp:12306-mcp/get-tickets {\"date\": \"2026-10-05\", \"fromStation\": \"成都\", \"limit\": \"20\", \"toStation\": \"广州\"} || mcp:12306-mcp/get-tickets {\"date\": \"2026-10-08\", \"fromStation\": \"成都\", \"limit\": \"20\", \"toStation\": \"广州\"} || mcp:route/plan_route {\"end\": \"113.324,23.118\", \"profile\": \"foot-walking\", \"start\": \"113.268,22.990\"} || mcp:12306-mcp/get-tickets {\"date\": \"2026-10-05\", \"fromStation\": \"成都\", \"limitedNum\": \"20\", \"toStation\": \"广州\"} || mcp:12306-mcp/get-tickets {\"date\": \"2026-10-08\", \"fromStation\": \"成都\", \"limitedNum\": \"20\", \"toStation\": \"广州\"} || mcp:city/search_city {\"city_name\": \"珠江新城\"} || invoke_tool=\"珠江新城</invoke>\\n<invoke name=\"invoke_tool || mcp:12306-mcp/get-tickets {\"date\": \"108\", \"fromStation\": \"成都\", \"toStation\": \"广州\"} || mcp:12306-mcp/get-tickets {\"date\": \"2026-10-05\", \"fromStation\": \"SOH\", \"limitedNum\": \"20\"} || mcp:12306-mcp/get-tickets {\"date\": \"2026-10-05\", \"fromStation\": \"成都\", \"toStation\": \"广州\"} || mcp:12306-mcp/get-tickets {\"date\": \"2026-10-06\", \"fromStation\": \"成都\", \"toStation\": \"广州\"} || mcp:12306-mcp/get-tickets {\"date\": \"2026-10-07\", \"fromStation\": \"成都\", \"toStation\": \"广州\"} || mcp:12306-mcp/get-tickets {\"date\": \"2026-10-08\", \"fromStation\": \"成都\", \"toStation\": \"广州\"} || mcp:route/plan_route {\"end\": \"113.324,23.118\", \"profile\": \"driving-car\", \"start\": \"113.268,22.990\"} || mcp:route/plan_route {\"end\": \"Zhujiang New Town\", \"profile\": \"driving-car\", \"start\": \"Guangzhou South Railway Station\"} || mcp:city/search_city {\"city_name\": \"Guangzhou\", \"feature_code\": \"PPLA\", \"max_rows\": \"5\"} || mcp:city/search_city {\"city_name\": \"Guangzhou\", \"feature_code\": \"PPLA\", \"max_rows\": \"5\"} || mcp:route tool {\"end\": \"113.324,23.118\", \"profile\": \"foot-walking/driving-car\", \"start\": \"113.268,22.990\", \"$text\": || mcp:12306-mcp/get-tickets {\"date\": \"2026-10-09\", \"fromStation\": \"成都\", \"toStation\": \"广州\"} || mcp:12306-mcp/get-tickets {\"date\": \"2026-10-10\", \"fromStation\": \"成都\", \"toStation\": \"广州\"} || mcp:12306-mcp/get-tickets {\"date\": \"2026-10-11\", \"fromStation\": \"成都\", \"toStation\": \"广州\"}"
+  },
+  {
+   "id": 37,
+   "core": false,
+   "q": "从成都坐火车去广州，中途要换乘哪些车？把车次和经停站都列出来",
+   "score": "✗",
+   "note": "【二次评分改判为 ✗】问句要的是「换乘/中转 + 经停站」→ 参考链路 `get-interline-tickets` + `get-train-route-stations`，实际**`get-interline-tickets` 一次都没调** ✗，全程只有 `get-tickets`（直达余票）两次且都在跟参数类型较劲 → 属**同源内选错函数**（同 S3 的 trip-mixed/trip-transfer 形态），进「路由质量修复」清单。原判：工具使用方法错误,与当前做选对测试无关,并且有纠错过程,故对",
+   "ref_chain": "get-current-date → 站点码 → get-interline-tickets → get-train-route-stations（同源两工具）",
+   "seq": [
+    "mcp:12306-mcp/get-current-date {}",
+    "mcp:12306-mcp/get-station-code-of-citys {\"citys\": \"成都,广州\"}",
+    "mcp:12306-mcp/get-station-code-of-citys {\"citys\": \"成都\"}",
+    "mcp:12306-mcp/get-station-code-of-citys {\"citys\": \"广州\"}",
+    "mcp:12306-mcp/get-tickets {\"date\": \"2026-10-02\", \"fromStation\": \"CDW\", \"toStation\": \"GZQ\", \"format\": \"json\", \"limit_num\": \"10\"",
+    "mcp:12306-mcp/get-tickets {\"date\": \"2026-10-02\", \"format\": \"json\", \"fromStation\": \"CDW\", \"limitedNum\": \"10\", \"toStation\": \"GZQ"
+   ],
+   "n_calls": 6,
+   "seq_key": "mcp:12306-mcp/get-current-date {} || mcp:12306-mcp/get-station-code-of-citys {\"citys\": \"成都,广州\"} || mcp:12306-mcp/get-station-code-of-citys {\"citys\": \"成都\"} || mcp:12306-mcp/get-station-code-of-citys {\"citys\": \"广州\"} || mcp:12306-mcp/get-tickets {\"date\": \"2026-10-02\", \"fromStation\": \"CDW\", \"toStation\": \"GZQ\", \"format\": \"json\", \"limit_num\": \"10\" || mcp:12306-mcp/get-tickets {\"date\": \"2026-10-02\", \"format\": \"json\", \"fromStation\": \"CDW\", \"limitedNum\": \"10\", \"toStation\": \"GZQ"
+  },
+  {
+   "id": 38,
+   "core": true,
+   "q": "帮我翻翻我和袁战的聊天记录，里面提到的那本书在微信读书上有没有",
+   "score": "✓",
+   "note": "",
+   "ref_chain": "wechat-cli history/search → weread search（跨源两工具）",
+   "seq": [
+    "wechat-cli history 袁战",
+    "wechat-cli history 袁战 --offset 50 --limit 50",
+    "wechat-cli history 袁战 --offset 100 --limit 50",
+    "wechat-cli history 袁战 --offset 150 --limit 50",
+    "wechat-cli search 书",
+    "wechat-cli search 小说",
+    "wechat-cli search 《",
+    "wechat-cli search 推荐",
+    "wechat-cli search 这本",
+    "wechat-cli history 袁战 --start-time 2024-11-07 --end-time 2024-11-10",
+    "wechat-cli history 袁战 --start-time 2024-11-08 --end-time 2024-11-09",
+    "wechat-cli search --chat 袁战 小建议",
+    "weread search 小建议",
+    "wechat-cli search --chat 袁战 喜欢写",
+    "wechat-cli history 袁战 --start-time 2024-11-08 20:00:00 --end-time 2024-11-08 23:59:59",
+    "weread search 离散数学",
+    "wechat-cli history 袁战 --offset 200 --limit 50",
+    "wechat-cli history 袁战 --start-time 2025-09-11 00:00:00 --end-time 2025-09-14 23:59:59"
+   ],
+   "n_calls": 18,
+   "seq_key": "wechat-cli history 袁战 || wechat-cli history 袁战 --offset 50 --limit 50 || wechat-cli history 袁战 --offset 100 --limit 50 || wechat-cli history 袁战 --offset 150 --limit 50 || wechat-cli search 书 || wechat-cli search 小说 || wechat-cli search 《 || wechat-cli search 推荐 || wechat-cli search 这本 || wechat-cli history 袁战 --start-time 2024-11-07 --end-time 2024-11-10 || wechat-cli history 袁战 --start-time 2024-11-08 --end-time 2024-11-09 || wechat-cli search --chat 袁战 小建议 || weread search 小建议 || wechat-cli search --chat 袁战 喜欢写 || wechat-cli history 袁战 --start-time 2024-11-08 20:00:00 --end-time 2024-11-08 23:59:59 || weread search 离散数学 || wechat-cli history 袁战 --offset 200 --limit 50 || wechat-cli history 袁战 --start-time 2025-09-11 00:00:00 --end-time 2025-09-14 23:59:59"
+  },
+  {
+   "id": 39,
+   "core": false,
+   "q": "Steam 上《空洞骑士》现在多少钱？顺便看看拼多多有没有卖周边的",
+   "score": "✓",
+   "note": "最后三条属于工具使用方式错误后的纠错过程,故无误",
+   "ref_chain": "api:steam#searchGame → mcp:pdd/search_goods（跨源两工具）",
+   "seq": [
+    "api:steam#searchGame {\"term\": \"空洞骑士\"}",
+    "mcp:pdd/search_goods {\"keyword\": \"空洞骑士 周边\", \"page_size\": \"20\"}",
+    "api:steam#searchGame {\"term\": \"Hollow Knight\"}",
+    "mcp:pdd/search_goods {\"keyword\": \"空洞骑士 周边\", \"page_size\": \"20\"}",
+    "mcp:pdd/search_goods {\"keyword\": \"空洞骑士 周边\"}",
+    "api:steam#gameDetail {\"appid\": \"367520\"}",
+    "api:steam#gameDetail {\"appids\": \"367520\"}",
+    "api:steam#gameDetail {\"appids\": 367520}"
+   ],
+   "n_calls": 8,
+   "seq_key": "api:steam#searchGame {\"term\": \"空洞骑士\"} || mcp:pdd/search_goods {\"keyword\": \"空洞骑士 周边\", \"page_size\": \"20\"} || api:steam#searchGame {\"term\": \"Hollow Knight\"} || mcp:pdd/search_goods {\"keyword\": \"空洞骑士 周边\", \"page_size\": \"20\"} || mcp:pdd/search_goods {\"keyword\": \"空洞骑士 周边\"} || api:steam#gameDetail {\"appid\": \"367520\"} || api:steam#gameDetail {\"appids\": \"367520\"} || api:steam#gameDetail {\"appids\": 367520}"
+  },
+  {
+   "id": 40,
+   "core": false,
+   "q": "抖音今天最热门的那条视频讲了什么？顺便找找B站有没有相关视频",
+   "score": "✓",
+   "note": "bili的--help内容信息很稀缺捡漏,search工具不加参数只能搜出用户,必须加对的参数,故进行了多次试错纠错,属于工具能力描述问题,agent本身无误",
+   "ref_chain": "api:xxapi#douyinHot → bili search（跨源两工具）",
+   "seq": [
+    "api:xxapi#douyinHot {}",
+    "bili search 国庆节文案",
+    "bili search 国庆",
+    "bili search --help",
+    "bili search --type video 国庆节文案"
+   ],
+   "n_calls": 5,
+   "seq_key": "api:xxapi#douyinHot {} || bili search 国庆节文案 || bili search 国庆 || bili search --help || bili search --type video 国庆节文案"
+  },
+  {
+   "id": 41,
+   "core": false,
+   "q": "查一下 114.114.114.114 是哪儿的，然后帮我规划从那个城市到成都的路线",
+   "score": "✓",
+   "note": "虽然说使用12306铁路mcp不是预期选项,但是应该是route/plan_route给出的方案就是高铁(成都离南昌需要跨省,较远),所以使用的高铁,故对",
+   "ref_chain": "api:xxapi#ipQuery → mcp:route/plan_route（跨源两工具）",
+   "seq": [
+    "api:xxapi#ipQuery {\"ip\": \"114.114.114.114\"}",
+    "mcp:route/plan_route {\"start\": \"115.9100,28.6742\", \"end\": \"成都\", \"profile\": \"driving-car\"}",
+    "mcp:12306-mcp/get-current-date {}",
+    "mcp:city/search_city {\"city_name\": \"南昌\"}",
+    "mcp:12306-mcp/get-tickets {\"date\": \"2026-10-02\", \"fromStation\": \"南昌\", \"toStation\": \"成都\"}"
+   ],
+   "n_calls": 5,
+   "seq_key": "api:xxapi#ipQuery {\"ip\": \"114.114.114.114\"} || mcp:route/plan_route {\"start\": \"115.9100,28.6742\", \"end\": \"成都\", \"profile\": \"driving-car\"} || mcp:12306-mcp/get-current-date {} || mcp:city/search_city {\"city_name\": \"南昌\"} || mcp:12306-mcp/get-tickets {\"date\": \"2026-10-02\", \"fromStation\": \"南昌\", \"toStation\": \"成都\"}"
+  },
+  {
+   "id": 42,
+   "core": true,
+   "q": "你是谁",
+   "score": "✓",
+   "note": "",
+   "ref_chain": "不调用任何工具",
+   "seq": [],
+   "n_calls": 0,
+   "seq_key": ""
+  },
+  {
+   "id": 43,
+   "core": true,
+   "q": "帮我写一首诗",
+   "score": "✓",
+   "note": "",
+   "ref_chain": "不调用任何工具",
+   "seq": [],
+   "n_calls": 0,
+   "seq_key": ""
+  }
+ ]
+}

@@ -155,6 +155,8 @@ def compose_dynamic_prompt(
     cli_brief: str = "",
     profile_signal: str = "",        # M3-5：服务端算好的【画像待更新】信号（没有新数据时是空串）
     question: str = "",              # M3-6：笔记段按与问句的相关度取前 N（v1 只用词法，不引向量）
+    image_ids: "list[str] | None" = None,   # ★ v3.1 视觉：本轮贴的图（有图才注入能力声明 ✓）
+    vision_capable: bool = False,           # ★ v3.1：当前生效模型是否支持图片输入（接口层判定 ✓）
 ) -> str:
     """拼装动态注入内容：人格(SOUL) + 记忆画像(MEMORY) + 可用命令行工具(M4c)。
 
@@ -226,6 +228,34 @@ def compose_dynamic_prompt(
             "被拒绝时如实转述工具返回的错误原文，不要凭知识推断白名单内容。"
             + _remote_hint
         )
+    if vision_capable:
+        # ★ v3.1 视觉：**能力事实**（与下面"本轮有图"的强指令分开写 ✓）
+        #   用户 2026-09-30 实测：哪怕纯文字轮，它也会自称「我目前没有视觉识别的能力」✗ ——
+        #   因为注入块长期只有工具视角，它据此推理出"我没有视觉"✗，而它其实是多模态的 ✓。
+        #   所以这里给**事实**、下面给**本轮真有图**的强指令 ✓；两段都只在条件成立时出现 ✓。
+        parts.append(
+            "【你自己的能力：支持图片输入】\n"
+            "你当前使用的模型**本身支持图片输入**（多模态）—— 用户可以直接把图片贴进对话框，"
+            "贴了你就**看得到**，直接看图作答即可，**不需要也不会用到任何图像工具**。\n"
+            "★ 不要再说自己「没有视觉识别能力」「看不到图片」「只能处理文字」✗ —— 那是错的。\n"
+            "反向也要守住诚实：**没贴图时不要声称自己看到了什么** ✗（图片只在用户贴了的那一轮送达 ✓）。"
+        )
+    if image_ids:
+        # ★ v3.1 视觉能力声明（用户 2026-09-30 实测反馈）：
+        #   真机现象：模型**准确描述出了图片内容**（它真的看见了），却坚持说
+        #     「我目前没有视觉识别的能力」「图片是通过您描述的方式呈现给我的」✗
+        #   根因：这个注入块一直是**工具视角**（人格 + 记忆 + CLI/API/MCP 能力卡）✗，
+        #     模型据此推理出「我的工具都是文字处理类的 → 我没有视觉」✗ —— 而它其实是多模态的 ✓。
+        #   纪律与上面的 CLI 块一致：**只在"本轮真有图"时出现**才有力（条件性强度 ✓），
+        #     因此归属注入块、**不进静态提示词** ✓（也不在没图时提视觉 —— 免得它凭空虚报"我看得见" ✗）。
+        parts.append(
+            "【本轮：用户直接贴了图片】\n"
+            f"用户本轮贴了 {len(image_ids)} 张图片，图片**已经随本轮消息一起送达给你** —— "
+            "你**本身就能看图**（当前对话用的模型支持图片输入），直接看着图回答即可。\n"
+            "★ 不要说自己「没有视觉识别能力」「看不到图片」「图片是通过用户描述得知的」✗ —— "
+            "这些都是错的；也不要为了看图去调用任何工具（既没有、也不需要图像工具）。\n"
+            "照常结合用户的文字提问作答；图片内容以你**实际所见**为准，看不清的细节如实说看不清。"
+        )
     return "\n\n——\n\n".join(parts)
 
 
@@ -248,6 +278,8 @@ def build_request_context(
     account_id: int,
     new_user_msg: str,
     *,
+    image_ids: "list[str] | None" = None,      # ★ v3.1 视觉：**本轮**贴的图（只喂这一轮 ✓ 不进历史 ✓）
+    vision_capable: bool = False,             # ★ v3.1：生效模型是否支持图片（接口层算好传入 ✓）
     soul_text: str = "",
     memory_text: str = "",
     username: str = "",
@@ -281,7 +313,8 @@ def build_request_context(
         soul_text = sources.get("soul", "") or ""
         memory_text = sources.get("memory", "") or ""
     dynamic_text = compose_dynamic_prompt(soul_text, memory_text, username, cli_brief or "",
-                                          profile_signal=profile_signal, question=new_user_msg)
+                                          profile_signal=profile_signal, question=new_user_msg,
+                                          image_ids=image_ids, vision_capable=vision_capable)
     persona_msg = SystemMessage(content=dynamic_text) if dynamic_text else None
 
     # 2. 历史（SQLite 持久化）
@@ -291,7 +324,14 @@ def build_request_context(
     final_user_msg = compose_user_prompt(new_user_msg, skills_text)
 
     # 4. 装配 [persona?] + 历史 + 提问 → 上下文预算（截断/压缩，system 永不丢）
-    new_msg = HumanMessage(content=final_user_msg)
+    # ★ v3.1 视觉能力：有图 → 本轮提问变成多模态 blocks（先文字后图 ✓ 顺序更稳 ✓）
+    #   · 无图时**不 import、不构造**，final_user_msg 原样进 ✓（老链路零变化 ✓）
+    #   · 只喂本轮 ✓ 历史仍只存文字（用户 2026-09-30 拍板「只跟本轮」✓）
+    _user_content = final_user_msg
+    if image_ids:
+        from tools import chat_images as _ci
+        _user_content = _ci.build_content(final_user_msg, list(image_ids), account_id)
+    new_msg = HumanMessage(content=_user_content)
     raw = ([persona_msg] if persona_msg else []) + [*history, new_msg]
     processed: ProcessedContext = mgr.process(raw, cfg)
 

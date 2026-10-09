@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 430" font-family="Microsoft YaHei, PingFang SC, sans-serif">
+  <rect width="980" height="430" fill="#f3f5f2"/>
+  <g transform="translate(24,18)">
+    <rect x="0" y="0" width="88" height="30" rx="15" fill="#eef5ee" stroke="#cfe3d1"/>
+    <text x="44" y="20" font-size="13" fill="#5b6b5e" text-anchor="middle">技能</text>
+    <rect x="96" y="0" width="96" height="30" rx="15" fill="#eef5ee" stroke="#cfe3d1"/>
+    <text x="144" y="20" font-size="13" fill="#5b6b5e" text-anchor="middle">CLI 面板</text>
+    <rect x="200" y="0" width="112" height="30" rx="15" fill="#eef5ee" stroke="#cfe3d1"/>
+    <text x="256" y="20" font-size="13" fill="#5b6b5e" text-anchor="middle">自定义 CLI</text>
+    <rect x="320" y="0" width="104" height="30" rx="15" fill="#dff0e2" stroke="#54aa69" stroke-width="1.6"/>
+    <text x="372" y="20" font-size="13" fill="#2f7a43" text-anchor="middle" font-weight="bold">MCP 服务</text>
+    <rect x="432" y="0" width="104" height="30" rx="15" fill="#eef5ee" stroke="#cfe3d1"/>
+    <text x="484" y="20" font-size="13" fill="#5b6b5e" text-anchor="middle">API 工具</text>
+  </g>
+  <g transform="translate(40,52)">
+    <rect x="0" y="0" width="900" height="352" rx="14" fill="#ffffff" stroke="#cfe3d1"/>
+    <text x="24" y="32" font-size="15.5" fill="#2b3a2e" font-weight="bold">🔍 发现工具（含体检结果）</text>
+    <text x="24" y="56" font-size="11.5" fill="#8a978d">真连一次：握手 → 列工具 → 用不存在的工具试一次容错</text>
+    <line x1="24" y1="70" x2="876" y2="70" stroke="#e6efe7"/>
+    <g font-size="12">
+      <text x="24" y="94" fill="#2f7a43">✓ 命令 / 端点合法</text>
+      <text x="196" y="94" fill="#2f7a43">✓ 鉴权配置完整</text>
+      <text x="368" y="94" fill="#2f7a43">✓ 允许访问内网</text>
+      <text x="536" y="94" fill="#2f7a43">✓ 服务可达（HTTP 200）</text>
+      <text x="712" y="94" fill="#2f7a43">✓ 列出 8 个工具</text>
+    </g>
+    <line x1="24" y1="108" x2="876" y2="108" stroke="#e6efe7"/>
+    <g font-size="11.5" fill="#5b6b5e">
+      <text x="24" y="130" font-weight="bold">勾选</text><text x="76" y="130" font-weight="bold">工具</text>
+      <text x="330" y="130" font-weight="bold">只读 / 写</text><text x="440" y="130" font-weight="bold">参数</text><text x="640" y="130" font-weight="bold">ref（Agent 调用时照抄）</text>
+    </g>
+    <g font-size="12" fill="#2b3a2e">
+      <rect x="24" y="142" width="852" height="30" rx="6" fill="#f7faf7" stroke="#dbe7dc"/>
+      <text x="30" y="162" fill="#3d6b4a">☑</text><text x="76" y="162">取当前日期</text>
+      <text x="330" y="162" fill="#3d6b4a">只读</text><text x="440" y="162" fill="#6b7a6e">（无参数）</text>
+      <text x="640" y="162" fill="#6b7a6e">mcp:12306-mcp/get-current-date</text>
+      <rect x="24" y="178" width="852" height="30" rx="6" fill="#f7faf7" stroke="#dbe7dc"/>
+      <text x="30" y="198" fill="#3d6b4a">☑</text><text x="76" y="198">城市换代表站码</text>
+      <text x="330" y="198" fill="#3d6b4a">只读</text><text x="440" y="198" fill="#6b7a6e">citys</text>
+      <text x="640" y="198" fill="#6b7a6e">mcp:12306-mcp/get-station-code-of-citys</text>
+      <rect x="24" y="214" width="852" height="30" rx="6" fill="#f7faf7" stroke="#dbe7dc"/>
+      <text x="30" y="234" fill="#3d6b4a">☑</text><text x="76" y="234">查火车余票</text>
+      <text x="330" y="234" fill="#3d6b4a">只读</text><text x="440" y="234" fill="#6b7a6e">date / fromStation / toStation</text>
+      <text x="640" y="234" fill="#6b7a6e">mcp:12306-mcp/get-tickets</text>
+      <rect x="24" y="250" width="852" height="30" rx="6" fill="#f7faf7" stroke="#dbe7dc"/>
+      <text x="30" y="270" fill="#6b7a6e">☐</text><text x="76" y="270">站码反查车站</text>
+      <text x="330" y="270" fill="#a8620f">写？</text><text x="440" y="270" fill="#6b7a6e">telecode</text>
+      <text x="640" y="270" fill="#6b7a6e">mcp:12306-mcp/get-station-by-telecode</text>
+    </g>
+    <rect x="24" y="296" width="852" height="30" rx="8" fill="#fff7e6" stroke="#f0d79a"/>
+    <text x="36" y="316" font-size="11.5" fill="#a8620f">⚠️ 未声明的工具按写操作处理 → 要额外勾「我确认这是写操作」才进确认清单；未确认的工具 Agent 看不到、也调不到。</text>
+  </g>
+  <g transform="translate(700,370)" font-size="12">
+    <rect x="0" y="0" width="240" height="30" rx="8" fill="#dff0e2" stroke="#54aa69"/>
+    <text x="120" y="20" fill="#2f7a43" text-anchor="middle" font-weight="bold">✅ 确认勾选</text>
+  </g>
+</svg>

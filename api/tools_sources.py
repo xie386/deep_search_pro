@@ -165,7 +165,7 @@ class CapAbilitiesReq(BaseModel):
     """M5c-2'：保存**工具级描述**（用户手写版；AI 草稿一键导入后也走这里）。"""
     source: str = ""                 # api | mcp；留空按 slug 找
     slug: str
-    items: list[dict] = []           # [{"ref": "...", "text": "..."}]；text 空串 = 清除手写、回到自动摘要
+    items: list[dict] = []           # [{"ref": "...", "text": "...", "name": "..."?}]；text 空串 = 清除手写、回到自动摘要；name 给了就一并改显示名（人话名字，2026-10-06 增）
 
 
 class ConfirmReq(BaseModel):
@@ -183,11 +183,17 @@ def sources_list(token: str) -> dict:
         #   MCP 来源接进来后如果还过滤，MCP tab 会永远是空的。
         srows = [dict(r) for r in conn.execute(
             "SELECT * FROM tool_sources WHERE account_id=? AND source IN ('api','mcp') ORDER BY id", (aid,))]
+        # ★ 2026-10-06：连带取出「面向路由的文本」三列 —— 来源列表要给前端回传**素材体检**结果，
+        #   让用户一眼看到「这个来源有几条工具素材不合格、该用 AI 预写补」，而不是去跑测试脚本。
         caps = [dict(r) for r in conn.execute(
-            "SELECT ref, name, enabled, read_only, confirmed_at, source FROM tool_capabilities "
+            "SELECT ref, name, enabled, read_only, confirmed_at, source, "
+            "COALESCE(keywords,'') AS keywords, COALESCE(abilities,'') AS abilities, "
+            "COALESCE(abilities_user,'') AS abilities_user FROM tool_capabilities "
             "WHERE account_id=? AND source IN ('api','mcp') ORDER BY ref", (aid,))]
     finally:
         conn.close()
+    from tools import capability_lint as _cap_lint
+    _material_issues = _cap_lint.check_rows(caps)
     for s in srows:
         cfg = _json_or_empty(s.get("config_json"))
         if s.get("source") == "mcp":
@@ -215,7 +221,21 @@ def sources_list(token: str) -> dict:
         s["capability_count"] = sum(1 for c in mine if c["confirmed_at"])
         s["candidate_count"] = sum(1 for c in mine if not c["confirmed_at"])
         s["capabilities"] = mine
-    return {"items": srows}
+        # ★ 素材体检（规则见 tools/capability_lint.py，与 tests/live/m6b_material_lint.py 同源）
+        bad = [c for c in mine if c["ref"] in _material_issues]
+        hard = [c for c in bad if any(p.get("severity", "hard") == "hard"
+                                      for p in _material_issues[c["ref"]])]
+        s["material"] = {"total": len(mine), "problem_count": len(hard),
+                         "info_count": len(bad) - len(hard),
+                         "items": [{"ref": c["ref"], "name": c["name"],
+                                    "problems": _material_issues[c["ref"]]} for c in bad]}
+    summary_bad = sum((s.get("material") or {}).get("problem_count") or 0 for s in srows)
+    return {"items": srows,
+            "material_summary": {"scanned": len(caps), "problem_count": summary_bad,
+                                 "hint": ("" if not summary_bad else
+                                          "有 %d 条工具的「面向路由的文本」不齐备：建议在该来源卡片上点"
+                                          "「AI 预写工具级描述」，确认后保存。素材不齐会直接表现为"
+                                          "「模型想不起这个工具 / 用错同源工具」。" % summary_bad)}}
 
 
 def source_save(req: ApiSourceReq, token: str) -> dict:
@@ -469,6 +489,25 @@ def _save_state(aid: int, sid: int, state: str) -> None:
         conn.close()
 
 
+def _auto_draft(aid: int, kind: str, slug: str) -> dict:
+    """发现/导入工具后**自动跑一次**「工具级描述 AI 预写」，结果回给前端由用户确认（2026-10-06）。
+
+    为什么不落库：这是"草稿"，必须过用户的眼睛（与 M5c-2' 的既有口径一致）。
+    为什么自动跑：用户不会主动去点 —— 实测没人点就等于没有素材（脚本闸门对他也不存在）。
+    **非致命**：没填 README/介绍文案（AI 预写会拒绝）、或模型调用失败，都只回 `why`，不影响"发现工具"本身。
+    """
+    from fastapi import HTTPException as _HE
+    try:
+        from api import customize as cz
+        out = cz.capability_ability_generate(kind, slug, account_id=aid)
+        return {"ok": True, "items": out.get("items") or [], "evidence": out.get("evidence") or {},
+                "warnings": out.get("warnings") or []}
+    except _HE as e:                     # 缺依据 / 账号问题 → 告诉用户该补什么
+        return {"ok": False, "why": str(getattr(e, "detail", e))}
+    except Exception as e:               # noqa: BLE001 - 自动动作绝不能让"发现工具"失败
+        return {"ok": False, "why": "%s: %s" % (type(e).__name__, str(e)[:160])}
+
+
 # ---------------------------------------------------------------- 发现 → 候选 → 确认
 def discover(req: DiscoverReq, token: str) -> dict:
     aid = _require_account_id(token)
@@ -489,7 +528,10 @@ def discover(req: DiscoverReq, token: str) -> dict:
     cfg = _json_or_empty(src.get("config_json"))
 
     if src_kind == "mcp":
-        return _discover_mcp(aid, slug, sid, cfg, req)
+        payload = _discover_mcp(aid, slug, sid, cfg, req)
+        if payload.get("ok"):
+            payload["draft"] = _auto_draft(aid, "mcp", slug)
+        return payload
 
     res = openapi_import.parse_spec(req.text or "", slug, req.base_url or cfg.get("base_url", ""))
     if not res["ok"]:
@@ -555,7 +597,8 @@ def discover(req: DiscoverReq, token: str) -> dict:
         conn.close()
     _bump(aid)
     return {"ok": True, "error": "", "title": res["title"], "base_url": res["base_url"],
-            "kept_confirmed": kept_confirmed, "items": items}
+            "kept_confirmed": kept_confirmed, "items": items,
+            "draft": _auto_draft(aid, "api", slug)}
 
 
 def _discover_mcp(aid: int, slug: str, sid: int, cfg: dict, req) -> dict:
@@ -787,8 +830,9 @@ def cap_abilities_save(req: CapAbilitiesReq, token: str) -> dict:
             text = str((it or {}).get("text") or "").strip()[:600]
             if not ref:
                 continue
+            nm = str((it or {}).get("name") or "").strip()[:30]
             row = conn.execute(
-                "SELECT id, ref FROM tool_capabilities WHERE account_id=? AND source=? AND ref=?",
+                "SELECT id, ref, name FROM tool_capabilities WHERE account_id=? AND source=? AND ref=?",
                 (aid, src_kind, ref)).fetchone()
             if not row:
                 skipped.append({"ref": ref, "why": "这个工具不属于当前账号 / 来源"})
@@ -796,9 +840,14 @@ def cap_abilities_save(req: CapAbilitiesReq, token: str) -> dict:
             if not str(row["ref"]).startswith(prefix):
                 skipped.append({"ref": ref, "why": "ref 与来源不匹配"})
                 continue
-            conn.execute("UPDATE tool_capabilities SET abilities_user=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                         (text, row["id"]))
-            saved.append({"ref": ref, "text": text})
+            if nm and nm != (row["name"] or ""):
+                # ★ 人话名字：与描述同一处确认、同一处落库（名字也进词法与向量文本）
+                conn.execute("UPDATE tool_capabilities SET abilities_user=?, name=?, updated_at=CURRENT_TIMESTAMP "
+                             "WHERE id=?", (text, nm, row["id"]))
+            else:
+                conn.execute("UPDATE tool_capabilities SET abilities_user=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                             (text, row["id"]))
+            saved.append({"ref": ref, "text": text, "name": nm or (row["name"] or "")})
         conn.commit()
     finally:
         conn.close()

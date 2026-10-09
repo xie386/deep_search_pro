@@ -1,0 +1,127 @@
+{
+ "mcp:city/search_city": {
+  "name": "城市地理信息",
+  "keywords": "城市在哪个省/在哪个国家/属于哪个省/城市经纬度/坐标/人口/行政区/这个地方在哪",
+  "abilities_user": "按城市名查地理信息：所属国家与一级行政区、经纬度、人口、地点类型。问到「X 在哪个省」「X 在哪个国家」用它。只返回第一条匹配，要更准就传完整名字或 feature_code。"
+ },
+ "mcp:bnf/natural_language_search": {
+  "name": "Gallica 自然语言检索",
+  "keywords": "法国国家图书馆/法语资料/法文文献/外国文献/一手法语史料/自然语言检索馆藏",
+  "abilities_user": "用法语或英语的一句话检索法国国家图书馆（Gallica）馆藏（全字段）。中文主题请先译成法语/英语（例：巴黎公社 → Commune de Paris 1871）。翻页用 page。"
+ },
+ "mcp:bnf/search_by_subject": {
+  "name": "Gallica 按主题检索",
+  "keywords": "关于某主题的资料/主题词检索/某个话题的史料/讲某事的文献",
+  "abilities_user": "按主题词检索 Gallica 馆藏；主题词用拉丁字母（法语/英语）。"
+ },
+ "mcp:bnf/search_by_title": {
+  "name": "Gallica 按书名检索",
+  "keywords": "按书名找/书名检索/找某本书/某部作品",
+  "abilities_user": "按书名或作品名检索 Gallica；书名用原文（法语/英语）。"
+ },
+ "mcp:bnf/search_by_author": {
+  "name": "Gallica 按作者检索",
+  "keywords": "按作者找/某人的著作/作者的全部作品/某作家写过什么",
+  "abilities_user": "按作者名检索其著作；作者名用原文（法语/英语）。"
+ },
+ "mcp:bnf/search_by_date": {
+  "name": "Gallica 按年代检索",
+  "keywords": "按年代找/某年出版的文献/1871年的资料/按年份检索",
+  "abilities_user": "按年代（YYYY 或 YYYY-MM）检索 Gallica 馆藏。"
+ },
+ "mcp:bnf/search_by_document_type": {
+  "name": "Gallica 按文献类型检索",
+  "keywords": "手稿/地图/乐谱/报纸/照片/文献类型/manuscrit",
+  "abilities_user": "按文献类型检索：manuscrit 手稿 / carte 地图 / musique 乐谱 / periodique 报刊 / image 图像。"
+ },
+ "mcp:bnf/advanced_search": {
+  "name": "Gallica CQL 高级检索",
+  "keywords": "CQL/高级检索/组合条件检索",
+  "abilities_user": "用 CQL 语法做组合条件检索（进阶用法）。"
+ },
+ "mcp:bnf/sequential_reporting": {
+  "name": "Gallica 分节写研究报告",
+  "keywords": "用法语资料写研究报告/生成法语研究报告/分节写报告/带参考文献的研究报告",
+  "abilities_user": "基于 Gallica 馆藏分节生成研究报告（计划→来源→分节→参考文献）。★同一次调用里同时传 topic 与 search_sources=true 可直接拿到来源，不必自己另搜；主题用拉丁字母。"
+ },
+ "mcp:route/plan_route": {
+  "name": "路线规划",
+  "keywords": "驾车要多久/开车多久/路线规划/步行多久/骑行路线/两地距离/怎么走最快",
+  "abilities_user": "规划两地路线（驾车/步行/骑行），返回距离、耗时与导航指引。地名解析只认 GeoNames 首条：解析不出时直接给「经度,纬度」（如 116.397,39.908）。"
+ },
+ "mcp:12306-mcp/get-current-date": {
+  "name": "取当前日期（查票第一步）",
+  "keywords": "查火车票前取日期/今天的日期是几号/余票查询第一步",
+  "abilities_user": "铁路余票查询的第一步：取当前日期，供查火车票时填 date 参数（YYYY-MM-DD）。"
+ },
+ "mcp:12306-mcp/get-tickets": {
+  "name": "查火车余票",
+  "keywords": "查火车票/还有没有票/余票查询/高铁票/动车票/去某地的火车票/从成都到广州的票",
+  "abilities_user": "查某天从某站到某站的火车余票（需先取站码与日期）；问到「去某地的票」「有没有票」时用它。"
+ },
+ "mcp:12306-mcp/get-interline-tickets": {
+  "name": "查换乘中转车票",
+  "keywords": "换乘/中转/中途转车/需要转几次车/换乘车票方案",
+  "abilities_user": "查需要换乘或中转的车票方案。"
+ },
+ "mcp:12306-mcp/get-train-route-stations": {
+  "name": "列车经停站",
+  "keywords": "经停站/途经站点/这趟车停哪些站/中途停靠",
+  "abilities_user": "查某趟列车的经停站。"
+ },
+ "mcp:12306-mcp/get-station-code-of-citys": {
+  "name": "城市换代表站码",
+  "keywords": "城市换站码/成都的站码/城市代表车站",
+  "abilities_user": "城市 → 代表站码（如 成都 → CDW、广州 → GZQ）。"
+ },
+ "mcp:12306-mcp/get-stations-code-in-city": {
+  "name": "城市全部车站清单",
+  "keywords": "城市里所有车站/这个城市有哪些火车站",
+  "abilities_user": "城市 → 该城市的全部车站清单。"
+ },
+ "mcp:12306-mcp/get-station-code-by-names": {
+  "name": "车站名换站码",
+  "keywords": "车站名换站码/具体车站的编码",
+  "abilities_user": "具体车站名 → 站码。"
+ },
+ "api:steam#searchGame": {
+  "name": "Steam 商店搜索",
+  "keywords": "搜游戏/这个游戏多少钱/Steam 上有没有/游戏价格/游戏打折了吗",
+  "abilities_user": "Steam 商店按名称检索：返回 appid 与人民币价格。用法：searchGame 拿到 appid → gameDetail 看详情。"
+ },
+ "api:steam#gameDetail": {
+  "name": "Steam 游戏详情",
+  "keywords": "游戏详情/发行日期/开发商/游戏简介/配置要求",
+  "abilities_user": "按 appid 返回 Steam 商店的商品详情页字段（发行日期、开发商、简介、配置要求）。"
+ },
+ "api:xxapi#douyinHot": {
+  "name": "抖音实时热榜",
+  "keywords": "抖音热榜/抖音热搜/短视频热点",
+  "abilities_user": "返回抖音热榜接口的榜单条目（话题名与热度值）。"
+ },
+ "api:xxapi#ipQuery": {
+  "name": "IP 归属地",
+  "keywords": "IP 归属地/这个 IP 在哪/运营商",
+  "abilities_user": "传入 IP 字符串，返回该 IP 的国家、省市与运营商字段。"
+ },
+ "mcp:12306-mcp/get-station-by-telecode": {
+  "name": "站码反查车站",
+  "keywords": "已知站码查车站名/车站电报码",
+  "abilities_user": "传入车站电报码（telecode，如 CDW），返回该站名称、拼音、所属城市。查票流程请用「城市换代表站码」。"
+ },
+ "mcp:pdd/search_goods": {
+  "name": "拼多多商品搜索",
+  "keywords": "拼多多搜商品/拼多多有没有卖/多少钱能买到/拼多多比价",
+  "abilities_user": "传入关键词，返回拼多多商品列表（价格、优惠券、goods_sign）。用法：search_goods 拿到 goods_sign → get_goods_detail 看规格。"
+ },
+ "mcp:pdd/get_goods_detail": {
+  "name": "拼多多商品详情",
+  "keywords": "商品详情/商品的规格/有没有优惠券/商品参数",
+  "abilities_user": "传入 goods_sign，返回单个商品的完整字段（价格、优惠券、SKU 规格、图片）。"
+ },
+ "mcp:pdd/explore_deals": {
+  "name": "拼多多频道榜单",
+  "keywords": "拼多多好价榜单/百亿补贴/拼多多热销榜/拼多多精选频道",
+  "abilities_user": "传入频道名（销量榜、百亿补贴、品牌黑标等），返回该频道商品列表；无需关键词。"
+ }
+}

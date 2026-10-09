@@ -63,3 +63,6 @@ front/tutorial/previews/
 
 # 系统级测试运行的产物（探针日志/结果、预览截图）—— 由 tests 里的脚本产出，不入库
 tests/test_out/
+
+# 任务书迭代时的备份快照（本地留存，不入库）
+docs/v3.1/backups/

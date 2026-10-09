@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 430" font-family="Microsoft YaHei, PingFang SC, sans-serif">
+  <rect width="980" height="430" fill="#f3f5f2"/>
+  <g transform="translate(24,18)">
+    <rect x="0" y="0" width="88" height="30" rx="15" fill="#eef5ee" stroke="#cfe3d1"/>
+    <text x="44" y="20" font-size="13" fill="#5b6b5e" text-anchor="middle">技能</text>
+    <rect x="96" y="0" width="96" height="30" rx="15" fill="#eef5ee" stroke="#cfe3d1"/>
+    <text x="144" y="20" font-size="13" fill="#5b6b5e" text-anchor="middle">CLI 面板</text>
+    <rect x="200" y="0" width="112" height="30" rx="15" fill="#eef5ee" stroke="#cfe3d1"/>
+    <text x="256" y="20" font-size="13" fill="#5b6b5e" text-anchor="middle">自定义 CLI</text>
+    <rect x="320" y="0" width="104" height="30" rx="15" fill="#dff0e2" stroke="#54aa69" stroke-width="1.6"/>
+    <text x="372" y="20" font-size="13" fill="#2f7a43" text-anchor="middle" font-weight="bold">MCP 服务</text>
+    <rect x="432" y="0" width="104" height="30" rx="15" fill="#eef5ee" stroke="#cfe3d1"/>
+    <text x="484" y="20" font-size="13" fill="#5b6b5e" text-anchor="middle">API 工具</text>
+  </g>
+  <g transform="translate(56,52)">
+    <rect x="0" y="0" width="868" height="352" rx="14" fill="#ffffff" stroke="#cfe3d1"/>
+    <text x="24" y="32" font-size="15.5" fill="#2b3a2e" font-weight="bold">📝 工具描述 —— 12306铁路车票信息查询</text>
+    <text x="24" y="56" font-size="11.5" fill="#8a978d">这里写的是每个工具的能力描述（决定 Agent 何时想起它）；留空 = 不覆盖，仍用服务自报的摘要。重新「发现工具」不会冲掉你写的内容。</text>
+    <rect x="24" y="68" width="820" height="34" rx="8" fill="#fff7e6" stroke="#f0d79a"/>
+    <text x="36" y="90" font-size="11.5" fill="#a8620f">⚠️ 来源卡片上的「素材待补」就是这里的问题（共 1 条）——「🔍 发现工具」只刷新自动摘要，不会改这些。</text>
+
+    <rect x="24" y="116" width="820" height="104" rx="10" fill="#f7faf7" stroke="#dbe7dc"/>
+    <text x="40" y="140" font-size="12.5" fill="#2b3a2e" font-weight="bold">站码反查车站</text>
+    <text x="180" y="140" font-size="11" fill="#6b7a6e">mcp:12306-mcp/get-station-by-telecode</text>
+    <rect x="40" y="150" width="380" height="26" rx="6" fill="#ffffff" stroke="#dbe7dc"/>
+    <text x="50" y="168" font-size="11.5" fill="#2b3a2e">显示名（人话）：站码反查车站</text>
+    <rect x="432" y="150" width="396" height="26" rx="6" fill="#ffffff" stroke="#dbe7dc"/>
+    <text x="442" y="168" font-size="11.5" fill="#6b7a6e">描述：关键词：站码/车站名…。已知站码时用它反查车站。</text>
+    <rect x="40" y="184" width="240" height="22" rx="11" fill="#fef3c7" stroke="#fcd34d"/>
+    <text x="52" y="199" font-size="11" fill="#92400e">待补：名字是英文标识符 → 填显示名即消失</text>
+
+    <rect x="24" y="232" width="820" height="70" rx="10" fill="#f7faf7" stroke="#dbe7dc"/>
+    <text x="40" y="256" font-size="12.5" fill="#2b3a2e" font-weight="bold">查火车余票</text>
+    <text x="180" y="256" font-size="11" fill="#6b7a6e">mcp:12306-mcp/get-tickets</text>
+    <rect x="40" y="266" width="380" height="26" rx="6" fill="#ffffff" stroke="#dbe7dc"/>
+    <text x="50" y="284" font-size="11.5" fill="#2b3a2e">显示名（人话）：查火车余票</text>
+    <rect x="432" y="266" width="396" height="26" rx="6" fill="#ffffff" stroke="#dbe7dc"/>
+    <text x="442" y="284" font-size="11.5" fill="#6b7a6e">描述：关键词：查火车票/余票…。某天从某站到某站的余票。</text>
+
+    <text x="24" y="324" font-size="11.5" fill="#8a978d">写作纪律：① 领域锚定（写清是哪个平台的哪一步）② 不写「与 X 无关」③ 避开「今天/排序/搜索」这类通用词 ④ 同源近名工具要能分开</text>
+  </g>
+  <g transform="translate(660,372)" font-size="12">
+    <rect x="0" y="0" width="120" height="30" rx="8" fill="#eef5ee" stroke="#cfe3d1"/>
+    <text x="60" y="20" fill="#3d6b4a" text-anchor="middle">取消</text>
+    <rect x="132" y="0" width="132" height="30" rx="8" fill="#dff0e2" stroke="#54aa69"/>
+    <text x="198" y="20" fill="#2f7a43" text-anchor="middle" font-weight="bold">💾 保存全部</text>
+  </g>
+</svg>

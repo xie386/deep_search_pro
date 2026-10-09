@@ -480,8 +480,9 @@ def start_backend(port: int, timeout: float = READY_TIMEOUT) -> bool:
         else:
             log("[后端] 常见原因：端口被占 / .env 缺配置 / 依赖缺失（下面日志里有真正原因）")
     else:
-        _log_failure("ready_timeout:%d" % READY_TIMEOUT, "进程仍存活，等待 %ds 未就绪" % READY_TIMEOUT)
-        log("[后端] ❌ 等待超时（%ds）；后端进程仍存活，说明启动特别慢或卡在某一步。" % READY_TIMEOUT)
+        # ★ 报的必须是**生效值**（`--wait` 可改），不是模块常量：真机实测传 --wait 3 时日志却写 180s
+        _log_failure("ready_timeout:%d" % timeout, "进程仍存活，等待 %ds 未就绪" % timeout)
+        log("[后端] ❌ 等待超时（%ds）；后端进程仍存活，说明启动特别慢或卡在某一步。" % timeout)
     log("[后端] ——— backend.log 末尾 ———\n%s\n[后端] ———（完整日志：%s）———" % (_tail(BACKEND_LOG), BACKEND_LOG))
     return False
 

@@ -166,6 +166,8 @@ class LlmProviderReq(BaseModel):
     price_in_cached: float | None = None
     price_in_uncached: float | None = None
     price_out: float | None = None
+    # ★ v3.1 视觉：这套配置能否收图片（配置导向 ✓ 默认 False=不能 ✓ 用户自己勾 ✓ 不写死厂商 ✗）
+    supports_vision: bool = False
 
 
 def _norm_prices(req) -> tuple:
@@ -211,6 +213,7 @@ def _normalize_provider(p: dict, mask: bool = True) -> dict:
         "price_in_cached": p.get("price_in_cached"),
         "price_in_uncached": p.get("price_in_uncached"),
         "price_out": p.get("price_out"),
+        "supports_vision": bool(p.get("supports_vision")),
     }
 
 
@@ -238,9 +241,9 @@ def llm_provider_add(req: LlmProviderReq, token: str) -> dict:
         p_c, p_u, p_o = _norm_prices(req)
         cur = conn.execute(
             "INSERT INTO llm_providers (owner_id, provider_name, model_name, base_url, api_key, is_active,"
-            " price_in_cached, price_in_uncached, price_out) VALUES (?,?,?,?,?,?,?,?,?)",
+            " price_in_cached, price_in_uncached, price_out, supports_vision) VALUES (?,?,?,?,?,?,?,?,?,?)",
             (aid, req.provider_name.strip(), req.model_name.strip(),
-             req.base_url.strip(), req.api_key.strip(), int(req.is_active), p_c, p_u, p_o))
+             req.base_url.strip(), req.api_key.strip(), int(req.is_active), p_c, p_u, p_o, int(bool(req.supports_vision))))
         conn.commit()
         row = conn.execute("SELECT * FROM llm_providers WHERE id=?", (cur.lastrowid,)).fetchone()
         return {"provider": _normalize_provider({k: row[k] for k in row.keys()})}
@@ -264,15 +267,15 @@ def llm_provider_update(pid: int, req: LlmProviderReq, token: str) -> dict:
             # 留空 / 掩码串 = 不修改 key（保留原值）
             conn.execute(
                 "UPDATE llm_providers SET provider_name=?, model_name=?, base_url=?, is_active=?,"
-                " price_in_cached=?, price_in_uncached=?, price_out=? WHERE id=? AND owner_id=?",
+                " price_in_cached=?, price_in_uncached=?, price_out=?, supports_vision=? WHERE id=? AND owner_id=?",
                 (req.provider_name.strip(), req.model_name.strip(), req.base_url.strip(),
-                 int(req.is_active), p_c, p_u, p_o, pid, aid))
+                 int(req.is_active), p_c, p_u, p_o, int(bool(req.supports_vision)), pid, aid))
         else:
             conn.execute(
                 "UPDATE llm_providers SET provider_name=?, model_name=?, base_url=?, api_key=?, is_active=?,"
-                " price_in_cached=?, price_in_uncached=?, price_out=? WHERE id=? AND owner_id=?",
+                " price_in_cached=?, price_in_uncached=?, price_out=?, supports_vision=? WHERE id=? AND owner_id=?",
                 (req.provider_name.strip(), req.model_name.strip(), req.base_url.strip(),
-                 new_key, int(req.is_active), p_c, p_u, p_o, pid, aid))
+                 new_key, int(req.is_active), p_c, p_u, p_o, int(bool(req.supports_vision)), pid, aid))
         conn.commit()
         row = conn.execute("SELECT * FROM llm_providers WHERE id=?", (pid,)).fetchone()
         return {"provider": _normalize_provider({k: row[k] for k in row.keys()})}
@@ -376,15 +379,24 @@ def get_soul_content(aid: int) -> str:
 
 # ============================ CLI 能力描述生成 AI（M5）============================
 def cli_ability_generate(name: str, bin_name: str, rules_text: str, *, docs: str = "",
-                         help_text: str = "", username: str | None = None,
+                         docs_mode: str = "url", help_text: str = "",
+                         username: str | None = None,
                          account_id: int | None = None, refresh_docs: bool = False) -> dict:
     """按证据生成「CLI 能力描述」草稿（用户语言）。**只生成草稿，不落库**。
 
     用途：M5 工具智能路由第一层——这段描述会进主 Agent 的系统提示词，
     让它在用户说人话时想起该用这个 CLI。
 
+    依据来源是**三选一**（`docs_mode`，2026-10-07 用户提出并拍板）：
+      · `url`  —— 网址（一般指 CLI 的 GitHub README），抓取后当唯一事实来源；
+      · `path` —— **本机文件**（自研 / 还没开源的工具，README 就在硬盘上），读文件当唯一事实来源；
+      · `help` —— **跑一遍 `--help`**（闭源公测、官网只有一句介绍的工具）：裸 `<bin> --help` +
+                  只读清单里每条命令的 `--help`，拼成证据当唯一事实来源。
+    为什么要有后两种：qqmail（自研、未上传 GitHub）与 agently-cli（闭源、公测期官网几乎无介绍）
+    这两类工具根本没有可读的文档页，`--help` 是**唯一**的方法信息源。
+
     证据分层（2026-09-24 用户拍板，实测：只给命令名时 13 条映射有 3 条错，全错在「要 ID」这类判断上）：
-      ① **语义层**：用户填的 `docs` 地址（一般是 CLI 的 GitHub README）→ 抓取后作为**唯一事实来源**；
+      ① **语义层**：上面三选一得到的文本 → 作为**唯一事实来源**；
          它的用法示例能表达「引号里的书名 = 自由文本」「裸数字 = ID」这类关键区别。
       ② **校验层**：逐条跑 `<bin> <cmd> --help`（走沙箱运行时 + 只读闸），得到每条命令的形态
          （`needs_id` / `free_text` / `standalone`）——**以表格形式**给模型当事实（不是塞原始 help，
@@ -406,11 +418,31 @@ def cli_ability_generate(name: str, bin_name: str, rules_text: str, *, docs: str
     rules, _notes = reg.parse_rules(rules_text, bin_name)
     cmds = [" ".join(r) for r in rules]
 
-    # ---- 证据 ①：官方文档
-    from tools import cli_docs
-    doc = cli_docs.fetch_docs(docs, force=refresh_docs) if docs else {
-        "ok": False, "text": "", "note": "没填文档地址", "url": "", "source": ""}
-    doc_text = cli_docs.extract_evidence(doc["text"], cmds, bin_name) if doc["ok"] else ""
+    # ---- 证据 ①：依据来源三选一（url / path / help）
+    from tools import cli_docs, source_docs
+    mode = (docs_mode or "url").strip().lower()
+    if mode not in reg.DOCS_MODES:
+        mode = "url"
+    if mode == "help":
+        # 裸 `--help` + 每条只读命令的 `--help`（走沙箱运行时与只读闸；裸 --help 已放行）
+        digest = reg.collect_help_digest(bin_name, cmds, username=username, account_id=account_id) \
+            if bin_name else {"ok": False, "text": "", "ran": [], "failed": [],
+                              "note": "没填可执行名，跑不了 --help"}
+        doc = {"ok": bool(digest.get("ok")), "text": digest.get("text") or "", "url": "",
+               "source": "help", "note": digest.get("note") or ""}
+        doc_label = "本机 --help 取证（%s）" % (bin_name or "缺可执行名")
+        # help 原文本身就是密集的用法事实，不做 README 那套过滤，只按上限截断
+        doc_text = (doc["text"] or "")[:12000] if doc["ok"] else ""
+    elif mode == "path":
+        doc = source_docs.read_local(docs) if docs else {
+            "ok": False, "text": "", "source": "file", "url": "", "note": "没填本机文件路径"}
+        doc_label = "本机文档文件"
+        doc_text = cli_docs.extract_evidence(doc["text"], cmds, bin_name) if doc["ok"] else ""
+    else:
+        doc = cli_docs.fetch_docs(docs, force=refresh_docs) if docs else {
+            "ok": False, "text": "", "note": "没填文档地址", "url": "", "source": ""}
+        doc_label = "官方文档"
+        doc_text = cli_docs.extract_evidence(doc["text"], cmds, bin_name) if doc["ok"] else ""
     covered, missing = cli_docs.coverage(doc["text"], cmds) if doc["ok"] else ([], list(cmds))
 
     # ---- 证据 ②：help 真值（要 bin 才能采；采不到不影响生成，只降级）
@@ -430,6 +462,7 @@ def cli_ability_generate(name: str, bin_name: str, rules_text: str, *, docs: str
             return ""
         lines = ["| 命令 | 形态 | 依据（本机 --help） |", "| --- | --- | --- |"]
         label = {"needs_id": "需要 ID（**不能直调**）", "free_text": "自由文本参数",
+                 "needs_flag": "需要开关参数（如 `--id`，可作两步链第 2 步）",
                  "standalone": "无参数直调", "unknown": "未知"}
         for c, v in help_map.items():
             lines.append("| `%s` | %s | %s |" % (
@@ -439,9 +472,10 @@ def cli_ability_generate(name: str, bin_name: str, rules_text: str, *, docs: str
 
     parts = ["CLI 名称：%s\n可执行名：%s" % (name, bin_name or "(未填)")]
     if doc_text:
-        parts.append("【官方文档（**唯一事实来源**）——来自 %s】\n%s" % (doc["url"], doc_text))
+        parts.append("【%s（**唯一事实来源**）——来自 %s】\n%s"
+                     % (doc_label, doc["url"] or (("本机 " + bin_name) if bin_name else "本机"), doc_text))
     else:
-        parts.append("【官方文档】未提供或抓取失败（%s）" % (doc["note"] or "无"))
+        parts.append("【%s】未提供或获取失败（%s）" % (doc_label, doc["note"] or "无"))
     if missing and doc_text:
         parts.append("【文档未覆盖的命令】以下命令文档里没写，**不要为它们编造能力描述**：%s"
                      % "、".join(missing))
@@ -456,10 +490,11 @@ def cli_ability_generate(name: str, bin_name: str, rules_text: str, *, docs: str
     parts.append("【允许出现的命令（只能从这份只读清单里挑，逐字原样）】\n%s" % rules_text)
     parts.append(
         "# 本次的硬规则（严格按上面的证据判断，**不要凭命令名猜**）\n"
-        "1. 形态是「需要 ID」的命令**不能直调**，必须写成两步链的第 2 步；第 1 步用能拿到 ID 的那条命令"
-        "（文档/help 里说明是解析用途的那条，如 `book resolve`）；\n"
-        "2. 形态是「自由文本参数」的命令可以作两步链的第 1 步；「无参数直调」的命令**不能**作第 2 步"
-        "（前一步的产出喂不进去）——**不要编造这种链**；\n"
+        "1. 形态是「需要 ID」或「需要开关参数」的命令**不能直调**，必须写成两步链的第 2 步；"
+        "第 1 步用能拿到 ID 的那条命令（文档/help 里说明是解析/列表用途的那条，如 `book resolve`）；\n"
+        "2. 形态是「自由文本参数」的命令可以作两步链的第 1 步；「需要开关参数」的命令"
+        "（帮助里要求 `--id` 这类取值开关）可以作第 2 步；只有「无参数直调」的命令"
+        "（真的什么输入都不需要）**不能**作第 2 步——**不要编造这种链**；\n"
         "3. 两条证据都没有提到的能力，**不要写**（宁可少写一条，也不要编造子命令语义）；\n"
         "4. 只输出规定格式的两行内容（关键词行 + 映射行），不要解释。")
     user_msg = "\n\n".join(parts)
@@ -493,6 +528,7 @@ def cli_ability_generate(name: str, bin_name: str, rules_text: str, *, docs: str
         "content": text,
         "evidence": {
             "docs": {"ok": bool(doc["ok"]), "url": doc["url"], "source": doc["source"],
+                     "mode": mode, "label": doc_label,
                      "note": doc["note"], "covered": len(covered), "missing": missing},
             "help": {"ok": help_ok, "total": len(cmds)},
             "commands": len(cmds),

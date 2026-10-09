@@ -1,0 +1,96 @@
+{
+ "note": "M6b-S3 实测未命中清单（2026-09-30，冻结池 28 条 / 题库 30 题）—— 裁决②：不在 M6b 修 ✓ 只固化 ✓",
+ "purpose": "供将来的「路由质量修复」任务用：修完跑 tests/live/m5c_router_bench.py，看这些用例是否由 ✗ 转 ✓",
+ "how_to_use": "复跑基准后，把本轮 top3 与本清单的 expect 对比；这些用例转好 = 路由质量修复见效 ✓",
+ "baseline_metrics": {
+  "precision@3": 0.292,
+  "recall@3": 0.674,
+  "hit@3": 0.792,
+  "gray_ratio": 0.5,
+  "noise_false_positive": 0.0,
+  "pool_size": 28,
+  "questions": 30
+ },
+ "verdict_rule": "软判据 precision@3≥0.7 仅记录 ✓；硬判据=相对上面 baseline_metrics 不得下降 ✓ 下降才告警 ✓",
+ "cases": [
+  {
+   "id": "city-en",
+   "q": "Shanghai 这个城市在哪个省",
+   "kind": "期望工具完全不入 top3",
+   "top3": [
+    "mcp:12306-mcp/get-current-date",
+    "mcp:12306-mcp/get-station-code-of-citys",
+    "mcp:route/plan_route"
+   ],
+   "expect": [
+    "mcp:city/search_city"
+   ],
+   "hypothesis": "来源级描述把同源工具（12306/route）的向量文本抬高，city 的能力信号被挤掉（预研点名的根因之一）",
+   "note": "★ 这条撞上预研 G2 的硬判据「城市类问句 top3 必含 mcp:city/search_city」"
+  },
+  {
+   "id": "bnf-subject",
+   "q": "法国国家图书馆里有没有讲巴黎公社的资料",
+   "kind": "期望工具完全不入 top3",
+   "top3": [
+    "weread",
+    "bili",
+    "api:xxapi#ipQuery"
+   ],
+   "expect": [
+    "mcp:bnf/advanced_search",
+    "mcp:bnf/natural_language_search",
+    "mcp:bnf/search_by_subject",
+    "mcp:bnf/search_by_title"
+   ],
+   "hypothesis": "同为「来源级描述稀释同源工具向量文本」；bnf 四个函数一个都没进"
+  },
+  {
+   "id": "bnf-report",
+   "q": "帮我用法语资料做一份关于雨果的研究报告",
+   "kind": "期望工具完全不入 top3",
+   "top3": [
+    "weread",
+    "mcp:12306-mcp/get-current-date",
+    "bili"
+   ],
+   "expect": [
+    "mcp:bnf/natural_language_search",
+    "mcp:bnf/sequential_reporting"
+   ],
+   "hypothesis": "同上；且「写报告」这种多步语义没有把 bnf 的 reporting 类函数抬起来"
+  },
+  {
+   "id": "trip-mixed",
+   "q": "帮我看下去广州的票，顺便查下那边的天气",
+   "kind": "同源工具挤占 top3（命中来源、取错函数）",
+   "top3": [
+    "mcp:12306-mcp/get-station-code-of-citys",
+    "mcp:12306-mcp/get-station-code-by-names",
+    "api:xxapi#ipQuery"
+   ],
+   "expect": [
+    "mcp:12306-mcp/get-tickets"
+   ],
+   "hypothesis": "12306 内部多个函数互相挤占；且「查天气」没把城市工具拉进来",
+   "expect_revised_20261006": "原 expect 含 mcp:city/search_city（把「顺便查下那边的天气」当成城市信息需求）——池里没有任何天气工具，正确期望只到「票」这一半；用户 2026-10-06 裁定按正确期望改"
+  },
+  {
+   "id": "trip-transfer",
+   "q": "从成都坐火车去广州，中途要换乘哪些车",
+   "kind": "同源工具挤占 top3（命中来源、取错函数）",
+   "top3": [
+    "mcp:12306-mcp/get-stations-code-in-city",
+    "mcp:12306-mcp/get-station-code-by-names",
+    "mcp:12306-mcp/get-station-code-of-citys"
+   ],
+   "expect": [
+    "mcp:12306-mcp/get-interline-tickets"
+   ],
+   "hypothesis": "「换乘」语义没把 interline/route-stations 抬起来，反而全是站点编码类函数",
+   "expect_revised_20261006": "原 expect 含 mcp:12306-mcp/get-train-route-stations（经停站）——而「中途要换乘哪些车」的正解是换乘方案 get-interline-tickets；用户 2026-10-06 裁定按正确期望改"
+  }
+ ],
+ "not_a_routing_issue": "★ 本轮 B2 探针的 2 例「未命中」是 429 限流 ✗ 不是路由问题 ✓（见 M6b 方案 §四之二）—— 勿混入本清单",
+ "expect_revision": "2026-10-06：trip-mixed 与 trip-transfer 的 expect 按「正确期望」修订（用户裁定）；其余三例未动。修订前副本见 docs/v3.1/backups/router_bench_regressions_before_20261006.json"
+}

@@ -135,7 +135,7 @@ def ensure_tables() -> None:
         try:
             for _tbl, _cols in (
                     ("llm_providers", [("price_in_cached", "REAL"), ("price_in_uncached", "REAL"),
-                                       ("price_out", "REAL")]),
+                                       ("price_out", "REAL"), ("supports_vision", "INTEGER DEFAULT 0")]),
                     ("usage_events", [("provider_id", "INTEGER"), ("model_name", "TEXT"),
                                       ("input_tokens", "INTEGER"), ("output_tokens", "INTEGER"),
                                       ("cached_tokens", "INTEGER"), ("uncached_tokens", "INTEGER"),
@@ -149,6 +149,16 @@ def ensure_tables() -> None:
             conn.commit()
         except Exception as _e:
             print("[schema] M6c 加列跳过:", _e)
+
+        # ★ v3.1：视觉开关的一次性默认（**必须在上面加列之后** ✓ 幂等、只动 NULL 行 ✓）
+        #   ① 名字里带 agnes 的（项目默认模型，本身多模态 ✓）→ 1；② 其余老行 NULL → 0（显式"不能"，避免三态 ✓）
+        try:
+            conn.execute("UPDATE llm_providers SET supports_vision=1 WHERE supports_vision IS NULL"
+                         " AND lower(model_name) LIKE '%agnes%'")
+            conn.execute("UPDATE llm_providers SET supports_vision=0 WHERE supports_vision IS NULL")
+            conn.commit()
+        except Exception as _e_v:
+            print("[schema] 视觉开关默认值跳过:", _e_v)
 
         # M6c-6：failure_events.account_id 放开为可空（外壳失败发生在登录前，没有账号）。
         #   ★ 守卫：**仅当表为空**才重建（有数据宁可留着旧约束，绝不静默丢数据）；
@@ -305,6 +315,9 @@ def ensure_tables() -> None:
                 base_url   TEXT NOT NULL,             -- OpenAI 兼容接口地址
                 api_key    TEXT NOT NULL,             -- 密钥
                 is_active  INTEGER DEFAULT 0,         -- 1=当前启用
+                -- ★ v3.1 视觉能力：1=这套配置**能收图片**（前端「模型选型」勾选 ✓ 配置导向，不写死厂商 ✗）
+                --   0/NULL=不能收 → 带图提问会被明确拦下（**绝不静默丢图** ✗）
+                supports_vision INTEGER DEFAULT 0,
                 -- ★ M6c-1：三处**可选填**单价（单位固定 元/百万 tokens；NULL=未配置即不折算，
                 --   填 0 = 明确免费 → 折算成 ¥0.00，两者语义不同）
                 price_in_cached   REAL,               -- 输入价（缓存命中）
@@ -365,7 +378,8 @@ def ensure_tables() -> None:
                 bin         TEXT NOT NULL,                  -- 可执行名（纯名字，PATH 里叫什么填什么）
                 install_cmd TEXT DEFAULT '',                -- 安装命令（展示用，在你自己的终端跑）
                 auth_cmd    TEXT DEFAULT '',                -- 认证命令（展示用）
-                docs        TEXT DEFAULT '',                -- 文档链接
+                docs        TEXT DEFAULT '',                -- 能力描述的依据：网址 / 本机文件路径（模式见 docs_mode；help 模式此列为空）
+                docs_mode   TEXT DEFAULT 'url',             -- 依据来源三选一：url（网址）| path（本机文件）| help（跑 --help 取证）
                 readonly    TEXT DEFAULT '',                -- 只读命令清单：每行一条（空 = 不放行 Agent 代跑）
                 abilities   TEXT DEFAULT '',                -- M5：能力描述（用户语言：触发词 + 能力→命令映射；空 = 回退命令名简报）
                 state       TEXT NOT NULL DEFAULT 'none',   -- none|installed|authed
@@ -592,6 +606,9 @@ def ensure_tables() -> None:
             uc_cols = {r[1] for r in conn.execute("PRAGMA table_info(user_clis)").fetchall()}
             if uc_cols and "abilities" not in uc_cols:
                 conn.execute("ALTER TABLE user_clis ADD COLUMN abilities TEXT DEFAULT ''")
+            # v3.1：能力描述的依据改为三选一（网址 / 本机文件 / 跑 --help）——老库默认按「网址」解释
+            if uc_cols and "docs_mode" not in uc_cols:
+                conn.execute("ALTER TABLE user_clis ADD COLUMN docs_mode TEXT DEFAULT 'url'")
         except Exception as e:
             print("[schema] user_clis.abilities 迁移跳过:", e)
 

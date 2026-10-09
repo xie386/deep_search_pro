@@ -16,6 +16,8 @@ import re
 
 _TOOL_LINE = re.compile(r"^\s*(?:工具|tool)\s*[:：]\s*(.+?)\s*$", re.I)
 _DESC_LINE = re.compile(r"^\s*(?:描述|description)\s*[:：]\s*(.*)$", re.I)
+_NAME_LINE = re.compile(r"^\s*(?:名称|名字|显示名|name)\s*[:：]\s*(.*)$", re.I)
+MAX_NAME_TEXT = 24            # 显示名上限（「人话名字」，2026-10-06 增）
 MAX_TOOL_TEXT = 400          # 单条描述的落库上限（模型偶尔会写长，砍掉尾巴而不是整条丢）
 
 
@@ -67,8 +69,9 @@ def _index(caps: list[dict]) -> dict[str, dict]:
 def parse_draft(text: str, caps: list[dict]) -> dict:
     """解析撰写 AI 的输出 → `{items, warnings}`。
 
-    约定格式（两行一段，段间空行）：
+    约定格式（三段一段，段间空行；「名称：」可选，用于给英文标识符一条人话名字）：
         工具：<标识>
+        名称：<中文显示名>
         描述：关键词：a/b/c。<正文>
     容错：描述折行会并回同一段；标识写成名称/尾段也能对上；对不上的标识只告警不落库。
     """
@@ -77,13 +80,15 @@ def parse_draft(text: str, caps: list[dict]) -> dict:
     warnings: list[str] = []
     unknown: list[str] = []
     seen_refs: set[str] = set()
-    cur: list | None = None      # [标识原文, [描述行]]
+    cur: list | None = None      # [标识原文, [描述行], 显示名建议]
 
     def _flush() -> None:
         nonlocal cur
         if not cur:
             return
-        key, body = cur[0], " ".join(x for x in cur[1] if x).strip()
+        key = cur[0]
+        body = " ".join(x for x in cur[1] if x).strip()
+        suggest_name = (cur[2] if len(cur) > 2 else "").strip()[:MAX_NAME_TEXT]
         cur = None
         row = idx.get(key.strip().lower())
         if not row:
@@ -97,14 +102,21 @@ def parse_draft(text: str, caps: list[dict]) -> dict:
             warnings.append("`%s` 出现了两次，只保留第一次" % ref)
             return
         seen_refs.add(ref)
-        items.append({"ref": ref, "name": row.get("name") or ref, "text": body[:MAX_TOOL_TEXT]})
+        item = {"ref": ref, "name": row.get("name") or ref, "text": body[:MAX_TOOL_TEXT]}
+        if suggest_name and suggest_name != (row.get("name") or ""):
+            item["suggest_name"] = suggest_name      # ★ 只作建议；用户在前端确认后才落库
+        items.append(item)
 
     for raw in (text or "").splitlines():
         line = raw.strip()
         m = _TOOL_LINE.match(line)
         if m:
             _flush()
-            cur = [m.group(1).strip(), []]
+            cur = [m.group(1).strip(), [], ""]
+            continue
+        m = _NAME_LINE.match(line)
+        if m and cur is not None:
+            cur[2] = m.group(1).strip()          # 名称行（可选）
             continue
         m = _DESC_LINE.match(line)
         if m and cur is not None:
@@ -184,4 +196,4 @@ def build_user_msg(src: dict, caps: list[dict], doc: dict, intro: str,
         "6. 关键词用领域词，不要写「今天/有没有/XX」这类通用词或占位符；\n"
         "7. 三种依据都没提到的能力：**不要写**（宁可少写一条，也不要编造）；\n"
         "8. 只输出规定格式的文本（不要代码围栏、不要解释、不要开场白）。")
-    return "\n\n".join(parts), pre
+    return "\n\n".join(parts), pre 

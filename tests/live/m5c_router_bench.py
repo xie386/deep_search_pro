@@ -14,7 +14,7 @@
 用法（在项目根、`.venv` 下；先 `unset PYTHONPATH`）：
 
     .venv/Scripts/python.exe tests/m5c_router_bench.py                 # 跑基准（当前代码）
-    .venv/Scripts/python.exe tests/m5c_router_bench.py --legacy        # 用 M5c-2 之前的向量文本跑（对比用）
+    .venv/Scripts/python.exe tests/m5c_router_bench.py --legacy        # ⚠️ 见下方 vector_text：现已与当前口径**等价**、跑不出差异 ✗（M5c-2 已回退）
     .venv/Scripts/python.exe tests/m5c_router_bench.py --write-baseline# 记录/更新基线
     ... --diff                                                          # 与基线比（默认会显示差异）
 
@@ -65,7 +65,15 @@ def load_entries(derive_kw: bool = True):
 
 
 def vector_text(e, legacy: bool) -> str:
-    """当前口径 = 工具级描述优先；`--legacy` = M5c-2 之前的（合并文本直接 embed）。"""
+    """取「送去 embed 的文本」。
+
+    ⚠️ **2026-10-02 核对：`--legacy` 分支与当前口径已经等价** ✗ —— M5c-2 那次「只取工具级
+    描述（`abilities_tool`）」实测是**负收益已回退**，而 `capability_pool._entry_text()` 用的正是
+    这里 legacy 形态的合并文本（name + keywords + abilities + 参数摘要）。所以：
+      · `--legacy` 现在**跑不出任何差异** ✗ 别再拿它做「M5c-2 前后」的归因 ✓；
+      · 真正有效的归因开关是 `--no-derive-keywords`（关掉关键词派生兜底）与非 `--legacy` 的
+        逐例 top3/z/词法对照 ✓。
+    """
     if not legacy:
         return cp._entry_text(e)
     parts = [e.name]
@@ -174,7 +182,8 @@ def main():
     m["gray_ratio"] = round(n_gray / len(qs), 3)
 
     print("指标：", json.dumps(m, ensure_ascii=False))
-    print("判据（M5c 文档 §一）: precision@3 ≥ 0.7 ｜ 噪声假阳性 ≤ 0.1 ｜ 灰区 ≤ 0.3")
+    print("软判据（**能力目标**，仅记录不告警 ✓ 裁决①）: precision@3 ≥ 0.7 ｜ 噪声假阳性 ≤ 0.1 ｜ 灰区 ≤ 0.3\n"
+          "硬判据（**告警依据** ✓）: 与基线对比**任一指标不得下降** ✓ —— 下降才告警 ✓（别再拿单次波动当能力退化 ✗）")
     if miss:
         print("\n未命中（需要看是不是真漏）：")
         for mid, q, top3, exp in miss:

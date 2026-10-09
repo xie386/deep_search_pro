@@ -89,7 +89,12 @@
       50% { transform: scale(1.15); opacity: 1; }
     }
     /* 卡片容器 */
-    .login-container { position: relative; perspective: 1000px; width: 380px; z-index: 1; }
+    /* ★ 登录页背景（Typography Vortex 复刻）：铺满、位于卡片之下；卡片是 z-index:1 → 点击照常落在卡片上 ✓ */
+    .login-vortex { position: fixed; inset: 0; width: 100%; height: 100%; display: block;
+      z-index: 0; pointer-events: auto; }
+    /* 底色由 CSS 兜：canvas 未挂载/降级时也不会白屏 ✓ */
+    .login-page { background: radial-gradient(120% 90% at 50% 40%, #121821 0%, #0b0f14 60%, #080b0f 100%); }
+        .login-container { position: relative; perspective: 1000px; width: 380px; z-index: 1; }
     /* 悬浮热区：收起时=卡片本身（80px），展开后=展开足迹（380px）。
        卡片 height 是带动画生长的，若热区跟着卡片走，鼠标下移快于生长速度就会掉 hover → 卡片缩回，
        够不到表单。热区改成「瞬时到位」（无过渡）+ 由容器承载，鼠标就能安全下移。 */
@@ -657,6 +662,15 @@
                 background: rgba(255,255,255,.85); color: var(--text); font-family: inherit; }
     .cli-note:focus { outline: none; border-color: #2282f4; }
     /* M5：能力描述（工具智能路由——决定 AI 何时想起用这个 CLI） */
+    /* 能力描述的依据：三选一（2026-10-07）——单选、条件输入；help 模式给一段说明 */
+    .cli-docs-mode { display: flex; gap: 16px; flex-wrap: wrap; padding: 2px 0 2px; }
+    .cli-form .cli-docs-mode label.rd { flex-direction: row; align-items: center; gap: 5px;
+      font-size: 12.5px; color: var(--text); cursor: pointer; flex: 0 0 auto; }
+    .cli-form .cli-docs-mode input[type="radio"] { width: auto; padding: 0; margin: 0; accent-color: #2282f4; }
+    .cli-docs-tip { font-size: 12px; line-height: 1.65; color: var(--muted);
+      background: rgba(34,130,244,.06); border-left: 3px solid #2282f4;
+      border-radius: 0 8px 8px 0; padding: 7px 10px; }
+    .cli-docs-tip code { font-size: 11.5px; }
     .cli-ability-help { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
     .cli-ability-help .sk-tip { flex: 1 1 320px; margin: 0; line-height: 1.6; }
     /* 草稿证据与审计（2026-09-24）：告诉用户「读了哪份文档、覆盖几条」，以及审计发现的可疑映射 */
@@ -1035,6 +1049,71 @@
       font-size: 14px; font-family: inherit; outline: none; transition: border-color .25s, box-shadow .25s;
     }
     .input-bar textarea:focus { border-color: rgba(84,170,105,.5); box-shadow: 0 0 0 3px rgba(84,170,105,.18); }
+    /* ★ v3.1 输入区（复刻微信 · 用户 2026-09-30 反馈修订）
+       ── 关于"容器"：CSS 里就是 **flex/grid 容器** ✓ —— 容器定高 + align-items:stretch，
+          子元素由布局拉伸到同高 ✓（不需要 Qt 那样手动对齐 ✓）。所以这里所有按钮都跟输入框**等高** ✓。 */
+    .input-bar.wx { --wx-h: 46px; display: flex; align-items: stretch; gap: 10px; }
+    .input-bar.wx > .wx-round,
+    .input-bar.wx > .send-bubbles { height: var(--wx-h); }
+    .wx-round { flex: 0 0 auto; width: var(--wx-h); border-radius: 50%; cursor: pointer; padding: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      color: var(--muted-foreground); background: transparent; border: 1.5px solid var(--border);
+      transition: transform .18s cubic-bezier(.22,1,.36,1), color .18s, border-color .18s,
+                  background .18s, box-shadow .18s; }
+    .wx-round:hover { color: var(--foreground); border-color: var(--accent); transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(0,0,0,.16), 0 0 0 3px rgba(126,224,138,.12); }
+    .wx-round:active { transform: translateY(0) scale(.94); }
+    .wx-round.on { color: var(--foreground); border-color: var(--accent); background: rgba(255,255,255,.07); }
+    .wx-round svg { transition: transform .24s cubic-bezier(.22,1,.36,1); }
+    /* ★ v3.1 语音转文字（长按说话）：按钮激活态 + 「正在收听」浮窗（照微信观感 ✓） */
+    .input-bar.wx { position: relative; }
+    .wx-in.rec { color: #d9534f; border-color: rgba(217,83,79,.55); background: rgba(217,83,79,.10); }
+    .wx-in:disabled { opacity: .45; cursor: default; }
+    .rec-pop { position: absolute; left: 50%; bottom: calc(100% + 10px); transform: translateX(-50%);
+               width: 232px; padding: 12px 14px; border-radius: 14px; z-index: 40; pointer-events: none;
+               background: rgba(28,30,32,.94); color: #fff; box-shadow: 0 12px 32px rgba(0,0,0,.30);
+               display: flex; flex-direction: column; gap: 8px; }
+    .rec-pop.cancel { background: rgba(122,42,42,.95); }
+    .rec-pop .rec-top { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+    .rec-pop .rec-dot { width: 8px; height: 8px; border-radius: 50%; background: #ff5b5b;
+                        animation: recPulse 1s infinite ease-in-out; }
+    @keyframes recPulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .30; transform: scale(.65); } }
+    .rec-pop .rec-t { margin-left: auto; opacity: .85; font-variant-numeric: tabular-nums; }
+    .rec-pop .rec-bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.16); overflow: hidden; }
+    .rec-pop .rec-bar > i { display: block; height: 100%; width: 0%; background: #54aa69; transition: width .08s linear; }
+    .rec-pop.cancel .rec-bar > i { background: #ff9a9a; }
+    .rec-pop .rec-tip { font-size: 12px; opacity: .72; }
+    .wx-round.on svg { transform: rotate(45deg); }              /* ＋ → ✕ 的动感 ✓ */
+    .input-bar.wx .wx-field { position: relative; flex: 1 1 auto; min-width: 0; height: var(--wx-h); }
+    .input-bar.wx .wx-field textarea { width: 100%; height: 100%; box-sizing: border-box;
+      padding: 12px 42px 12px 14px; resize: none; line-height: 20px;
+      transition: border-color .18s, box-shadow .18s; }
+    .input-bar.wx .wx-field textarea:focus { border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(126,224,138,.13); }
+    .wx-in { position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      width: 28px; height: 28px; padding: 0; border: none; background: transparent; cursor: pointer;
+      border-radius: 50%; color: var(--muted-foreground); display: inline-flex;
+      align-items: center; justify-content: center;
+      transition: transform .18s cubic-bezier(.22,1,.36,1), color .18s, background .18s; }
+    .wx-in:hover { color: var(--accent); background: rgba(255,255,255,.07); transform: translateY(-50%) scale(1.12); }
+    .wx-in:active { transform: translateY(-50%) scale(.94); }
+    .input-bar.wx .send-bubbles { flex: 0 0 auto; }
+
+    /* ── 展开面板：四个**等宽方框**（grid ✓）填满整行 ✓，图标放大基本占满框 ✓，进场有动效 ✓ ── */
+    .multi-panel { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+      width: 100%; margin-top: 10px; animation: mpIn .24s cubic-bezier(.22,1,.36,1); }
+    @keyframes mpIn { from { opacity: 0; transform: translateY(-10px) scale(.98); } to { opacity: 1; transform: none; } }
+    .mp-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+      min-height: 86px; padding: 10px 6px; border-radius: 16px; cursor: pointer;
+      background: var(--card); border: 1.5px solid var(--border); color: var(--muted-foreground);
+      font-size: 13px; line-height: 1.2;
+      transition: transform .18s cubic-bezier(.22,1,.36,1), border-color .18s, box-shadow .18s, color .18s; }
+    .mp-tile .ic { font-size: 30px; line-height: 1; transition: transform .18s cubic-bezier(.22,1,.36,1); }
+    .mp-tile:hover { color: var(--foreground); border-color: var(--accent); transform: translateY(-3px);
+      box-shadow: 0 10px 24px rgba(0,0,0,.2), 0 0 0 3px rgba(126,224,138,.12); }
+    .mp-tile:hover .ic { transform: scale(1.12); }
+    .mp-tile:active { transform: translateY(-1px) scale(.97); }
+
     .send-bubbles {
       --c1: #1d3a24; --c2: #54aa69; --size-letter: 14px;
       padding: 0 26px; font-size: var(--size-letter); font-family: inherit;
@@ -1053,6 +1132,25 @@
     .send-bubbles:hover::before, .send-bubbles:hover::after { scale: 1; }
     .send-bubbles:active { scale: .97; filter: brightness(.9); }
     .send-bubbles:disabled { opacity: .55; cursor: not-allowed; filter: grayscale(.4); }
+    /* ★ v3.1 视觉：本轮图片预览条（缩略图 + 单张删除 + 状态提示） */
+    .chat-imgs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 8px; }
+    .chat-img { position: relative; width: 62px; height: 62px; border-radius: 10px; overflow: hidden;
+      border: 1px solid var(--border); background: var(--card); }
+    .chat-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .chat-img .x { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; line-height: 17px;
+      text-align: center; border-radius: 50%; cursor: pointer; font-size: 12px; color: #fff;
+      background: rgba(0,0,0,.62); border: none; padding: 0; }
+    .chat-img .x:hover { background: #d9534f; }
+    .chat-imgs .hint { font-size: 12px; color: var(--muted-foreground); }
+    .chat-imgs .err { font-size: 12px; color: #d9534f; }
+    .chat-imgs .add { width: 62px; height: 62px; border-radius: 10px; cursor: pointer; font-size: 20px;
+      color: var(--muted-foreground); background: transparent; border: 1px dashed var(--border); }
+    .chat-imgs .add:hover { color: var(--foreground); border-color: var(--accent); }
+    /* ★ 用户气泡里的图：发出去之后仍然看得见（不然用户回头不知道当时贴了什么 ✓） */
+    .bubble-imgs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+    .bubble-imgs img { max-width: 132px; max-height: 96px; border-radius: 8px; display: block;
+      border: 1px solid rgba(255,255,255,.28); }
+
     /* 中断态：AI 正在回答时，发送按钮变红「中断」，呼吸灯提示可强停 */
     .send-bubbles.stop { --c1: #2a1410; --c2: #e0653f; animation: stop-pulse 1.6s ease-in-out infinite; }
     .send-bubbles.stop:disabled { opacity: 1; filter: none; cursor: progress; }  /* 已点中断：保持红色，只转光标 */
@@ -1164,6 +1262,14 @@
     .ts-note { flex: 1; margin: 0; text-align: left; }
     .ts-tip-empty { font-size: 12px; color: var(--muted); padding: 4px 0; }
     /* ---- M5c-2'：工具描述（可编辑 + AI 预写） ---- */
+    .cap-issues { display: inline-block; width: 100%; margin: 2px 0 2px 0; }
+    .cap-issue { display: inline-block; margin: 2px 6px 0 0; padding: 2px 7px; border-radius: 10px;
+      font-size: 12px; }
+    .cap-issue.hard { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+    .cap-issue.soft { background: var(--card); color: var(--muted-foreground); border: 1px solid var(--border); }
+    .cap-name-in { width: 100%; margin-top: 6px; padding: 5px 8px; border: 1px solid var(--border);
+      border-radius: 6px; font: inherit; font-size: 12.5px; }
+    .cap-name-in:focus { outline: none; border-color: var(--accent); }
     .ts-state.cap-has-text { color: var(--accent); }
     .cap-edit-ta { width: 100%; margin-top: 4px; padding: 6px 8px; border: 1px solid var(--border);
                    border-radius: 6px; background: var(--card); color: var(--foreground);
@@ -1632,6 +1738,9 @@
       <div class="ring"></div>
       <div class="ring"></div>
     </div>
+        <!-- Typography Vortex 背景（Canvas 2D 复刻；threeui.com/text-animation/typography-vortex 的效果契约：
+             预渲染环带 + 漂移字形 + 指针消散 + 粒子尘 + 点击吸入）—— 纯本地、零依赖 ✓ -->
+        <canvas id="login-vortex" class="login-vortex" aria-hidden="true"></canvas>
     <div class="login-container" :class="authMode === 'register' ? 'auth-reg' : ''">
       <div class="login-card">
         <div class="login-title">
@@ -2266,6 +2375,9 @@
                 <div class="skill-bar" v-if="m.skills && m.skills.length">
                   <span class="skill-pill mini" v-for="n in m.skills" :key="n">🧩 {{ n }}</span>
                 </div>
+                <div class="bubble-imgs" v-if="m.imgs && m.imgs.length">
+                  <img v-for="(im, ii) in m.imgs" :key="ii" :src="im.url" :alt="im.name" :title="im.name">
+                </div>
                 {{ m.text }}
               </div>
             </div>
@@ -2301,13 +2413,72 @@
               <span class="skill-hint" v-if="skPicked.length">本轮启用 {{ skPicked.length }}/5 · 发送后自动清空 · 再敲 / 可继续添加</span>
               <span class="skill-hint" v-else>输入技能名筛选，↑↓ 选择 · Enter 选中 · Esc 关闭</span>
             </div>
-            <div class="input-bar">
-              <textarea v-model="draft" @keyup.ctrl.enter="send()" @input="skOnInput" @keydown="skOnKey"
-                        placeholder="输入问题，Ctrl+Enter 发送；敲 / 唤出技能"></textarea>
+            <div class="chat-imgs" v-if="chatImages.length || chatImgErr || chatImgBusy">
+              <div class="chat-img" v-for="(im, i) in chatImages" :key="im.id">
+                <img :src="im.url" :alt="im.name" :title="im.name">
+                <button class="x" @click="removeChatImage(i)" title="移除这张">✕</button>
+              </div>
+              <button class="add" v-if="chatImages.length < 3" @click="pickChatImages" title="再贴一张（本轮最多 3 张）">＋</button>
+              <span class="hint" v-if="chatImgBusy">上传中…</span>
+              <span class="hint" v-else-if="chatImages.length && !chatImgErr">本轮 {{ chatImages.length }}/3 · 只对这一轮生效</span>
+              <span class="err" v-if="chatImgErr">{{ chatImgErr }}</span>
+            </div>
+            <div class="input-bar wx">
+              <!-- ★ v3.1 语音转文字：长按说话的收听浮窗（松手即转文字 ✓ 移出话筒取消 ✓） -->
+              <div class="rec-pop" v-if="recOn || recBusy" :class="{ cancel: recCancel }">
+                <div class="rec-top">
+                  <span class="rec-dot" v-if="recOn"></span>
+                  <span>{{ recBusy ? '正在识别…' : (recCancel ? '松开取消' : '正在收听…') }}</span>
+                  <span class="rec-t" v-if="recOn">{{ recClock }}</span>
+                </div>
+                <div class="rec-bar"><i :style="{ width: recLevel + '%' }"></i></div>
+                <div class="rec-tip">{{ recCancel ? '已移出话筒 → 松手即取消' : '按住说话 · 松开转文字 · 移出取消' }}</div>
+              </div>
+              <button class="wx-round" type="button" @click="soonHint('语音输入')" title="语音输入（后续版本接入）">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                     stroke-width="1.7" stroke-linecap="round"><path d="M4 10v4M8 6.5v11M12 4v16M16 6.5v11M20 10v4"/></svg>
+              </button>
+              <div class="wx-field">
+                <textarea v-model="draft" @keyup.ctrl.enter="send()" @input="skOnInput" @keydown="skOnKey"
+                          @paste="onChatPaste" @dragover.prevent @drop.prevent="onChatDrop"
+                          placeholder="输入问题，Ctrl+Enter 发送；敲 / 唤出技能"></textarea>
+                <button class="wx-in" type="button" :class="{ rec: recOn }" :disabled="recBusy"
+                        @mousedown.prevent="recStart" @mouseup="recStop" @mouseleave="recMoveOut"
+                        @touchstart.prevent="recStart" @touchend.prevent="recStop"
+                        title="长按说话 · 松开转文字（移出话筒取消）">
+                  <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor"
+                       stroke-width="1.7" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/>
+                    <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
+                </button>
+              </div>
+              <button class="wx-round" type="button" @click="soonHint('表情')" title="表情（后续版本接入）">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                     stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="9"/>
+                  <path d="M8.4 14a4 4 0 0 0 7.2 0M9.2 9.6h.01M14.8 9.6h.01"/></svg>
+              </button>
+              <button class="wx-round" type="button" :class="{ on: multiOpen }" @click="toggleMulti"
+                      title="多媒体：图片 / 更多">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                     stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+              </button>
+              <input ref="chatFileInput" type="file" accept="image/png,image/jpeg,image/webp"
+                     multiple style="display:none" @change="onChatFiles">
               <button class="send-bubbles" :class="{ stop: loading }" @click="loading ? stopGen() : send()"
                       :disabled="stopping" :title="loading ? '强制中断本轮回答' : '发送（Ctrl+Enter）'">
                 <span class="text">{{ loading ? (stopping ? '中断中…' : '中断') : '发送' }}</span>
               </button>
+            </div>
+            <!-- ★ v3.1 复刻微信：点「＋」展开的多媒体面板 —— **相册=真图片上传** ✓；
+                 md / pdf / word = 文档上传入口（**前端占位** ✓ 后续优化接入 ✓） -->
+            <div class="multi-panel" v-if="multiOpen">
+              <button class="mp-tile" type="button" @click="pickFromAlbum">
+                <span class="ic">🖼</span><span class="lb">相册</span></button>
+              <button class="mp-tile" type="button" @click="soonHint('md 文档上传')">
+                <span class="ic">📝</span><span class="lb">md</span></button>
+              <button class="mp-tile" type="button" @click="soonHint('pdf 文档上传')">
+                <span class="ic">📕</span><span class="lb">pdf</span></button>
+              <button class="mp-tile" type="button" @click="soonHint('word 文档上传')">
+                <span class="ic">📘</span><span class="lb">word</span></button>
             </div>
           </div>
         </div>
@@ -2803,8 +2974,21 @@
               <label>认证命令（在你终端跑）
                 <input v-model="cliForm.auth_cmd" placeholder="lark-cli auth login --recommend" />
               </label>
-              <label>文档链接
-                <input v-model="cliForm.docs" placeholder="https://…（可留空）" />
+              <label class="wide">能力描述的依据（三选一）
+                <div class="cli-docs-mode">
+                  <label class="rd"><input type="radio" value="url" v-model="cliForm.docs_mode" /> 🌐 网址</label>
+                  <label class="rd"><input type="radio" value="path" v-model="cliForm.docs_mode" /> 📁 本机文件</label>
+                  <label class="rd"><input type="radio" value="help" v-model="cliForm.docs_mode" /> 🖥 跑一遍 --help</label>
+                </div>
+                <input v-if="cliForm.docs_mode === 'url'" v-model="cliForm.docs"
+                       placeholder="https://github.com/you/tool/blob/main/README.md（可留空）" />
+                <input v-else-if="cliForm.docs_mode === 'path'" v-model="cliForm.docs"
+                       placeholder="D:\code\qqmail-cli\README.md（绝对路径；自研/未开源的工具一般填这个）" />
+                <div v-else class="cli-docs-tip">
+                  连接时 AI 会先在本机跑一遍 <code>{{ cliForm.bin || '可执行名' }} --help</code>
+                  （连同只读清单里每条命令的 <code>--help</code>），把输出当依据写描述。
+                  <b>适合自研、闭源、官网没有使用文档的工具</b>——它们唯一的信息源就是 <code>--help</code>。
+                </div>
               </label>
               <label>状态
                 <select v-model="cliForm.state">
@@ -2835,7 +3019,7 @@
                   </ul>
                 </div>
               </div>
-              <label class="wide">帮助文本（可选）：文档没写到的命令，把它在本机的 <code>--help</code> 输出粘进来
+              <label class="wide" v-if="cliForm.docs_mode !== 'help'">帮助文本（可选）：文档没写到的命令，把它在本机的 <code>--help</code> 输出粘进来
                 <textarea v-model="cliForm.helpText" rows="3"
                           placeholder="例：weread reviews list --help 的输出。生成时以「文档 &gt; 粘贴的帮助文本 &gt; 真值表」为准"></textarea>
               </label>
@@ -2937,7 +3121,11 @@
         <template v-if="skTab==='mcp'">
           <!-- 指导栏：说明 + 统计 + 动作（常态） -->
           <div class="sk-card">
-            <h3>🔌 MCP 工具接入</h3>
+            <h3>🔌 MCP 工具接入
+              <button class="bubbles tut-entry" @click="openTutorial('mcp')">
+                <span class="text">📘 教程指导</span>
+              </button>
+            </h3>
             <div class="sk-tip">
               MCP（Model Context Protocol）的标准接法：<b>一个来源 = 一个 MCP 服务</b>（本地命令 <code>stdio</code>，或远程端点 <code>http</code>），
               服务里有什么工具由<b>服务自己说了算</b>——点「发现工具」连上去把它列出来，勾选确认后才进 Agent 的能力池。
@@ -2989,6 +3177,11 @@
               <div class="ts-tools-head">
                 <span>工具 {{ (mcpCaps[s.slug] || []).length }} 个 · 已确认 {{ s.capability_count || 0 }} · 待确认 {{ s.candidate_count || 0 }}</span>
                 <button class="mini-btn" @click="capOpen(s, 'mcp')">📝 工具描述</button>
+                <span class="ts-state" v-if="s.material && s.material.problem_count" style="color:#b45309;cursor:pointer"
+                      @click="capOpen(s, 'mcp')"
+                      :title="(s.material.items || []).slice(0, 4).map(x => x.name + '：' + (x.problems || []).map(p => p.msg).join('；')).join('\n')">
+                  ⚠️ {{ s.material.problem_count }} 条素材待补
+                </span>
                 <button class="mini-btn" @click="mcpDiscover(s)">🔍 发现 / 查看工具</button>
               </div>
               <div class="ts-tool" v-for="c in (mcpCaps[s.slug] || [])" :key="c.ref">
@@ -3208,6 +3401,11 @@
               <div class="ts-tools-head">
                 <span>工具 {{ (tsCaps[s.slug] || []).length }} 个 · 已确认 {{ s.capability_count || 0 }} · 待确认 {{ s.candidate_count || 0 }}</span>
                 <button class="mini-btn" @click="capOpen(s, 'api')">📝 工具描述</button>
+                <span class="ts-state" v-if="s.material && s.material.problem_count" style="color:#b45309;cursor:pointer"
+                      @click="capOpen(s, 'api')"
+                      :title="(s.material.items || []).slice(0, 4).map(x => x.name + '：' + (x.problems || []).map(p => p.msg).join('；')).join('\n')">
+                  ⚠️ {{ s.material.problem_count }} 条素材待补
+                </span>
                 <button class="mini-btn" @click="tsOpenImport(s)">＋ 导入 / 查看工具</button>
               </div>
               <div class="ts-tool" v-for="c in (tsCaps[s.slug] || [])" :key="c.ref">
@@ -3350,6 +3548,11 @@
               （OpenAPI 的 summary / MCP 服务的自述），它既进模型看到的卡片，也进路由用的向量；
               <b>留空或改回原文</b> = 不覆盖，仍用自动摘要。重新「发现 / 导入工具」<b>不会</b>冲掉你写的内容。
             </div>
+              <div class="sk-tip" v-if="capSource.material && capSource.material.problem_count">
+                ⚠️ 来源卡片上的「素材待补」就是这里的问题（共 {{ capSource.material.problem_count }} 条）。
+                <b>「🔍 发现工具」只刷新自动摘要，不会改这些</b> —— 改法：给对应工具改<b>显示名</b>
+                或补<b>工具描述</b>（推荐先点「✨ AI 预写」），保存后徽标即消失。
+              </div>
             <div class="sk-tip">
               预写依据（<b>在来源配置里填</b>，两个各一份、填一个就能预写）：
               <div>· <b>官方介绍文案</b>（能力说明的正主）：
@@ -3376,9 +3579,15 @@
               <span class="ts-badge" :class="{ write: c.is_write }">{{ tsCandidateBadge(c) }}</span>
               <code class="ts-cand-ref">{{ c.ref }}</code>
               <span class="ts-params">{{ tsParamsText(c) }}</span>
+              <input class="cap-name-in" v-model="c.nameEdit"
+                     :placeholder="'显示名（人话），现在叫：' + (c.name || c.ref) + ' —— 留空则不改'">
               <textarea class="cap-edit-ta" rows="2" v-model="c.text"
                         :placeholder="c.abilities || '（自动摘要也是空的 —— 建议手写一句）'"></textarea>
               <span class="cap-auto" v-if="c.abilities">自动摘要：{{ c.abilities }}</span>
+              <div class="cap-issues" v-for="(pr, pi) in capIssuesOf(c.ref)" :key="pi">
+                <span class="cap-issue" :class="pr.severity === 'soft' ? 'soft' : 'hard'">
+                  {{ pr.severity === 'soft' ? '提示' : '待补' }}：{{ pr.msg }}</span>
+              </div>
             </div>
             <div class="ts-tip-empty" v-if="!capItems.length">这个来源下还没有工具 —— 先「发现 / 导入工具」。</div>
             <div class="ts-modal-foot">
@@ -3457,6 +3666,7 @@
               <input class="m-input pp" type="number" min="0" step="0.01" v-model="p.price_in_cached" placeholder="输入价(缓存命中)" />
               <input class="m-input pp" type="number" min="0" step="0.01" v-model="p.price_in_uncached" placeholder="输入价(缓存未命中)" />
               <input class="m-input pp" type="number" min="0" step="0.01" v-model="p.price_out" placeholder="输出价" />
+              <label class="pp-hint" style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" v-model="p.supports_vision"> 支持图片（能收图提问）</label>
               <span class="pp-hint">留空 = 只统计 token，不折算金额；填 0 = 明确免费</span>
             </div>
           </div>
@@ -3473,6 +3683,7 @@
               <input class="m-input pp" type="number" min="0" step="0.01" v-model="newProv.price_in_cached" placeholder="输入价(缓存命中)" />
               <input class="m-input pp" type="number" min="0" step="0.01" v-model="newProv.price_in_uncached" placeholder="输入价(缓存未命中)" />
               <input class="m-input pp" type="number" min="0" step="0.01" v-model="newProv.price_out" placeholder="输出价" />
+              <label class="pp-hint" style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" v-model="newProv.supports_vision"> 支持图片（能收图提问）</label>
             </div>
           </div>
         </div>
@@ -4256,7 +4467,9 @@ createApp({
         try {
           const p = JSON.parse(ev.data);
           if (p.type === 'monitor_event') {
-          if (p.event === 'tool_start') scheduleUsageRefresh();   // M4-5：工具一开跑就安排刷新
+            // ★ v3.1 流式：正文/思考的逐段增量（先分流，别落进下面的进度列表 ✓）
+            if (p.event === 'delta') { applyStreamDelta(p.data || {}); return; }
+            if (p.event === 'tool_start') scheduleUsageRefresh();   // M4-5：工具一开跑就安排刷新
             if (p.event === 'thinking') {
               // 思考过程：追加到独立折叠区（小字灰色），不刷监控列表
               thinkingText.value += (p.data && p.data.text) || '';
@@ -4560,6 +4773,28 @@ createApp({
     const capBusy = ref(false);
     const capDraftBusy = ref(false);
     const capDraftWarns = ref([]);
+    // ★ 2026-10-06：发现工具后**自动跑一次** AI 预写；草稿先缓存，等用户打开弹窗时铺上（不落库）
+    const capDraftCache = ref({});
+
+    /** 把一份草稿铺到弹窗条目上（描述 + 显示名建议）。返回铺了几条。 */
+    /** 这条工具在素材体检里的问题（数据来自来源列表接口的 material 字段）。 */
+    function capIssuesOf(ref) {
+      const m = capSource.value.material || {};
+      const it = (m.items || []).find(x => x.ref === ref);
+      return (it && it.problems) || [];
+    }
+
+    function capApplyDraft(draft) {
+      const got = {};
+      (draft.items || []).forEach(it => { got[it.ref] = it; });
+      let filled = 0, named = 0;
+      capItems.value.forEach(c => {
+        const it = got[c.ref]; if (!it) return;
+        if (it.text) { c.text = it.text; filled += 1; }
+        if (it.suggest_name) { c.nameEdit = it.suggest_name; named += 1; }
+      });
+      return { filled: filled, named: named };
+    }
 
     /** 打开「工具描述」：先确保这个来源的工具列表已拉过（懒加载，与卡片同一份数据）。 */
     async function capOpen(s, kind) {
@@ -4571,10 +4806,13 @@ createApp({
         try { await (capKind.value === 'mcp' ? mcpLoadCaps() : tsLoadCaps()); } catch (e) { /* 拉不到也能手写 */ }
       }
       capItems.value = (map[s.slug] || []).map(c => ({
-        ref: c.ref, name: c.name, is_write: !!c.is_write, confirmed: !!c.confirmed,
+        ref: c.ref, name: c.name, nameEdit: c.name || '', is_write: !!c.is_write, confirmed: !!c.confirmed,
         abilities: c.abilities || '', abilities_user: c.abilities_user || '',
         text: c.abilities_user || c.abilities || '',   // 预填：手写的优先，其次自动摘要（便于在原句上改）
       }));
+      // ★ 2026-10-06：发现/导入工具时已自动跑过 AI 预写 → 打开弹窗直接铺上，用户确认后保存
+      const cached = capDraftCache.value[s.slug];
+      if (cached && cached.ok) { capApplyDraft(cached); capDraftWarns.value = cached.warnings || []; }
       capModal.value = true;
     }
 
@@ -4612,15 +4850,14 @@ createApp({
         const d = await r.json();
         if (!r.ok) { showToast(d.detail || 'AI 预写失败', true); return; }
         const got = {};
-        (d.items || []).forEach(it => { got[it.ref] = it.text; });
-        let filled = 0;
-        capItems.value.forEach(c => { if (got[c.ref]) { c.text = got[c.ref]; filled += 1; } });
+        const res = capApplyDraft(d);
+        const filled = res.filled;
         capDraftWarns.value = d.warnings || [];
         const ev = d.evidence || {};
         const usedIntro = !!(ev.intro || {}).chars;
         const usedDoc = !!(ev.docs || {}).ok;
         const by = [usedIntro ? '官方文案' : '', usedDoc ? 'README' : ''].filter(Boolean).join(' + ');
-        showToast('AI 预写了 ' + filled + ' 条' + (by ? '（依据 ' + by + '）' : '（只按工具名与参数保守写）'));
+        showToast('AI 预写了 ' + filled + ' 条描述' + (res.named ? ('、' + res.named + ' 条显示名') : '') + (by ? '（依据 ' + by + '）' : '（只按工具名与参数保守写）'));
       } catch (e) { showToast('AI 预写出错：' + e.message, true); }
       finally { capDraftBusy.value = false; }
     }
@@ -4632,7 +4869,9 @@ createApp({
       try {
         const items = capItems.value.map(c => {
           const t = (c.text || '').trim();
-          return { ref: c.ref, text: t === (c.abilities || '').trim() ? '' : t };
+          const nm = (c.nameEdit || '').trim();
+          return { ref: c.ref, text: t === (c.abilities || '').trim() ? '' : t,
+                   name: nm === (c.name || '').trim() ? '' : nm };
         });
         const r = await fetch('/api/tools/sources/cap_abilities?token=' + encodeURIComponent(token.value), {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -4642,7 +4881,9 @@ createApp({
         if (!r.ok) { showToast(d.detail || '保存失败', true); return; }
         showToast('已保存 ' + ((d.saved || []).length) + ' 条工具描述');
         capModal.value = false;
-        await (capKind.value === 'mcp' ? mcpLoadCaps() : tsLoadCaps());
+        // ★ 2026-10-06：徽标（素材待补）的数据挂在「来源」上 —— 只刷工具列表的话，
+        //   用户保存完名字/描述、徽标也不会消失（实测报障）。tsLoad 连来源带工具一起重拉。
+        await tsLoad();
       } catch (e) { showToast('保存出错：' + e.message, true); }
       finally { capBusy.value = false; }
     }
@@ -4782,6 +5023,12 @@ createApp({
         showToast('解析到 ' + tsCandidates.value.length + ' 个操作'
           + (d.kept_confirmed ? ('（其中 ' + d.kept_confirmed + ' 个已确认，人工设置保留）') : '')
           + '；勾选后点「确认勾选」');
+          if (d.draft && d.draft.ok) {
+            capDraftCache.value[tsDiscoverSlug.value] = d.draft;
+            showToast('已自动 AI 预写 ' + (d.draft.items || []).length + ' 条工具描述/显示名 —— 点「📝 工具描述」确认后保存');
+          } else if (d.draft && !d.draft.ok) {
+            showToast('AI 预写跳过：' + (d.draft.why || '').slice(0, 60) + '（可补「官方介绍文案」后手动预写）');
+          }
         await tsLoad();
       } catch (e) { showToast('解析出错：' + e.message, true); }
       finally { tsBusy.value = false; }
@@ -5007,6 +5254,12 @@ createApp({
         mcpProbe.value = { ok: !!d.ok, steps: d.steps || [], ms: d.ms || 0, tool_count: (d.items || []).length };
         if (!d.ok) {
           mcpModal.value = 'probe';
+          if (d.draft && d.draft.ok) {
+            capDraftCache.value[s.slug] = d.draft;
+            if (!quiet) showToast('已自动 AI 预写 ' + (d.draft.items || []).length + ' 条工具描述/显示名 —— 点「📝 工具描述」确认后保存');
+          } else if (d.draft && !d.draft.ok && !quiet) {
+            showToast('AI 预写跳过：' + (d.draft.why || '').slice(0, 60));
+          }
           showToast('发现失败：' + (d.error || '未知错误'), true);
           return;
         }
@@ -5066,12 +5319,14 @@ createApp({
             base_url: p.base_url, api_key: p.api_key, is_active: p.is_active,
             price_in_cached: numOrNull(p.price_in_cached),
             price_in_uncached: numOrNull(p.price_in_uncached),
-            price_out: numOrNull(p.price_out) }) });   // 空串要转 null：后端是 float|None，收不了 '' ✗
+            price_out: numOrNull(p.price_out),
+            supports_vision: !!p.supports_vision }) });
         const d = await r.json();
         if (!r.ok) { showToast(d.detail || '添加失败', true); return; }
         showToast('模型配置已添加 ✅');
         newProv.value = { provider_name: '', model_name: '', base_url: '', api_key: '', is_active: false,
-                          price_in_cached: '', price_in_uncached: '', price_out: '' };
+                          price_in_cached: '', price_in_uncached: '', price_out: '',
+                          supports_vision: false };
         loadProviders();
       } catch (e) { showToast('添加出错：' + e.message, true); }
     }
@@ -5083,7 +5338,8 @@ createApp({
             base_url: p.base_url, api_key: p.api_key, is_active: p.is_active,
             price_in_cached: numOrNull(p.price_in_cached),
             price_in_uncached: numOrNull(p.price_in_uncached),
-            price_out: numOrNull(p.price_out) }) });
+            price_out: numOrNull(p.price_out),
+            supports_vision: !!newProv.supports_vision }) });
         const d = await r.json();
         if (!r.ok) { showToast(d.detail || '保存失败', true); return; }
         showToast('已保存 ✅');
@@ -5939,6 +6195,76 @@ createApp({
     const skSaved = ref(false);        // 保存成功提示
     const skNewName = ref('');
     const skPicked = ref([]);          // 本轮启用（多选叠加，发送后清空）
+    // ★ v3.1 视觉能力：「贴图提问」—— 粘贴 / 拖拽 / 点选三个入口都走 addChatImages ✓
+    //   口径：本轮最多 3 张 ✓ **只跟本轮** ✓（不进历史 ✓）；图片由后端按账号隔离落盘并压缩 ✓
+    const chatImages = ref([]);          // [{id(后端 image_id), url(本地预览), name, bytes}]
+    const chatImgBusy = ref(false);
+    const chatImgErr = ref('');
+    const chatFileInput = ref(null);
+    const CHAT_IMG_MAX = 3;
+    // ★ v3.1 输入框复刻微信：可展开的多媒体面板（**只有「相册」是真功能** ✓ 其余前端占位 ✓）
+    const multiOpen = ref(false);
+    function toggleMulti() { multiOpen.value = !multiOpen.value; }
+    function pickFromAlbum() { multiOpen.value = false; pickChatImages(); }   // 相册 = 真正的图片选择/上传 ✓
+    function soonHint(what) {                                                 // 占位入口：如实说明，别假装能用 ✗
+      multiOpen.value = false;
+      chatImgNote(what + '：前端占位，将在后续优化中接入 ✓');
+    }
+    function chatImgNote(msg) {
+      chatImgErr.value = msg || '';
+      if (msg) { setTimeout(function () { if (chatImgErr.value === msg) chatImgErr.value = ''; }, 6000); }
+    }
+    async function uploadChatImage(file) {
+      const fd = new FormData();
+      fd.append('file', file, file.name || 'image');
+      const r = await fetch('/api/chat/upload?token=' + encodeURIComponent(token.value), { method: 'POST', body: fd });
+      const d2 = await r.json().catch(function () { return {}; });
+      if (!r.ok || !d2.ok) { throw new Error(d2.detail || d2.error || '上传失败'); }
+      return d2.image;                    // {image_id, mime, bytes, width, height, ...}
+    }
+    async function addChatImages(list) {
+      const files = Array.from(list || []).filter(function (f) {
+        return f && ((f.type && /^image\//.test(f.type)) || (f.name && /\.(png|jpe?g|webp)$/i.test(f.name)));
+      });
+      if (!files.length) { chatImgNote('只认 JPG / PNG / WebP 图片'); return; }
+      const room = CHAT_IMG_MAX - chatImages.value.length;
+      if (room <= 0) { chatImgNote('本轮最多 ' + CHAT_IMG_MAX + ' 张图片（先移除一张再加）'); return; }
+      if (files.length > room) { chatImgNote('本轮最多 ' + CHAT_IMG_MAX + ' 张，多出的已忽略'); }
+      chatImgBusy.value = true;
+      for (const f of files.slice(0, room)) {
+        try {
+          const img = await uploadChatImage(f);
+          chatImages.value.push({ id: img.image_id, url: URL.createObjectURL(f),
+                                  name: f.name || '图片', bytes: img.bytes });
+          chatImgNote('');
+        } catch (e) { chatImgNote('图片上传失败：' + (e.message || e)); }
+      }
+      chatImgBusy.value = false;
+    }
+    function removeChatImage(i) {
+      const gone = chatImages.value.splice(i, 1)[0];
+      if (gone && gone.url && gone.url.indexOf('blob:') === 0) { try { URL.revokeObjectURL(gone.url); } catch (e) {} }
+    }
+    function clearChatImages(keepUrls) {
+      // keepUrls=true：图已进气泡，URL 归气泡所有 → **不许 revoke** ✗（否则气泡缩略图变空 ✗）
+      if (!keepUrls) {
+        chatImages.value.slice().forEach(function (im) {
+          if (im.url && im.url.indexOf('blob:') === 0) { try { URL.revokeObjectURL(im.url); } catch (e) {} }
+        });
+      }
+      chatImages.value = [];
+      chatImgErr.value = '';
+    }
+    function pickChatImages() { if (chatFileInput.value) { chatFileInput.value.click(); } }
+    function onChatFiles(e) { addChatImages(e.target.files); e.target.value = ''; }
+    function onChatPaste(e) {
+      const f = (e.clipboardData && e.clipboardData.files) || [];
+      if (f && f.length) { e.preventDefault(); addChatImages(f); }
+    }
+    function onChatDrop(e) {
+      const f = (e.dataTransfer && e.dataTransfer.files) || [];
+      if (f && f.length) { e.preventDefault(); addChatImages(f); }
+    }
     const skMenuOpen = ref(false);     // 输入框 / 唤出技能目录
     const skMenuIdx = ref(0);
     const skFilter = ref('');
@@ -6074,8 +6400,9 @@ createApp({
 
     function emptyCliForm() {
       // helpText 是**临时字段**（只用于草稿生成，不落库）：文档没覆盖的命令，用户可以粘 --help 原文
-      return { id: null, name: '', bin: '', install_cmd: '', auth_cmd: '', docs: '', readonly: '',
-               state: 'none', note: '', abilities: '', helpText: '' };
+      // docs_mode：能力描述的依据三选一（url 网址 / path 本机文件 / help 跑 --help），单选
+      return { id: null, name: '', bin: '', install_cmd: '', auth_cmd: '', docs: '', docs_mode: 'url',
+               readonly: '', state: 'none', note: '', abilities: '', helpText: '' };
     }
     const cliForm = ref(emptyCliForm());
 
@@ -6105,7 +6432,8 @@ createApp({
     function cliFill(t) {   // 预填示例：只把表单填好，不写库
       cliForm.value = Object.assign(emptyCliForm(), {
         name: t.name, bin: t.bin, install_cmd: t.install_cmd || '',
-        auth_cmd: t.auth_cmd || '', docs: t.docs || '', readonly: t.readonly || '', state: 'none',
+        auth_cmd: t.auth_cmd || '', docs: t.docs || '', docs_mode: t.docs_mode || 'url',
+        readonly: t.readonly || '', state: 'none',
       });
       cliEditing.value = true;
       cliErr.value = '';
@@ -6115,8 +6443,8 @@ createApp({
     function cliEdit(c) {
       cliForm.value = Object.assign(emptyCliForm(), {
         id: c.id, name: c.name, bin: c.bin, install_cmd: c.install_cmd, auth_cmd: c.auth_cmd,
-        docs: c.docs, readonly: c.readonly, state: c.state, note: c.note,
-        abilities: c.abilities || '',
+        docs: c.docs, docs_mode: c.docs_mode || 'url', readonly: c.readonly,
+        state: c.state, note: c.note, abilities: c.abilities || '',
       });
       cliEditing.value = true;
       cliErr.value = '';
@@ -6154,21 +6482,24 @@ createApp({
       try {
         const r = await fetch('/api/cli/ability_draft?token=' + encodeURIComponent(token.value), {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          // docs：让 AI 读官方文档（语义依据）；help_text：文档没覆盖时用户粘的 --help 原文
+          // docs_mode：依据三选一（url 网址 / path 本机文件 / help 跑 --help）；
+          // help_text：url|path 模式下，文档没覆盖时用户粘的 --help 原文
           body: JSON.stringify({ name: f.name, bin: f.bin, readonly: f.readonly,
-                                 docs: f.docs, help_text: f.helpText }),
+                                 docs: f.docs, docs_mode: f.docs_mode || 'url',
+                                 help_text: f.helpText }),
         });
         const d = await r.json();
         if (!r.ok) { cliErr.value = d.detail || '生成失败'; return; }
         cliForm.value.abilities = d.content || '';
         // 证据与审计回显（2026-09-24）：告诉用户这份草稿**基于什么**写的、哪里可疑
         const ev = d.evidence || {}, dcs = ev.docs || {}, hp = ev.help || {};
+        const srcLabel = dcs.label || (dcs.mode === 'help' ? '本机 --help 取证' : '官方文档');
         if (dcs.ok) {
-          cliDraftInfo.value = '已按官方文档生成：' + (dcs.url || '') + '（文档覆盖 ' + dcs.covered + '/' + ev.commands
+          cliDraftInfo.value = '已按' + srcLabel + '生成：' + (dcs.url || '本机') + '（覆盖 ' + dcs.covered + '/' + ev.commands
             + ' 条命令' + ((dcs.missing && dcs.missing.length) ? '；未覆盖：' + dcs.missing.join('、') : '') + '）'
             + (hp.total ? '｜本机 --help 实测 ' + hp.ok + '/' + hp.total + ' 条' : '');
         } else {
-          cliDraftInfo.value = '未读到官方文档（' + (dcs.note || '未填地址') + '）'
+          cliDraftInfo.value = '没拿到「' + srcLabel + '」（' + (dcs.note || '未填/未取到') + '）'
             + (hp.total ? '；改用本机 --help 实测 ' + hp.ok + '/' + hp.total + ' 条作依据' : '；只能保守生成');
         }
         cliDraftWarns.value = d.warnings || [];
@@ -6351,6 +6682,7 @@ createApp({
     // ---- M4 收尾：教程指导（只读 md 阅读页；对齐蜀道「政策文件只读阅读器」）----
     const tutKind = ref('cli');          // 'cli' | 'api' —— 决定去哪取教程（M1 API 模块自带一篇）
     const TUT_API_MD = '/front/tutorial/api_tools_tutorial.md';
+    const TUT_MCP_MD = '/front/tutorial/mcp_tools_tutorial.md';   // ★ MCP 教程（与 API 同为静态资源）
     const tutHtml = ref('');
     const tutTitle = ref('CLI 接入教程');
     const tutPath = ref('');
@@ -6436,13 +6768,16 @@ createApp({
       tutKind.value = k;
       tutLoading.value = true;
       try {
-        if (k === 'api') {
-          const r = await fetch(TUT_API_MD);
+        if (k === 'api' || k === 'mcp') {
+          // ★ API 与 MCP 两篇都是**静态资源**（不带鉴权）；CLI 那篇走 /api/tutorial/doc（要 token，
+          //   因为它的图片来自用户目录，需要后端按文件名同步到缓存目录）
+          const src = (k === 'mcp') ? TUT_MCP_MD : TUT_API_MD;
+          const r = await fetch(src);
           if (!r.ok) { showToast('教程文档读取失败（HTTP ' + r.status + '）', true); return; }
           const md = await r.text();
           const first = (md.split('\n').find(ln => ln.indexOf('# ') === 0) || '').replace(/^#\s*/, '').trim();
-          tutTitle.value = first || 'API 工具接入教程';
-          tutPath.value = 'front/tutorial/api_tools_tutorial.md';
+          tutTitle.value = first || (k === 'mcp' ? 'MCP 工具接入教程' : 'API 工具接入教程');
+          tutPath.value = (k === 'mcp') ? 'front/tutorial/mcp_tools_tutorial.md' : 'front/tutorial/api_tools_tutorial.md';
           tutUpdated.value = '';
           tutImages.value = (md.match(/!\[[^\]]*\]\([^)]+\)/g) || []).length;
           tutMissing.value = 0;
@@ -6610,6 +6945,232 @@ createApp({
     }
     function skillUnpick(name) { skPicked.value = skPicked.value.filter(n => n !== name); }
 
+    // ★ v3.1 流式输出：增量渲染（正文进气泡 / 思考进右栏折叠区）+ 收尾覆盖
+    let _scrollAt = 0;
+    function schedScroll() {
+      // 增量很密 → 滚动最多 ~8 次/秒；且用户自己往上翻时**不拽回来** ✓
+      const now = Date.now();
+      if (now - _scrollAt < 120) return;
+      _scrollAt = now;
+      const el = scroll.value;
+      if (!el) return;
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < 160) scrollToBottom();
+    }
+    function applyStreamDelta(data) {
+      const kind = (data && data.kind) || 'answer';
+      const text = (data && data.text) || '';
+      if (!text) return;
+      if (kind === 'reasoning') { thinkingText.value += text; return; }
+      const last = messages.value[messages.value.length - 1];
+      if (!last || last.role !== 'agent' || !last.streaming) {
+        // 一轮里第一次收到正文 → 开一条「正在生成」的气泡，后续增量往它身上加 ✓
+        messages.value.push({ role: 'agent', text: '', title: '正在回答…', streaming: true });
+      }
+      messages.value[messages.value.length - 1].text += text;
+      schedScroll();
+    }
+    function finishStreaming(text, extra) {
+      // 收尾：以后端返回的**完整**文本为准覆盖流式气泡（防重复渲染 ✗）；
+      // 没有流式气泡时返回 false，调用方按老路径 push 一条 ✓
+      let idx = -1;
+      for (let i = messages.value.length - 1; i >= 0; i--) {
+        const m = messages.value[i];
+        if (m.role === 'agent' && m.streaming) { idx = i; break; }
+      }
+      if (idx < 0) return false;
+      const m = messages.value[idx];
+      m.streaming = false;
+      if (text) m.text = text;
+      Object.assign(m, extra || {});
+      return true;
+    }
+    function finalizeStreamingOnError() {
+      // 兜底：上游异常/中断没走到 finishStreaming 时，别让气泡永远停在「正在回答…」✗
+      messages.value.forEach(function (m) {
+        if (m.role === 'agent' && m.streaming) {
+          m.streaming = false;
+          if (!m.text) m.text = '⚠️ 本轮没有收到内容（可重试）';
+        }
+      });
+    }
+
+    // ==================== v3.1：语音转文字（长按说话） ====================
+    // 参考交互（用户 2026-10-04 指定 ✓）：像微信/QQ —— 长按话筒开始 → 浮窗「正在收听」→ 松手结束
+    //   → 转成文字**追加**进输入框（不替换 ✓）。三条硬约束都是用户拍板的 ✓：
+    //   ① 文字追加不替换 ✓  ② 移出话筒 = 取消 ✓  ③ 音频转完即删、**不落盘** ✓（后端也只走内存 ✓）
+    // 实现要点：录音用 MediaRecorder ✓；再在浏览器里解码+重采样成 16k/mono WAV ✓
+    //   （这样后端不需要 ffmpeg ✓ 也不需要它懂 webm ✓）；麦克风需要安全上下文 ✓
+    //   （localhost/127.0.0.1 天然算安全 ✓ 用局域网 IP 打开会被浏览器拦 ✗）。
+    const recOn = ref(false);         // 正在录音
+    const recBusy = ref(false);       // 正在识别（浮窗显示「正在识别…」✓）
+    const recCancel = ref(false);     // 已移出话筒 → 松手即取消 ✓
+    const recLevel = ref(0);          // 电平 0~100（浮窗进度条 ✓）
+    const recClock = ref('0:00');     // 计时
+    let _recStream = null, _recRec = null, _recChunks = [], _recT0 = 0, _recTimer = null;
+    let _recCtx = null, _recAnalyser = null, _recRaf = 0, _recCancelled = false;
+
+    async function loadAsrStatus() {
+      try {
+        const r = await fetch('/api/asr/status?token=' + encodeURIComponent(token.value));
+        if (!r.ok) return;
+        const s = await r.json();
+        if (s && s.enabled === false) showToast('语音输入未启用（后端 ASR_ENABLED=0）', true);
+      } catch (e) { /* 拿不到状态不拦使用 ✓ 真出错时会在转写那步给人话提示 ✓ */ }
+    }
+    function _recFmt(ms) {
+      const s = Math.floor(ms / 1000);
+      return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    }
+    function _recDocUp() { if (recOn.value) recStop(); }        // 松手时若在话筒外，按钮收不到事件 ✓ 用文档级兜底 ✓
+    function _recReset() {
+      try { if (_recTimer) clearInterval(_recTimer); } catch (e) {}
+      try { if (_recRaf) cancelAnimationFrame(_recRaf); } catch (e) {}
+      try { if (_recAnalyser) _recAnalyser.disconnect(); } catch (e) {}
+      try { if (_recCtx) _recCtx.close(); } catch (e) {}
+      try { if (_recStream) _recStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}  // ★ 关麦
+      try { document.removeEventListener('mouseup', _recDocUp, true); } catch (e) {}
+      try { document.removeEventListener('touchend', _recDocUp, true); } catch (e) {}
+      _recTimer = null; _recRaf = 0; _recAnalyser = null; _recCtx = null; _recStream = null; _recRec = null;
+      _recChunks = []; recLevel.value = 0; recCancel.value = false;   // 取消态随浮窗一起归零 ✓
+    }
+    async function recStart() {
+      if (recOn.value || recBusy.value) return;
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showToast('这个浏览器不支持录音（需 localhost 或 https 打开 ✓）', true); return;
+      }
+      try {
+        _recStream = await navigator.mediaDevices.getUserMedia({
+          audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+      } catch (e) {
+        showToast(e && e.name === 'NotAllowedError'
+          ? '麦克风权限被拒绝（在地址栏的图标里允许后重试）' : '打不开麦克风：' + ((e && e.message) || e), true);
+        return;
+      }
+      _recCancelled = false; recCancel.value = false; _recChunks = []; _recT0 = Date.now();
+      recClock.value = '0:00'; recOn.value = true;
+      try {
+        _recRec = new MediaRecorder(_recStream);
+        _recRec.ondataavailable = function (e) { if (e && e.data && e.data.size) _recChunks.push(e.data); };
+        _recRec.start(100);
+      } catch (e) {
+        showToast('录音初始化失败：' + ((e && e.message) || e), true); _recReset(); recOn.value = false; return;
+      }
+      try {                                   // 电平条（照微信观感 ✓ 让用户知道"在收" ✓）
+        const AC = window.AudioContext || window.webkitAudioContext;
+        _recCtx = new AC();
+        const src = _recCtx.createMediaStreamSource(_recStream);
+        _recAnalyser = _recCtx.createAnalyser(); _recAnalyser.fftSize = 512;
+        src.connect(_recAnalyser);
+        const buf = new Uint8Array(_recAnalyser.frequencyBinCount);
+        const tick = function () {
+          if (!recOn.value) return;
+          try {
+            _recAnalyser.getByteFrequencyData(buf);
+            let sum = 0;
+            for (let i = 0; i < buf.length; i++) sum += buf[i];
+            recLevel.value = Math.min(100, Math.round((sum / buf.length) * 2.2));
+          } catch (e) {}
+          _recRaf = requestAnimationFrame(tick);
+        };
+        _recRaf = requestAnimationFrame(tick);
+      } catch (e) { /* 电平条失败不影响录音 ✓ */ }
+      _recTimer = setInterval(function () { recClock.value = _recFmt(Date.now() - _recT0); }, 200);
+      document.addEventListener('mouseup', _recDocUp, true);
+      document.addEventListener('touchend', _recDocUp, true);
+    }
+    function recMoveOut() {                    // 移出话筒 = 取消（微信同款 ✓ 用户拍板要 ✓）
+      if (recOn.value && !_recCancelled) { _recCancelled = true; recCancel.value = true; }
+    }
+    function recStop() {
+      if (!recOn.value) return;
+      const dur = Date.now() - _recT0;
+      const cancelled = _recCancelled;
+      recOn.value = false;
+      const rec = _recRec; _recRec = null;
+      const done = async function () {
+        // ★ 先取走录音分片再用 _recReset 清理 ✗ —— 顺序反了会让 Blob 恒为空
+        //   （harness 抓到过这条真 bug ✓）：_recReset 里有 `_recChunks = []` ✓
+        const chunks = _recChunks.slice();
+        const mime = (rec && rec.mimeType) || 'audio/webm';
+        _recReset();
+        if (cancelled) { showToast('已取消'); return; }
+        if (dur < 500) { showToast('说话时间太短，按住多说一会儿', true); return; }
+        const blob = new Blob(chunks, { type: mime });
+        if (!blob.size) { showToast('没有录到声音', true); return; }
+        recBusy.value = true;
+        try {
+          const wav = await _recToWav16k(blob);
+          const fd = new FormData();
+          fd.append('file', wav, 'voice.wav');
+          const r = await fetch('/api/asr?token=' + encodeURIComponent(token.value), { method: 'POST', body: fd });
+          const data = await r.json().catch(function () { return {}; });
+          if (!r.ok) { showToast('转文字失败：' + ((data && data.detail) || r.status), true); return; }
+          const text = ((data && data.text) || '').trim();
+          if (!text) { showToast('没听清，请再说一次', true); return; }
+          recAppend(text);
+        } catch (e) {
+          showToast('转文字出错：' + ((e && e.message) || e), true);
+        } finally { recBusy.value = false; }
+      };
+      if (!rec || rec.state === 'inactive') { done(); return; }
+      try { rec.onstop = done; rec.stop(); } catch (e) { done(); }
+    }
+    function recAppend(text) {                 // ★ 追加（用户拍板 ✓）不替换 ✓
+      const cur = draft.value || '';
+      const sep = (cur && /[0-9A-Za-z]$/.test(cur) && /^[0-9A-Za-z]/.test(text)) ? ' ' : '';
+      draft.value = cur + sep + text;
+      nextTick(function () {
+        const el = document.querySelector('.input-area textarea');
+        if (!el) return;
+        el.focus();
+        try { const n = el.value.length; el.setSelectionRange(n, n); } catch (e) {}
+      });
+    }
+    async function _recToWav16k(blob) {         // 浏览器内解码 + 重采样 → 16k/mono/16bit WAV ✓
+      const ab = await blob.arrayBuffer();
+      const AC = window.AudioContext || window.webkitAudioContext;
+      const tmp = new AC();
+      let decoded;
+      try { decoded = await tmp.decodeAudioData(ab); } finally { try { tmp.close(); } catch (e) {} }
+      const nch = decoded.numberOfChannels || 1;
+      let mono = new Float32Array(decoded.length);
+      for (let c = 0; c < nch; c++) {
+        const ch = decoded.getChannelData(c);
+        for (let i = 0; i < ch.length; i++) mono[i] += ch[i] / nch;
+      }
+      let pcmF = mono, rate = decoded.sampleRate;
+      if (rate !== 16000) {                     // 交给浏览器重采样（比手写插值稳 ✓）
+        const target = Math.max(1, Math.round(decoded.duration * 16000));
+        const off = new OfflineAudioContext(1, target, 16000);
+        const buf = off.createBuffer(1, mono.length, rate || 16000);
+        buf.copyToChannel(mono, 0);
+        const s = off.createBufferSource(); s.buffer = buf; s.connect(off.destination); s.start();
+        const out = await off.startRendering();
+        pcmF = out.getChannelData(0); rate = 16000;
+      }
+      return _wavBlob(_floatTo16(pcmF), rate);
+    }
+    function _floatTo16(f) {
+      const o = new Int16Array(f.length);
+      for (let i = 0; i < f.length; i++) {
+        const s = Math.max(-1, Math.min(1, f[i]));
+        o[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      }
+      return o;
+    }
+    function _wavBlob(int16, sr) {              // 44 字节标准 WAV 头 ✓ 后端只认这种（免 ffmpeg ✓）
+      const n = int16.length * 2, buf = new ArrayBuffer(44 + n), v = new DataView(buf);
+      const w = function (o, s) { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+      w(0, 'RIFF'); v.setUint32(4, 36 + n, true); w(8, 'WAVE'); w(12, 'fmt ');
+      v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+      v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true);
+      v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+      w(36, 'data'); v.setUint32(40, n, true);
+      new Int16Array(buf, 44).set(int16);
+      return new Blob([buf], { type: 'audio/wav' });
+    }
+    // ==================== /v3.1：语音转文字（长按说话） ====================
+
     async function send(text) {
       const q = (text != null ? text : draft.value).trim();
       if (!q || loading.value) return;
@@ -6620,7 +7181,9 @@ createApp({
       // M4a：技能「本轮一次性」——发送即消费掉选择，同时记一份在气泡上供追溯
       const usedSkills = skPicked.value.slice();
       skPicked.value = [];
-      messages.value.push({ role: 'user', text: q, skills: usedSkills });
+      // ★ v3.1：气泡带上本轮贴的图（对象 URL 交给气泡持有 ✓ 清理时**不 revoke** ✓ 否则缩略图会变空 ✗）
+      const _bubbleImgs = chatImages.value.map(function (x) { return { url: x.url, name: x.name }; });
+      messages.value.push({ role: 'user', text: q, skills: usedSkills, imgs: _bubbleImgs });
       loading.value = true;
       stopping.value = false;
       desktopStatus('正在回答…');      // 桌面版：托盘提示跟着回答进度（长回答不用盯窗口）
@@ -6632,16 +7195,29 @@ createApp({
         let url = '/api/chat?token=' + encodeURIComponent(token.value) + '&question=' + encodeURIComponent(q);
         if (activeThread.value) url += '&thread_id=' + encodeURIComponent(activeThread.value);
         if (usedSkills.length) url += '&skills=' + encodeURIComponent(usedSkills.join(','));
+        // ★ v3.1 视觉：本轮贴的图（后端已校验归属 ✓ 这里只传 id ✓ 顺序即展示顺序 ✓）
+        const _imgIds = chatImages.value.map(function (x) { return x.id; });
+        if (_imgIds.length) url += '&images=' + encodeURIComponent(_imgIds.join(','));
         const r = await fetch(url, { method:'POST', signal: ctl.signal });
+        clearChatImages(true);   // 图已随本轮发出且已进气泡：收起预览条，但**保留 URL** ✓ 气泡缩略图要一直看得见 ✓
         const data = await r.json();
         if (!r.ok) messages.value.push({ role:'agent', text:'⚠️ ' + (data.detail || '请求失败'), title:'出错了' });
         else {
           const cut = !!data.cancelled;  // 用户点了「中断」：后端落一条占位回答并正常返回
-          messages.value.push({ role:'agent', text: data.answer,
+          // ★ v3.1：本轮走过流式 → 用后端返回的完整文本**覆盖**那条气泡（不新增 ✗）；
+          //   没有流式（开关关了 / 一个增量都没推）→ 仍按老路径新增一条 ✓
+          const _ok = finishStreaming(data.answer, {
                                 title: cut ? '⏹ 已中断' : (q.slice(0,12) + (q.length > 12 ? '…' : '')),
                                 msg_id: data.last_msg_id || null,  // M3：消息 id 供导出入库去重 / 删除问答用
                                 interrupted: cut,
                                 kb_ingested: false });
+          if (!_ok) {
+            messages.value.push({ role:'agent', text: data.answer,
+                                title: cut ? '⏹ 已中断' : (q.slice(0,12) + (q.length > 12 ? '…' : '')),
+                                msg_id: data.last_msg_id || null,
+                                interrupted: cut,
+                                kb_ingested: false });
+          }
           if (data.thread_id && !activeThread.value) activeThread.value = data.thread_id; // 旧版直发自动归档
           await loadSessions();  // 标题/消息数/时间已变，刷新列表
           if (cut) showToast('已中断本轮回答');
@@ -6649,12 +7225,20 @@ createApp({
       } catch (e) {
         if (e && e.name === 'AbortError') {
           // 已请求中断但后端仍卡在工具调用里 → 前端先撒手，不等它了
-          messages.value.push({ role:'agent', text:'⏹ 已中断本轮回答（后端仍在收尾，结果会被丢弃）。',
-                                title:'⏹ 已中断', interrupted:true });
+          // ★ v3.1：已经流出来的半截**留着**（标成已中断 ✓），不另起一条 ✗
+          const _kept = finishStreaming('', { title:'⏹ 已中断', interrupted:true });
+          if (!_kept) {
+            messages.value.push({ role:'agent', text:'⏹ 已中断本轮回答（后端仍在收尾，结果会被丢弃）。',
+                                  title:'⏹ 已中断', interrupted:true });
+          }
         } else {
           messages.value.push({ role:'agent', text:'⚠️ 请求出错：' + e.message, title:'出错了' });
         }
-      } finally { chatAbort = null; stopping.value = false; loading.value = false; desktopStatus(''); await nextTick(); scrollToBottom(); }
+      } finally {
+        chatAbort = null; stopping.value = false; loading.value = false;
+        finalizeStreamingOnError();   // ★ v3.1：异常路径也别把气泡留在「正在回答…」✗
+        desktopStatus(''); await nextTick(); scrollToBottom();
+      }
     }
 
     // 中断本轮回答：给后端置中断标记（它会在下一次模型调用前停下并落占位回答），
@@ -6775,13 +7359,17 @@ createApp({
       if (token.value) {
         if (await verifySession()) {
           connectWS(); loadReports(); loadSubs(); loadMyData(); loadProviders(); loadSouls(); loadMemory();
-          loadVoicePacks(); loadSessions(); loadKbStatus(); loadSkills();
+          loadVoicePacks(); loadSessions(); loadKbStatus(); loadSkills(); loadAsrStatus();
         }
       }
       wxStart();
     });
 
     return {
+      recOn, recBusy, recCancel, recLevel, recClock, recStart, recStop, recMoveOut, loadAsrStatus,
+      chatImages, chatImgBusy, chatImgErr, chatFileInput, pickChatImages, onChatFiles,
+      multiOpen, toggleMulti, pickFromAlbum, soonHint,
+      onChatPaste, onChatDrop, removeChatImage, addChatImages, clearChatImages,
       token, username, password, regRole, errMsg, busy, role, view, go,
       messages, monitor, sessions, activeThread, draft, loading, exporting, scroll, examples, thinkingText,
       loadSessions, newSession, switchSession, delSession, renameSession, fmtTime,
@@ -6794,7 +7382,7 @@ createApp({
       providers, newProv, loadProviders, addProvider, saveProvider, activateProvider, delProvider,
       tsSources, tsCaps, tsStats, tsCandidates, tsSpecText, tsDiscoverSlug, tsEditingId, tsBusy, tsForm,
       capModal, capKind, capSource, capItems, capBusy, capDraftBusy, capDraftWarns,
-      capOpen, capClose, capCoveredText, capClearAll, capDraft, capSave, capHasEvidence,
+      capOpen, capClose, capCoveredText, capClearAll, capDraft, capSave, capHasEvidence, capIssuesOf,
       tsCheckedCount, tsModal, tsModalSource,
       mcpSources, mcpAll, mcpCaps, mcpStats, mcpForm, mcpEditingId, mcpBusy, mcpModal, mcpProbe, mcpProbeTitle,
       mcpTransportText, mcpTargetText, mcpNewSource, mcpEdit, mcpSave, mcpDel, mcpTest, mcpDiscover,
@@ -6852,6 +7440,30 @@ createApp({
     };
   }
 }).mount('#app');
+</script>
+<script src="/front/login_vortex.js"></script>
+<script>
+  /* 登录页背景的生命周期：出现 #login-vortex 就挂载，消失就销毁（Vue 里登录块是 v-if 条件渲染）✓
+     另外：模块内部已尊重 prefers-reduced-motion（此时不画，交给 CSS 底色）✓ */
+  (function () {
+    var inst = null;
+    function sync() {
+      var el = document.getElementById('login-vortex');
+      if (el && !inst) {
+        try { inst = window.LoginVortex.autoMount('#login-vortex'); } catch (e) { inst = null; }
+        // ★ 卡片悬停展开时背景环同步放大（原来那个"点击缩环"挪到这里 ✓ 用户 2026-09-30 指定）
+        var card = document.querySelector('.login-container');
+        if (card && inst) {
+          card.addEventListener('pointerenter', function () { inst.setZoom(1.18); });
+          card.addEventListener('pointerleave', function () { inst.setZoom(1); });
+        }
+      }
+      else if (!el && inst) { try { inst.destroy(); } catch (e) {} inst = null; }
+    }
+    document.addEventListener('DOMContentLoaded', sync);
+    try { new MutationObserver(sync).observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
+    sync();
+  })();
 </script>
 </body>
 </html>

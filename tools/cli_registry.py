@@ -35,6 +35,9 @@ LIVE_STATES = ("installed", "authed")   # 放行 Agent 代跑的状态（都表�
 
 # 只读命令里仍然禁止的「落盘 / 分发」类参数（沙箱只读，不允许把响应写成文件）
 WRITE_FLAGS = ("-o", "--output", "--output-dir", "--output-qrcode", "--download", "--out")
+# 无副作用的「帮助/版本」开关：能力描述取证要跑裸 `<bin> --help`，它比放行任一子命令更窄
+HARMLESS_FLAGS = ("--help", "-h", "--version", "-v", "--usage", "--version-only")
+DOCS_MODES = ("url", "path", "help")     # 能力描述依据三选一（单选）
 
 MAX_NAME = 40
 MAX_BIN = 64
@@ -232,9 +235,23 @@ def _validate_payload(payload: dict, *, existing_bins: set[str], cur=None) -> di
     bin_name = validate_bin(payload.get("bin"))
     install_cmd = _optional_text(payload, "install_cmd", cur, MAX_CMD, "安装命令")
     auth_cmd = _optional_text(payload, "auth_cmd", cur, MAX_CMD, "认证命令")
-    docs = _optional_text(payload, "docs", cur, MAX_DOCS, "文档链接")
-    if docs and not re.match(r"^https?://", docs, re.I):
-        raise CliConfigError("文档链接必须是 http(s):// 开头（或留空）")
+    # 能力描述的依据：三选一（单选）。缺省即保留原值（老配置默认 url）。
+    raw_mode = payload.get("docs_mode", None)
+    if raw_mode in (None, ""):
+        docs_mode = ((cur["docs_mode"] if cur is not None else "") or "url")
+    else:
+        docs_mode = str(raw_mode).strip().lower()
+    if docs_mode not in DOCS_MODES:
+        raise CliConfigError("能力描述的依据只能选一种：url（网址）/ path（本机文件）/ help（跑 --help）")
+    docs = _optional_text(payload, "docs", cur, MAX_DOCS, "文档来源")
+    if docs_mode == "url":
+        if docs and not re.match(r"^https?://", docs, re.I):
+            raise CliConfigError("选了「网址」就得填 http(s):// 开头的地址（或改用「本机文件」）")
+    elif docs_mode == "path":
+        if docs and not re.match(r"^([A-Za-z]:[\\/]|/|\\\\|~[\\/])", docs):
+            raise CliConfigError("选了「本机文件」请填绝对路径（如 D:\\code\\qqmail-cli\\README.md）")
+    else:                                  # help：依据来自本机 --help，不存文档地址
+        docs = ""
     # 只读清单：键缺省/None → 保留原清单；显式空串 → 清空（= 不放行 Agent 代跑）
     if "readonly" not in payload or payload.get("readonly") is None:
         raw_rules = (cur["readonly"] if cur is not None else "") or ""
@@ -248,8 +265,8 @@ def _validate_payload(payload: dict, *, existing_bins: set[str], cur=None) -> di
     else:
         abilities = _clean_text(payload.get("abilities"), MAX_ABILITIES_HARD, "能力描述", allow_multiline=True)
     return {"name": name, "bin": bin_name, "install_cmd": install_cmd, "auth_cmd": auth_cmd,
-            "docs": docs, "rules": rules, "notes": notes, "abilities": abilities,
-            "existing_bins": existing_bins}
+            "docs": docs, "docs_mode": docs_mode, "rules": rules, "notes": notes,
+            "abilities": abilities, "existing_bins": existing_bins}
 
 
 # ---------------------------------------------------------------- 本机检测
@@ -278,7 +295,7 @@ def detect_local(bin_name: str) -> dict:
 
 
 # ---------------------------------------------------------------- 读取（按账号隔离）
-_ROW_COLS = ("id", "name", "bin", "install_cmd", "auth_cmd", "docs", "readonly", "state", "note", "updated_at")
+_ROW_COLS = ("id", "name", "bin", "install_cmd", "auth_cmd", "docs", "docs_mode", "readonly", "state", "note", "updated_at")
 
 
 def list_clis(account_id: int | None) -> list[dict]:
@@ -289,7 +306,7 @@ def list_clis(account_id: int | None) -> list[dict]:
         conn = get_personal_conn()
         try:
             rows = conn.execute(
-                "SELECT id, name, bin, install_cmd, auth_cmd, docs, readonly, state, note, updated_at, abilities "
+                "SELECT id, name, bin, install_cmd, auth_cmd, docs, docs_mode, readonly, state, note, updated_at, abilities "
                 "FROM user_clis WHERE account_id=? ORDER BY id", (int(account_id),)).fetchall()
         finally:
             conn.close()
@@ -305,6 +322,7 @@ def list_clis(account_id: int | None) -> list[dict]:
             "id": r["id"], "name": r["name"], "bin": r["bin"],
             "install_cmd": r["install_cmd"] or "", "auth_cmd": r["auth_cmd"] or "",
             "docs": r["docs"] or "", "readonly": r["readonly"] or "",
+            "docs_mode": (r["docs_mode"] or "url") if "docs_mode" in r.keys() else "url",
             "abilities": (r["abilities"] or "") if "abilities" in r.keys() else "",
             "rules": rules,
             "agent_commands": [f"{r['bin']} " + " ".join(t) for t in rules],
@@ -376,17 +394,17 @@ def save_cli(account_id: int | None, payload: dict) -> dict:
         abilities = data.get("abilities") or ""
         if cur_id is None:
             conn.execute(
-                "INSERT INTO user_clis (account_id, name, bin, install_cmd, auth_cmd, docs, readonly, state, note, abilities, updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?, datetime('now','localtime'))",
+                "INSERT INTO user_clis (account_id, name, bin, install_cmd, auth_cmd, docs, docs_mode, readonly, state, note, abilities, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?, datetime('now','localtime'))",
                 (int(account_id), data["name"], data["bin"], data["install_cmd"], data["auth_cmd"],
-                 data["docs"], readonly_text, state, note, abilities))
+                 data["docs"], data["docs_mode"], readonly_text, state, note, abilities))
             cur_id = conn.execute("SELECT last_insert_rowid() AS i").fetchone()["i"]
         else:
             conn.execute(
-                "UPDATE user_clis SET name=?, bin=?, install_cmd=?, auth_cmd=?, docs=?, readonly=?, state=?, note=?, abilities=?, "
+                "UPDATE user_clis SET name=?, bin=?, install_cmd=?, auth_cmd=?, docs=?, docs_mode=?, readonly=?, state=?, note=?, abilities=?, "
                 "updated_at=datetime('now','localtime') WHERE account_id=? AND id=?",
                 (data["name"], data["bin"], data["install_cmd"], data["auth_cmd"], data["docs"],
-                 readonly_text, state, note, abilities, int(account_id), cur_id))
+                 data["docs_mode"], readonly_text, state, note, abilities, int(account_id), cur_id))
         conn.commit()
     finally:
         conn.close()
@@ -581,14 +599,60 @@ _UPPER_ARG_RE = re.compile(r"(?<![A-Z0-9_])([A-Z][A-Z0-9_]{2,})(?![A-Z0-9_])")
 _NOT_POSITIONAL = {"USAGE", "OPTIONS", "OPTION", "COMMAND", "COMMANDS", "ARGS", "ARG", "HELP", "FLAGS", "FILE"}
 
 
-def classify_usage(usage: str) -> str:
-    """按命令行帮助的 Usage 行判断命令形态。
+_FLAG_VALUE_RE = re.compile(
+    r"--[A-Za-z][A-Za-z0-9-]*(?:=|\s+[<\[]|\s+(?:string|strings|int|integer|number|float|bool|boolean"
+    r"|path|file|duration|array|list|value)\b)", re.I)
+_FLAG_NAME_RE = re.compile(r"(--[A-Za-z][A-Za-z0-9-]*)")
+_REQ_WORD_RE = re.compile(r"\b(required|requires?|mandatory)\b|必需|必填|必输")
+_REQ_SECTION_RE = re.compile(r"^\s*(required\s+(flags|options|arguments)|必填|必需)", re.I)
+_SECTION_HEAD_RE = re.compile(r"^\s*[A-Za-z\u4e00-\u9fff][\w \u4e00-\u9fff]*:\s*$")
 
-    三类，含义与**能不能直接调**一一对应：
+
+def help_required_flags(help_text: str) -> list[str]:
+    """从帮助正文里挑出「**必需**且**要取值**」的开关（如 `--id string  (required, get from +list)`）。
+
+    为什么要它（2026-10-07 实测）：`classify_usage` 只读 Usage 行的**位置参数**，
+    对「参数全用 flag 给」的 CLI（agently-cli 就是：`message +read [flags]` + `Requires --id`）
+    会把明明需要输入的 `+read` 判成「无参数直调」，进而让审计报出「凭空造链」的**误报**。
+    只用**帮助原文**里的证据判（写没写 required、开关要不要取值），不猜。
+    """
+    found: list[str] = []
+    in_req = False
+    for raw in (help_text or "").splitlines():
+        line = raw.rstrip()
+        if not line.strip():
+            continue
+        if _REQ_SECTION_RE.match(line):          # 形如 “Required Flags:”
+            in_req = True
+            continue
+        if _SECTION_HEAD_RE.match(line) and not line.lstrip().startswith("-"):
+            in_req = False                       # 换到别的小节（Flags: / Examples: …）
+            continue
+        if "--" not in line:
+            continue
+        if not (in_req or _REQ_WORD_RE.search(line)):
+            continue
+        m = _FLAG_VALUE_RE.search(line)
+        if not m:                                # `--dry-run` 这种不带值的开关不算「输入」
+            continue
+        name = _FLAG_NAME_RE.search(m.group(0)).group(1)
+        if name not in found:
+            found.append(name)
+    return found
+
+
+def classify_usage(usage: str, help_text: str = "") -> str:
+    """按命令行帮助的 Usage 行判断命令形态（`help_text` 用来补 flag 形式的必需输入）。
+
+    四类，含义与**能不能直接调**一一对应：
       · `needs_id`   —— 有位置参数且参数名以 id 结尾（`<bookId>`）→ 需要先解析出 ID，
                        **必须作为两步链的第 2 步**（直调会报参数错）；
       · `free_text`  —— 有位置参数但是自由文本（`<title>` / `<keyword>`）→ 可以当两步链的第 1 步；
-      · `standalone` —— 没有位置参数 → 直接可调，**不能当两步链的第 2 步**（前一步的产出喂不进去）。
+      · `needs_flag` —— 没有位置参数，但帮助里写明了**必需的值开关**（如 `--id string (required)`）
+                       → 同样是两步链的第 2 步候选（2026-10-07 新增：旧判定把它误判成
+                       `standalone`，于是审计对正确的两步链报「凭空造链」）；
+      · `standalone` —— 既没有位置参数也没有必需的值开关 → 直接可调，
+                       **不能当两步链的第 2 步**（前一步的产出喂不进去）。
     """
     u = (usage or "").strip()
     if not u:
@@ -597,6 +661,9 @@ def classify_usage(usage: str) -> str:
     if not names:
         names = [x for x in _UPPER_ARG_RE.findall(u) if x not in _NOT_POSITIONAL]
     if not names:
+        # 没有位置参数：再看帮助正文里有没有「必需且要取值」的开关（flag 风格的 CLI）
+        if help_required_flags(help_text):
+            return "needs_flag"
         return "standalone"
     for n in names:
         if re.search(r"id$", n, re.I):
@@ -620,7 +687,8 @@ def collect_help(bin_name: str, cmds: list[str], *, username: str | None = None,
     out: dict[str, dict] = {}
     for c in cmds:
         tokens = c.split()
-        got = {"ok": False, "usage": "", "desc": "", "kind": "unknown", "error": ""}
+        got = {"ok": False, "usage": "", "desc": "", "kind": "unknown",
+               "requires_flags": [], "help": "", "error": ""}
         for flag in ("--help", "-h"):                       # 少数 CLI 只认 -h
             res = rt.execute(bin_name, tokens + [flag], timeout=timeout, username=username,
                              account_id=account_id, adhoc=adhoc)
@@ -631,15 +699,82 @@ def collect_help(bin_name: str, cmds: list[str], *, username: str | None = None,
                 idx = next((i for i, l in enumerate(lines) if l.lower().startswith("usage:")), 0)
                 got = {"ok": True, "usage": m.group(1).strip(),
                        "desc": lines[idx + 1] if idx + 1 < len(lines) else "",
-                       "kind": classify_usage(m.group(1)), "error": ""}
+                       "kind": classify_usage(m.group(1), text),
+                       "requires_flags": help_required_flags(text),
+                       "help": text[:1200],          # 供审计判「工具自己有没有写明这条链」
+                       "error": ""}
                 break
             got["error"] = res.get("error") or (res.get("stderr") or "").strip()[:120] or "没有输出 Usage 行"
         out[c] = got
     return out
 
 
+def collect_help_digest(bin_name: str, cmds: list[str], *, username: str | None = None,
+                        account_id: int | None = None, timeout: int = HELP_TIMEOUT,
+                        max_cmds: int = 12, max_chars: int = 20000) -> dict:
+    """把本机 `--help` 采成**文档级证据**（供「能力描述」在无 README 时当唯一事实来源）。
+
+    为什么要它（2026-10-07 用户提出）：自研 CLI（qqmail）没上传 GitHub、闭源 CLI（agently-cli）
+    官网只有一句介绍——`<bin> --help` 是**唯一**的方法信息源。原先只采「只读清单里那几条子命令」
+    的 `--help`，而裸 `<bin> --help` 会被只读闸判「缺少子命令」直接拒（`readonly_verdict` 已放行）。
+
+    采两段：① 裸 `<bin> --help`（多数 CLI 在这里列出全部子命令 + 一句话说明，信息密度最高）；
+    ② 只读清单里每条命令的 `--help`（各命令的参数形态）。都走沙箱运行时（超时/截断/审计照旧），
+    失败不抛异常——采不到就返回 ok=False 让上层优雅降级。
+    """
+    from tools._runtime import shell_runtime as rt          # 局部 import：运行时也 import 本模块
+
+    rules = [[t for t in c.split() if t] for c in cmds]
+    adhoc = {bin_name: rules}
+    blocks: list[str] = []
+    ran: list[str] = []
+    failed: list[str] = []
+
+    def _grab(argv: list[str]) -> str:
+        res = rt.execute(bin_name, argv, timeout=timeout, username=username,
+                         account_id=account_id, adhoc=adhoc)
+        return ((res.get("stdout") or "") + "\n" + (res.get("stderr") or "")).strip()
+
+    # ① 裸 --help：命令总览。注意**不看退出码**——不少 CLI 把帮助写到 stderr 并以非 0 退出
+    #    （实测 argparse 系就是这么干的），有正文就算采到。
+    head = _grab(["--help"]) or _grab(["-h"])
+    if head:
+        blocks.append("$ %s --help\n%s" % (bin_name, head))
+        ran.append(bin_name)
+    else:
+        failed.append("%s --help" % bin_name)
+
+    # ② 只读清单里每条命令的 --help（有上限，免得 40 条清单把接口拖慢）
+    for c in (cmds or [])[:max_cmds]:
+        text = _grab(c.split() + ["--help"])
+        if text:
+            blocks.append("$ %s %s --help\n%s" % (bin_name, c, text))
+            ran.append(c)
+        else:
+            failed.append("%s %s --help" % (bin_name, c))
+
+    joined = "\n\n".join(blocks)
+    note = "本机 --help 采到 %d 段" % len(ran)
+    if failed:
+        note += "；%d 段没采到（%s）" % (len(failed), "、".join(failed[:3]))
+    if len(joined) > max_chars:
+        joined = joined[:max_chars] + "\n\n…（--help 输出过长，已截断）"
+        note += "；正文超 %d 字符已截断" % max_chars
+    if not joined.strip():
+        note = "一条 --help 都没采到（可执行名对不对？装没装？）：" + note
+    return {"ok": bool(joined.strip()), "text": joined, "ran": ran, "failed": failed, "note": note}
+
+
 def suggest_resolver(kinds: dict[str, str], help_map: dict | None = None) -> str:
     """在清单里挑一条「最像解析器」的命令（两步链的第 1 步用）。
+
+    两条路（都只用**帮助原文里的证据**，不猜）：
+      ① 自由文本参数的命令里，挑 help 描述写着 resolve / 解析 / to id 的那条
+         （`book resolve <title>` 的原文就是 "Resolve a book title to likely bookId matches"）；
+      ② flag 风格 CLI（agently-cli 这类）：没有自由文本命令可挑，就反过来看
+         「需要开关参数」那条命令的帮助里**自己提到了清单里的哪条命令**——
+         `message +read --help` 写着 `Requires --id (message_id from +list output)`，
+         于是第 1 步就是 `message +list`。
 
     优先：自由文本参数 + help 描述里出现 resolve / 解析 / to id 之类字样
     （`book resolve <title>` 的原文就是 "Resolve a book title to likely bookId matches"）。
@@ -647,6 +782,19 @@ def suggest_resolver(kinds: dict[str, str], help_map: dict | None = None) -> str
     """
     free = [c for c, k in (kinds or {}).items() if k == "free_text"]
     if not free:
+        # ② flag 风格：去「需要开关参数」那条命令的帮助里反查它自己提到的清单内命令
+        for c, k in (kinds or {}).items():
+            if k != "needs_flag":
+                continue
+            docs = ((help_map or {}).get(c) or {}).get("help") or ""
+            if not docs:
+                continue
+            for other in (kinds or {}):
+                if other == c:
+                    continue
+                toks = [t for t in other.split() if len(t) > 1]
+                if toks and all(t in docs for t in toks):
+                    return other
         return ""
     hm = help_map or {}
     for c in free:
@@ -672,8 +820,11 @@ def audit_ability_draft(abilities: str, kinds: dict[str, str], help_map: dict | 
     四条规则全部来自 `--help` 真值，不猜：
       R1 直调了需要 ID 的命令（`book progress`）→ 应写成「<解析命令> 再 book progress」；
       R2 两步链的第 1 步自己就需要 ID（链头直接报参数错）；
-      R3 两步链的第 2 步是 standalone（不需要参数 → 前一步产出喂不进去 = 凭空造链）；
-      R4 两步链的第 1 步是 standalone（不产出可解析 ID）。
+      R3 两步链的第 2 步是 standalone（**真的**什么输入都不需要 → 前一步产出喂不进去 = 凭空造链）；
+      R4 两步链的第 1 步是 standalone（不产出可解析 ID）；
+    两条都只对 `standalone` 报——「flag 形式给值的必需输入」（`needs_flag`）不算无参数，
+    且若第 2 步的帮助**自己写明**了「从第 1 步那条命令取」的证据（如 `--id (message_id from +list output)`），
+    R4 也跳过：工具自己承认这条链，不该按「凭空造链」提示用户（2026-10-07 实测两处误报）。
     配套 `coverage_note()` 提示「清单里哪些命令没被描述到」。
     """
     cmds = list((kinds or {}).keys())
@@ -699,18 +850,41 @@ def audit_ability_draft(abilities: str, kinds: dict[str, str], help_map: dict | 
             continue
         k1 = (kinds or {}).get(first, "") if first else ""
         k2 = (kinds or {}).get(second, "") if second else ""
-        if not chain and k1 == "needs_id":
+        if not chain and k1 in ("needs_id", "needs_flag"):
             sug = suggest_resolver(kinds, help_map)
-            hint = ("建议写成「%s 再 %s」" % (sug, first)) if sug else "它需要先拿到 ID 才能调"
-            warns.append("「%s」直调了需要 ID 的 `%s`——%s" % (trigger, first, hint))
+            what = "需要 ID 的" if k1 == "needs_id" else "需要开关参数的"
+            if sug:
+                hint = "建议写成「%s 再 %s」" % (sug, first)
+            elif k1 == "needs_id":
+                hint = "它需要先拿到 ID 才能调"
+            else:
+                hint = "它需要先拿到该开关要的输入（如 `--id`）才能调"
+            warns.append("「%s」直调了%s `%s`——%s" % (trigger, what, first, hint))
         elif chain and k1 == "needs_id":
             warns.append("「%s」两步链的第 1 步 `%s` 自己就需要 ID，会直接报参数错" % (trigger, first))
+        elif chain and k1 == "needs_flag":
+            warns.append("「%s」两步链的第 1 步 `%s` 自己就需要开关参数，会直接报参数错" % (trigger, first))
         elif chain and k2 == "standalone":
             warns.append("「%s」两步链的第 2 步 `%s` 不需要参数——第 1 步的产出喂不进去（凭空造链）"
                          % (trigger, second))
-        elif chain and k1 == "standalone":
+        elif chain and k1 == "standalone" and not _docs_link_steps(first, second, help_map):
             warns.append("「%s」两步链的第 1 步 `%s` 不产出可解析的 ID" % (trigger, first))
     return warns
+
+
+def _docs_link_steps(first: str, second: str, help_map: dict | None) -> bool:
+    """第 2 步的帮助原文里，是否**自己写明**了「从第 1 步取输入」。
+
+    例：`message +read --help` 写着 `Requires --id (message_id from +list output)` ——
+    `+list` 正是第 1 步。工具自己承认的链，不该被审计当成「凭空造链」。
+    """
+    if not second:
+        return False
+    docs = ((help_map or {}).get(second) or {}).get("help") or ""
+    if not docs:
+        return False
+    toks = [t for t in (first or "").split() if len(t) > 1]
+    return bool(toks) and all(t in docs for t in toks)
 
 
 def coverage_note(abilities: str, cmds: list[str]) -> str:
@@ -792,6 +966,12 @@ def readonly_verdict(argv: list[str], readonly: list[list[str]]) -> tuple[bool, 
         return False, "该 CLI 没填只读命令清单——没清单就不放行 Agent 代跑（到你自己的终端执行）"
     path = command_path(argv)
     if not path:
+        # ★ 特殊放行：裸的「帮助 / 版本」调用没有副作用，而且是「能力描述」的重要证据来源
+        #   （自研 / 闭源 CLI 没有 README，只有 --help）。它比放行任一子命令**更窄**：
+        #   前提是该 CLI 已经填了只读清单（= 用户已登记放行范围），且参数里只能出现这几个开关。
+        #   落盘参数（--output 等）在上面已先行拒绝，所以 `--help --output x` 依旧被挡。
+        if readonly and argv and all(a in HARMLESS_FLAGS for a in argv):
+            return True, "命中放行：裸 `--help`/`--version`（无副作用，供能力描述取证）"
         return False, "缺少子命令（例如 `auth status`）"
     for rule in readonly:
         if path[:len(rule)] == list(rule):

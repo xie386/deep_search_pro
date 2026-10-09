@@ -119,8 +119,33 @@ def test_missing_required_arg_rejected(env):
 
 
 def test_wrong_type_arg_rejected(env):
-    out = ci.invoke("api:weather#getCurrent", {"city": 123}, account_id=env["aid"])
+    """★ 2026-10-06 起「数字/字符串互转」不再算错（见 test_stringy_args_are_coerced）；
+    这条改成用**真正无法转换**的类型（对象传给 string 参数）来断言拒绝。"""
+    out = ci.invoke("api:weather#getCurrent", {"city": {"a": 1}}, account_id=env["aid"])
     assert out["ok"] is False and "类型应为 string" in out["text"]
+
+
+def test_stringy_args_are_coerced():
+    """模型爱把标量写成字符串（"15" / "true"）或把数组写成 JSON 字符串（"[1,2]"）。
+
+    真机实测（2026-10-05 23:25 那轮）19 次调用里 9 次因这类类型不符被直接拒，
+    模型只能用原生类型重发 → 一次查询变成三连发。故先宽容转换、再校验；
+    转不了的仍报错（且错误信息保持可行动）。
+    """
+    schema = {"properties": {"max_results": {"type": "integer"}, "full_metadata": {"type": "boolean"},
+                             "date": {"type": "string"}, "ids": {"type": "array"}}}
+    args, notes = ci.coerce_args(schema, {"max_results": "15", "full_metadata": "true",
+                                          "date": 1871, "ids": "[1,2]"})
+    assert args == {"max_results": 15, "full_metadata": True, "date": "1871", "ids": [1, 2]}
+    assert len(notes) == 4
+    assert ci.validate_args(schema, args) == []
+    # 原生类型不动，也不产生说明
+    same, none_notes = ci.coerce_args(schema, {"max_results": 20, "full_metadata": True})
+    assert same == {"max_results": 20, "full_metadata": True} and none_notes == []
+    # 转不了的原样留下，校验照样报错
+    bad, _ = ci.coerce_args(schema, {"max_results": "abc", "full_metadata": "许"})
+    assert bad == {"max_results": "abc", "full_metadata": "许"}
+    assert "类型应为 integer" in "；".join(ci.validate_args(schema, bad))
 
 
 def test_enum_violation_rejected(env):
@@ -265,3 +290,34 @@ def test_tool_call_schema_accepts_string_params_and_still_says_object():
     with pytest.raises(Exception) as e:
         sch.model_validate({"ref": "x", "params": ["city"]})
     assert "params" in str(e.value)
+
+def test_clip_payload_keeps_whole_items():
+    """★ 2026-10-06：截断按**完整条目**裁（旧实现硬切字符，模型看到半个 JSON）。"""
+    items = [{"id": i, "title": "x" * 40} for i in range(50)]
+    txt, cut = ci.clip_payload(items, 600)
+    assert cut is True and txt.endswith("…（后续条目未列出）")
+    n = txt.count('"id"')
+    assert n >= 1
+    body = json.loads(txt.replace("…（后续条目未列出）", ""))
+    assert len(body) == n and body[-1]["id"] == n - 1
+
+
+def test_clip_payload_trims_inner_record_list():
+    """顶层对象里带记录列表（如 {"records": [...]}）→ 只裁那个列表并说明。"""
+    body = {"total": 99, "records": [{"i": i, "t": "y" * 30} for i in range(40)]}
+    txt, cut = ci.clip_payload(body, 700)
+    assert cut is True
+    out = json.loads(txt)
+    assert out["total"] == 99 and len(out["records"]) < 40
+    assert "_local_note" in out
+
+
+def test_clip_payload_passthrough_when_small():
+    txt, cut = ci.clip_payload({"a": 1}, 1000)
+    assert cut is False and json.loads(txt) == {"a": 1}
+
+
+def test_paging_hint_only_when_schema_has_paging_args():
+    hint = ci._paging_hint({"properties": {"query": {"type": "string"}, "page": {"type": "integer"}}})
+    assert "page" in hint and "不要把同一个查询原样再发一次" in hint
+    assert ci._paging_hint({"properties": {"query": {"type": "string"}}}) == ""

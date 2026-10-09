@@ -143,6 +143,170 @@ _TYPE_OK = {
 }
 
 
+_MISSING = object()
+
+
+def _as_int(v):
+    if isinstance(v, bool):
+        return _MISSING
+    if isinstance(v, int):
+        return v
+    if isinstance(v, float):
+        return int(v) if float(v).is_integer() else _MISSING
+    if isinstance(v, str):
+        s = v.strip()
+        if s and s.lstrip("+-").isdigit():
+            return int(s)
+        try:
+            f = float(s)
+            return int(f) if float(f).is_integer() else _MISSING
+        except Exception:  # noqa: BLE001
+            return _MISSING
+    return _MISSING
+
+
+def _as_num(v):
+    if isinstance(v, bool):
+        return _MISSING
+    if isinstance(v, (int, float)):
+        return v
+    if isinstance(v, str):
+        try:
+            return float(v.strip())
+        except Exception:  # noqa: BLE001
+            return _MISSING
+    return _MISSING
+
+
+def _as_bool(v):
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, int) and v in (0, 1):
+        return bool(v)
+    if isinstance(v, str):
+        s = v.strip().lower()
+        if s in ("true", "1", "yes", "y", "是", "真"):
+            return True
+        if s in ("false", "0", "no", "n", "否", "假"):
+            return False
+    return _MISSING
+
+
+def _as_container(v, kind):
+    """模型爱把数组/对象写成 JSON 字符串（如 "[1,2]"）。"""
+    if isinstance(v, str):
+        s = v.strip()
+        if s[:1] in ("[", "{"):
+            try:
+                d = json.loads(s)
+                return d if isinstance(d, kind) else _MISSING
+            except Exception:  # noqa: BLE001
+                return _MISSING
+    return _MISSING
+
+
+def coerce_args(schema: dict, args: dict) -> tuple[dict, list]:
+    """按 schema 把模型爱写的「字符串标量」宽容地转成目标类型（2026-10-06 立）。
+
+    真机实测（2026-10-05 23:25 那轮）：19 次调用里 **9 次**因
+    `参数 max_results 类型应为 integer（收到 str）` / `full_metadata 类型应为 boolean（收到 str）`
+    被直接拒绝，模型只能用原生类型重发 → 一次查询变成三连发。
+    这属于**工具侧**（工具本身能跑，是校验过严），所以在这里做一次无歧义转换；
+    转不了的**原样保留**，仍由 validate_args 报错（错误信息本身是可行动的）。
+
+    返回 (转换后的 args, 转换说明列表)。
+    """
+    if not isinstance(args, dict):
+        return args, []
+    props = (schema or {}).get("properties") or {}
+    out, notes = dict(args), []
+    for name, val in list(args.items()):
+        want = (props.get(name) or {}).get("type")
+        if want == "integer":
+            nv = _as_int(val)
+        elif want == "number":
+            nv = _as_num(val)
+        elif want == "boolean":
+            nv = _as_bool(val)
+        elif want == "array":
+            nv = _as_container(val, list)
+        elif want == "object":
+            nv = _as_container(val, dict)
+        elif want == "string":
+            if isinstance(val, bool):
+                nv = "true" if val else "false"
+            elif isinstance(val, (int, float)):
+                nv = str(val)
+            else:
+                nv = _MISSING
+        else:
+            nv = _MISSING
+        if nv is not _MISSING and nv is not val and nv != val:
+            out[name] = nv
+            notes.append("%s %r→%r" % (name, val, nv))
+    return out, notes
+
+
+_PAGING_KEYS = ("page", "page_size", "pagesize", "offset", "start", "start_record",
+                "startrecord", "skip", "cursor", "next", "max_results", "limit", "size")
+
+
+def _paging_hint(schema: dict) -> str:
+    """从 schema 里认出**分页/数量类参数**，为「结果被截断」生成可行动提示（2026-10-06 立）。
+
+    动机：接入一个新工具时，用户不会去读它的源码，模型也不会；结果一被截断，
+    模型最容易做的事就是**把同一个查询再发一遍**（bnf 那轮实测就是这么来的）。
+    这里让**任何**工具在截断时都自动带上「怎么取更多」的话——只要它自己有分页参数。
+    """
+    props = (schema or {}).get("properties") or {}
+    keys = [k for k in props if str(k).lower() in _PAGING_KEYS]
+    if not keys:
+        return ""
+    names = "/".join(sorted(keys))
+    return ("该工具带分页/数量参数（%s）：要看更多请用它逐页取，"
+            "不要把同一个查询原样再发一次（那只会拿到同样的内容）。" % names)
+
+
+def clip_payload(body, limit: int, schema: dict = None) -> str:
+    """把「给模型看的正文」裁到 limit 以内：**优先按完整条目裁**，不切断 JSON 中间。
+
+    旧实现是按字符硬切 —— 模型常看到半个 JSON 对象（解析不了、也读不懂边界）。这里：
+      · 顶层是数组 → 逐条保留直到放不下
+      · 顶层是对象且有一条「记录列表」→ 只裁那个列表
+      · 其余情况 → 退回硬切
+    返回 (正文, 是否被裁)；正文不含前缀/尾注（截断标记由调用方补）。
+    """
+    txt = json.dumps(body, ensure_ascii=False, separators=(",", ":")) if body is not None else ""
+    if len(txt) <= limit:
+        return txt, False
+    if isinstance(body, list):
+        keep = []
+        for item in body:
+            keep.append(item)
+            if len(json.dumps(keep, ensure_ascii=False, separators=(",", ":"))) > limit - 200:
+                keep.pop()
+                break
+        if keep:
+            return json.dumps(keep, ensure_ascii=False, separators=(",", ":")) + "…（后续条目未列出）", True
+    if isinstance(body, dict):
+        for k, v in body.items():
+            if isinstance(v, list) and v:
+                keep = []
+                for item in v:
+                    keep.append(item)
+                    probe = dict(body)
+                    probe[k] = keep
+                    if len(json.dumps(probe, ensure_ascii=False, separators=(",", ":"))) > limit - 240:
+                        keep.pop()
+                        break
+                if keep:
+                    out = dict(body)
+                    out[k] = keep
+                    out.setdefault("_local_note", "%s 只列了前 %d 条（超窗口），其余未列出" % (k, len(keep)))
+                    return json.dumps(out, ensure_ascii=False, separators=(",", ":")), True
+    return txt[:limit], True
+
+
 def validate_args(schema: dict, args: dict) -> list[str]:
     """按 JSON Schema 的 required / type / enum 校验（只做够用的子集，够挡模型常见错）。"""
     if not isinstance(args, dict):
@@ -251,6 +415,7 @@ def invoke(ref: str, args: dict | None = None, *, account_id: int | None = None,
 
         spec = _json_or_empty(cap.get("invoke_spec"))
         schema = _json_or_empty(cap.get("input_schema"))
+        args, _coerced = coerce_args(schema, args)      # ★ 类型宽容：字符串标量先转成目标类型
         errs = validate_args(schema, args)
         if errs:
             raise InvokeRejected("参数不对：" + "；".join(errs))
@@ -296,21 +461,25 @@ def invoke(ref: str, args: dict | None = None, *, account_id: int | None = None,
             txt = json.dumps(body, ensure_ascii=False, separators=(",", ":"))
         cut = False
         src_name = src.get("name") or src.get("slug")
+        _page_hint = _paging_hint(schema)
         payload_head = ("⚠️ 这是**写操作**（非只读），已按你的要求执行。\n"
                         if int(cap.get("read_only", 1)) == 0 else "")
+        if _coerced:      # 明说转换过什么，便于模型以后直接传原生类型
+            payload_head = "ℹ️ 参数已按类型自动转换：%s（以后可直接传原生类型）\n" % "、".join(_coerced) + payload_head
 
-        def _compose(body_txt, truncated):
-            suffix = ("\n%s（来源：%s；如需其他能力，继续用 invoke_tool 传对应 ref）"
-                      % ("…（内容过长已截断）\n" if truncated else "", src_name))
+        def _compose(body_txt, truncated, extra=""):
+            suffix = ("\n%s%s（来源：%s；如需其他能力，继续用 invoke_tool 传对应 ref）"
+                      % ("…（内容过长已截断）\n" if truncated else "", extra, src_name))
             return payload_head + "`%s` 返回：\n%s%s" % (ref, body_txt, suffix)
 
         # ★ 上限 `MAX_RESULT_CHARS` 是对**模型看到的整段文本**生效的：只裁 payload、把前缀与尾注
         # 留在外面会撑破上限（真机实测 6085 > 6000）。这里按整段裁剪，并留兜底。
         text = _compose(txt, False)
         if len(text) > MAX_RESULT_CHARS:
-            over = len(text) - MAX_RESULT_CHARS
-            txt, cut = txt[:max(0, len(txt) - over)], True
-            text = _compose(txt, True)
+            # ★ 2026-10-06：按**完整条目**裁剪（旧实现硬切字符，模型常看到半个 JSON），
+            #   并在截断告知里带上该工具自己的分页参数用法（对所有工具自动生效）。
+            txt, cut = clip_payload(body, max(200, MAX_RESULT_CHARS - len(payload_head) - 300), schema)
+            text = _compose(txt, True, ("\n" + _page_hint) if _page_hint else "")
             if len(text) > MAX_RESULT_CHARS:
                 text = text[:MAX_RESULT_CHARS]
         _audit_invoke(uname=uname, source=src_kind, ref=ref, args=args, ok=True,

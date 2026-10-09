@@ -126,6 +126,9 @@ class ToolMonitor:
 
         # 3. 控制台保底输出 (方便调试)
         # 加上特殊前缀，方便肉眼识别；CLI 等前端注册 sink 后由它接管
+        if event_type == "delta":
+            # 聊天增量块很密、总量大 ✗ 控制台/CLI 不逐块打（正文由最终回答给出 ✓）
+            return
         if self._console_sink is not None:
             try:
                 self._console_sink(event_type, message, payload.get("data") or {})
@@ -141,6 +144,15 @@ class ToolMonitor:
     def report_thinking(self, text: str):
         """报告模型思考过程片段（reasoning_content 旁路捕获，逐段推送）"""
         self._emit("thinking", "模型思考中…", {"text": text})
+
+    def report_delta(self, kind: str, text: str, seq: int = 0):
+        """聊天增量（v3.1 流式输出）：正文/思考的逐段推送。
+
+        只在**前台问答**的流式路径上出现（`api/server.py::_invoke_or_stream` + `agent/stream_sink.py`）；
+        `kind` ∈ `answer`（正文）/ `reasoning`（思考）✓ 前端按 kind 分别追加到气泡与思考区 ✓
+        `seq` 是同一轮内的单调序号，前端可用它发现丢块/乱序 ✓
+        """
+        self._emit("delta", "", {"kind": kind, "text": text, "seq": seq})
 
     def report_assistant(self, assistant_name: str, args: Dict[str, Any] = None):
         """报告正在调用的子智能体进度"""

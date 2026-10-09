@@ -168,3 +168,34 @@ def test_main_prompt_points_to_structured_profile_tool():
     assert "update_user_profile" in seg and "就地更新" in seg
     assert "【画像待更新】" in seg
     assert "写前先用【读取文档工具】看当前内容" not in seg, "旧的「读全文再重写」口径已废（R2 根因）"
+
+
+# ============================ v3.1：助手笔记「经验沉淀」契约 ============================
+def test_main_prompt_has_experience_note_rules():
+    """笔记段允许沉淀「工具使用经验」（这是模型自主涌现出来的好行为，2026-10-02 用户拍板保留），
+    但提示词必须钉住它的边界与**复核提醒** —— 否则经验里的错误结论会被长期注入、越传越歪。"""
+    seg = ""
+    for v in _m3_prompts().values():
+        if isinstance(v, dict) and "system_prompt" in v and "记忆维护" in str(v["system_prompt"]):
+            seg = str(v["system_prompt"])
+    assert seg, "找不到带「记忆维护」段的主提示词"
+    # ① 与画像的界限仍在（笔记是流水笔记）
+    assert "助手笔记" in seg and "流水笔记" in seg
+    # ② 三条写法约束
+    for frag in ("可复用", "最小证据", "偶发", "隐私"):
+        assert frag in seg, "经验沉淀缺写法约束：%s" % frag
+    # ③ 新增硬要求：经验类内容必须提醒用户复核，且强度明确
+    assert "提醒用户复核" in seg, "缺「经验类内容必须提醒复核」"
+    assert "没提醒就等于没记完" in seg, "提醒复核的强度不足（应写成硬要求）"
+    # ④ 不能把复核提醒扩散到普通画像更新（否则每轮都催复核，用户会被烦到）
+    assert "其余普通画像更新" in seg, "需要写清范围：只有经验类才要求复核"
+
+
+def test_experience_rules_do_not_leak_cli_mechanics():
+    """经验沉淀段不许把 CLI 机械细节写进常驻提示词（与上面的防腐断言同口径）。"""
+    seg = ""
+    for v in _m3_prompts().values():
+        if isinstance(v, dict) and "system_prompt" in v and "记忆维护" in str(v["system_prompt"]):
+            seg = str(v["system_prompt"])
+    for frag in ("--output", "argv=[", "落盘参数"):
+        assert frag not in seg, "经验沉淀段混入了 CLI 机械细节：%s" % frag

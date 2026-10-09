@@ -51,6 +51,23 @@ def reasoning_of(msg: BaseMessage) -> str:
         return ""
 
 
+def message_text(m: BaseMessage) -> str:
+    """取一条消息的**纯文本**（多模态 content 是块列表 → 拼出文字块 ✓）。
+
+    ★ v3.1 视觉：`content` 可能是 `[{type:text},{type:image_url}]` ✗，
+      任何把它当字符串/集合成员用的地方都会 `TypeError: unhashable type: 'list'` ✓
+      （用户实测崩在两处：本模块的边界匹配 + api/server.py 的落库边界 ✓）
+      → 统一走这里 ✓，别再各自 `m.content in ...` ✗。
+    """
+    c = getattr(m, "content", "")
+    if isinstance(c, str):
+        return c
+    if isinstance(c, list):
+        return " ".join(str(b.get("text") or "") for b in c
+                        if isinstance(b, dict) and b.get("type") == "text")
+    return str(c or "")
+
+
 def turn_messages(messages: list[BaseMessage], since: set[str] | None = None) -> list[BaseMessage]:
     """本轮的消段（上一条 HumanMessage 之后的部分）；`since` 用于匹配「装配后的最终用户文本」。"""
     if not messages:
@@ -63,7 +80,7 @@ def turn_messages(messages: list[BaseMessage], since: set[str] | None = None) ->
         return list(messages)
     for i in range(len(messages) - 1, -1, -1):
         m = messages[i]
-        if isinstance(m, HumanMessage) and (m.content in since):
+        if isinstance(m, HumanMessage) and (message_text(m) in since):
             return messages[i + 1:]
     return list(messages)
 

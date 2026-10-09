@@ -1,0 +1,110 @@
+{
+ "ts": "2026-10-05 23:00:16",
+ "source_sheet": "tests/test_out/m6b_score_sheet_20261005_221918_已打分.md",
+ "probe": "v3-recorder",
+ "scoring": "manual",
+ "count": 5,
+ "scored": 5,
+ "verdict": {
+  "✓": 3,
+  "△": 2,
+  "✗": 0,
+  "未测": 0
+ },
+ "rows": [
+  {
+   "id": 25,
+   "core": false,
+   "q": "Gallica 里关于巴黎公社的资料有哪些",
+   "score": "△",
+   "note": "参考链路 search_by_subject 一次命中、回答报出 692 条/70 页并按页展示（翻页元数据生效）；有一次同参数无谓重发（第二次仅省略 max_results，默认值相同）",
+   "ref_chain": "mcp:bnf/search_by_subject",
+   "seq": [
+    "mcp:bnf/search_by_subject {\"subject\": \"Commune de Paris 1871\", \"max_results\": \"10\"}",
+    "mcp:bnf/search_by_subject {\"subject\": \"Commune de Paris 1871\"}"
+   ],
+   "n_calls": 2,
+   "seq_key": "mcp:bnf/search_by_subject {\"subject\": \"Commune de Paris 1871\", \"max_results\": \"10\"} || mcp:bnf/search_by_subject {\"subject\": \"Commune de Paris 1871\"}"
+  },
+  {
+   "id": 27,
+   "core": false,
+   "q": "Gallica 里的手稿类文献有哪些",
+   "score": "✓",
+   "note": "参考链路 search_by_document_type 执行，且真的用 page=1/page=5 翻页；回答报出 203,535 条/20,354 页并说明抽样两页；末尾写笔记属设计内助手行为",
+   "ref_chain": "mcp:bnf/search_by_document_type",
+   "seq": [
+    "mcp:bnf/search_by_document_type {\"doc_type\": \"manuscrit\", \"page\": \"1\"}",
+    "mcp:bnf/search_by_document_type {\"doc_type\": \"manuscrit\", \"page\": \"5\"}",
+    "mcp:bnf/natural_language_search {\"query\": \"manuscrit médiéval enluminé enluminure codex\", \"page\": \"1\"}",
+    "write_agent_doc"
+   ],
+   "n_calls": 4,
+   "seq_key": "mcp:bnf/search_by_document_type {\"doc_type\": \"manuscrit\", \"page\": \"1\"} || mcp:bnf/search_by_document_type {\"doc_type\": \"manuscrit\", \"page\": \"5\"} || mcp:bnf/natural_language_search {\"query\": \"manuscrit médiéval enluminé enluminure codex\", \"page\": \"1\"} || write_agent_doc"
+  },
+  {
+   "id": 30,
+   "core": true,
+   "q": "用法语资料帮我做一份关于雨果的研究报告",
+   "score": "△",
+   "note": "报告产出了；但 sequential_reporting 只用于初始化（未带 search_sources），随后自己发 7 次检索且有 search_by_author 同参数连发两次——主因是工具 nextStep 文案把模型引向「自己搜」，工具侧已修",
+   "ref_chain": "mcp:bnf/sequential_reporting",
+   "seq": [
+    "list_agent_docs",
+    "mcp:bnf/sequential_reporting {\"topic\": \"Victor Hugo\", \"page_count\": \"4\", \"source_count\": \"10\"}",
+    "mcp:bnf/natural_language_search {\"query\": \"Victor Hugo poète romancier œuvreuch Legislation\", \"max_results\": \"10\"}",
+    "mcp:bnf/search_by_author {\"author\": \"Victor Hugo\", \"max_results\": \"10\"}",
+    "mcp:bnf/natural_language_search {\"max_results\": \"10\", \"query\": \"Victor Hugo poète et romancier français biographie et œuvre\"}",
+    "mcp:bnf/search_by_author {\"author\": \"Victor Hugo\", \"max_results\": \"10\"}",
+    "mcp:bnf/search_by_author {\"author\": \"Victor Hugo\"}",
+    "mcp:bnf/natural_language_search {\"query\": \"Victor Hugo\"}",
+    "mcp:bnf/search_by_title {\"title\": \"Les Misérables\"}",
+    "mcp:bnf/search_by_subject {\"subject\": \"Victor Hugo\"}",
+    "mcp:bnf/search_by_title {\"title\": \"Notre-Dame de Paris\"}",
+    "mcp:bnf/search_by_title {\"title\": \"Les Châtiments\"}",
+    "write_agent_doc"
+   ],
+   "n_calls": 13,
+   "seq_key": "list_agent_docs || mcp:bnf/sequential_reporting {\"topic\": \"Victor Hugo\", \"page_count\": \"4\", \"source_count\": \"10\"} || mcp:bnf/natural_language_search {\"query\": \"Victor Hugo poète romancier œuvreuch Legislation\", \"max_results\": \"10\"} || mcp:bnf/search_by_author {\"author\": \"Victor Hugo\", \"max_results\": \"10\"} || mcp:bnf/natural_language_search {\"max_results\": \"10\", \"query\": \"Victor Hugo poète et romancier français biographie et œuvre\"} || mcp:bnf/search_by_author {\"author\": \"Victor Hugo\", \"max_results\": \"10\"} || mcp:bnf/search_by_author {\"author\": \"Victor Hugo\"} || mcp:bnf/natural_language_search {\"query\": \"Victor Hugo\"} || mcp:bnf/search_by_title {\"title\": \"Les Misérables\"} || mcp:bnf/search_by_subject {\"subject\": \"Victor Hugo\"} || mcp:bnf/search_by_title {\"title\": \"Notre-Dame de Paris\"} || mcp:bnf/search_by_title {\"title\": \"Les Châtiments\"} || write_agent_doc"
+  },
+  {
+   "id": 35,
+   "core": true,
+   "q": "从成都开车到稻城亚丁大概要多久",
+   "score": "✓",
+   "note": "plan_route 链路正确；4 次调参是绕其「地名只认 GeoNames 首条」的限制，并如实标注算到的是稻城县城",
+   "ref_chain": "mcp:route/plan_route",
+   "seq": [
+    "mcp:route/plan_route {\"start\": \"成都\", \"end\": \"稻城亚丁\", \"profile\": \"driving-car\"}",
+    "mcp:route/plan_route {\"end\": \"稻城亚丁景区\", \"profile\": \"driving-car\", \"start\": \"成都市\"}",
+    "mcp:route/plan_route {\"end\": \"稻城\", \"profile\": \"driving-car\", \"start\": \"成都市\"}",
+    "mcp:route/plan_route {\"end\": \"亚丁村\", \"profile\": \"driving-car\", \"start\": \"稻城\"}"
+   ],
+   "n_calls": 4,
+   "seq_key": "mcp:route/plan_route {\"start\": \"成都\", \"end\": \"稻城亚丁\", \"profile\": \"driving-car\"} || mcp:route/plan_route {\"end\": \"稻城亚丁景区\", \"profile\": \"driving-car\", \"start\": \"成都市\"} || mcp:route/plan_route {\"end\": \"稻城\", \"profile\": \"driving-car\", \"start\": \"成都市\"} || mcp:route/plan_route {\"end\": \"亚丁村\", \"profile\": \"driving-car\", \"start\": \"稻城\"}"
+  },
+  {
+   "id": 36,
+   "core": true,
+   "q": "我想下周去广州，帮我查从成都出发的火车票，再规划一条从广州南站到珠江新城的路线",
+   "score": "✓",
+   "note": "参考链路前 5 步完整正确（取日期→成都站码→广州站码→路线→凭站码查票）；后面 4 次 plan_route 坐标试探与 #35 同源",
+   "ref_chain": "get-current-date → get-station-code-of-citys → get-tickets（12306）＋ plan_route（route）",
+   "seq": [
+    "mcp:12306-mcp/get-current-date {}",
+    "mcp:12306-mcp/get-station-code-of-citys {\"citys\": \"成都\"}",
+    "mcp:12306-mcp/get-station-code-of-citys {\"citys\": \"广州\"}",
+    "mcp:route/plan_route {\"start\": \"广州南站\", \"end\": \"珠江新城\", \"profile\": \"driving-car\"}",
+    "mcp:12306-mcp/get-tickets {\"date\": \"2026-10-12\", \"fromStation\": \"CDW\", \"toStation\": \"GZQ\"}",
+    "mcp:route/plan_route {\"end\": \"113.3245,23.1187\", \"profile\": \"driving-car\", \"start\": \"113.0007,23.0015\"}",
+    "mcp:route/plan_route {\"end\": \"113.3245,23.1187\", \"profile\": \"driving-car\", \"start\": \"113.2687,22.9905\"}",
+    "mcp:route/plan_route {\"end\": \"113.3245,23.1187\", \"profile\": \"foot-walking\", \"start\": \"113.2687,22.9905\"}",
+    "read_agent_doc",
+    "write_agent_doc",
+    "write_agent_doc"
+   ],
+   "n_calls": 11,
+   "seq_key": "mcp:12306-mcp/get-current-date {} || mcp:12306-mcp/get-station-code-of-citys {\"citys\": \"成都\"} || mcp:12306-mcp/get-station-code-of-citys {\"citys\": \"广州\"} || mcp:route/plan_route {\"start\": \"广州南站\", \"end\": \"珠江新城\", \"profile\": \"driving-car\"} || mcp:12306-mcp/get-tickets {\"date\": \"2026-10-12\", \"fromStation\": \"CDW\", \"toStation\": \"GZQ\"} || mcp:route/plan_route {\"end\": \"113.3245,23.1187\", \"profile\": \"driving-car\", \"start\": \"113.0007,23.0015\"} || mcp:route/plan_route {\"end\": \"113.3245,23.1187\", \"profile\": \"driving-car\", \"start\": \"113.2687,22.9905\"} || mcp:route/plan_route {\"end\": \"113.3245,23.1187\", \"profile\": \"foot-walking\", \"start\": \"113.2687,22.9905\"} || read_agent_doc || write_agent_doc || write_agent_doc"
+  }
+ ]
+}

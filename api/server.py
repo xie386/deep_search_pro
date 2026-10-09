@@ -274,8 +274,69 @@ def _get_agent_for(account_id: int | None):
     return AGENT
 
 
+# ---------------------------------------------------------------------------
+# v3.1 聊天增量输出（流式）：开关 + 执行器
+# ---------------------------------------------------------------------------
+def _stream_enabled() -> bool:
+    """聊天增量输出开关（**默认开** ✓；`.env` 里 `ZX_STREAM=0` 回退到一次性 invoke ✓）。
+
+    为什么默认开：这就是本次改造的目的（用户能看见正文/思考，中断才有应用环境 ✓）。
+    子 Agent / digest / CLI 走的是**调用侧**决定（它们不经过本函数 ✗ 见 `_run_agent` 的
+    `stream` 形参）——只有前台问答才会开流 ✓
+    """
+    return (os.getenv("ZX_STREAM", "1") or "1").strip().lower() not in ("0", "false", "off", "no", "")
+
+
+def _invoke_or_stream(agent, payload, cfg, thread_id):
+    """跑一轮 agent：流式（默认）或一次性 invoke —— 两者返回**同一形状**的最终状态 ✓
+
+    返回 `(final_state, streamed)`：`final_state` 与 `agent.invoke(...)` 的返回值同形，
+    所以下游（`answer_text` 提取 / 会话落库 / token 统计 / 思考捕获）**一行都不用改** ✓
+
+    ★ 为什么 `stream_mode=['messages','values']`：
+      · `messages` = 逐 token 的模型输出（正文 + `reasoning_content` ✓ 实测可用 ✓）
+      · `values`  = 每步的完整状态 → 取**最后一个**即等于 `invoke` 的返回值 ✓
+    ★ 为什么不会把子 Agent 的 token 串进来：`is_main_graph(meta)` 过滤（子图 `checkpoint_ns`
+      含 `|` ✓ 见 `agent/stream_sink.py`）
+    ★ 中断粒度：每个 delta 过一次 `agent_cancel.check` → 从「每次模型调用前」加密到
+      「每个 token 段之间」✓ 中断能**真的省下本轮剩余 token** ✓
+    """
+    if not _stream_enabled():
+        return agent.invoke(payload, cfg), False
+    from agent.stream_sink import DeltaSink, is_main_graph, iter_deltas
+
+    sink = DeltaSink(thread_id)
+    final_state = None
+    try:
+        for mode, item in agent.stream(payload, cfg, stream_mode=["messages", "values"]):
+            if mode == "messages":
+                chunk, meta = item if isinstance(item, tuple) and len(item) == 2 else (item, {})
+                if not is_main_graph(meta):
+                    continue
+                for kind, text in iter_deltas(chunk):
+                    agent_cancel.check(thread_id)      # ★ 每个增量一次取消检查
+                    sink.feed(kind, text)
+            elif mode == "values":
+                final_state = item
+    except agent_cancel.AgentCancelled as exc:
+        # 已流出的那半截带上：前端能看到它、落库也与前端一致（否则刷新后只剩占位语 ✗）
+        try:
+            setattr(exc, "partial", sink.text)
+        except Exception:
+            pass
+        raise
+    finally:
+        sink.flush()        # ★ 必须：否则最后一句话留在缓冲里，前端少字 ✗
+    if final_state is None:
+        raise RuntimeError("流式执行没有拿到最终状态（stream_mode=values 无产出）"
+                           "——请设 ZX_STREAM=0 回退，并把这条报错反馈给开发者")
+    return final_state, True
+
+
 def _run_agent(question: str, thread_id: str, account_id: int | None = None,
-               skill_names: list[str] | None = None) -> str:
+               skill_names: list[str] | None = None,
+               image_ids: list[str] | None = None,
+               vision_capable: bool = False) -> str:
     """在工作线程里执行同步的 agent.invoke（M1 上下文工程化改造）。
 
     上下文装配：
@@ -342,6 +403,8 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
         # 新路径：soul/memory 让 build_context 自己从注册表取（server 不再取这两个）
         ctx = build_request_context(
             thread_id, account_id, question,
+            image_ids=image_ids,                       # ★ v3.1：本轮贴的图（None/空 = 老链路 ✓）
+            vision_capable=vision_capable,            # ★ v3.1：让模型知道"我本身能看图"✓
             username=username, skills_text=skills_text, cli_brief=cli_brief,
             profile_signal=profile_signal, sources=context_sources.collect(account_id, question),
         )
@@ -370,14 +433,18 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
     # finally 里清标记，避免残留标志把下一轮 invoke 立刻掐掉。
     agent_cancel.begin(thread_id)
     try:
-        result = agent.invoke({"messages": invoke_messages}, cfg)
+        # v3.1：默认走流式（正文/思考逐段推前端 ✓ 中断能真的省 token ✓）；
+        # ZX_STREAM=0 时行为与改造前**逐字一致** ✓
+        result, _streamed = _invoke_or_stream(agent, {"messages": invoke_messages}, cfg, thread_id)
     finally:
         agent_cancel.end(thread_id)
     # 思考捕获（A+ 方案）：ReasoningChatOpenAI 保留 reasoning_content 到每轮
     # AIMessage 的 additional_kwargs，invoke 完成后遍历提取并推给前端右栏——
     # 单请求（省 token）、不弃 langchain、覆盖所有轮次（含工具调用后的思考）。
-    from agent.thinking_capture import report_thinking_from_messages
-    report_thinking_from_messages(result["messages"])
+    # ★ v3.1：流式路径已经把思考**实时**推过一遍 ✗ 这里不能再推（否则思考区出现两份 ✗）
+    if not _streamed:
+        from agent.thinking_capture import report_thinking_from_messages
+        report_thinking_from_messages(result["messages"])
 
     # ★ 最终答案提取（2026-09-24 用户报障修复）：推理模型偶尔把**可见正文**写进
     #   reasoning_content 而 content 为空（实测约 1/5）——原来直接取 messages[-1].content
@@ -402,6 +469,7 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
         # M1：本轮持久化（user 提问 + 新增的 assistant/tool 消息）
         try:
             from agent import conversation_store as cs
+            from agent.answer_text import message_text as _msg_text   # ★ v3.1：多模态 content 不能直接比集合 ✗
             # 结果消息里 question 之后的部分 = 本轮新增（含工具调用链）
             new_msgs: list = []
             seen_q = False
@@ -409,7 +477,7 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
             # 故按「装配后的最终文本」定位本轮起点；无技能时二者相等。
             # 若都不匹配（异常），退化为只存最终回答。
             for m in result["messages"]:
-                if isinstance(m, HumanMessage) and m.content in _boundary:
+                if isinstance(m, HumanMessage) and _msg_text(m) in _boundary:
                     seen_q = True
                     continue
                 if seen_q:
@@ -449,6 +517,11 @@ async def _startup():
     print("[M2] FastAPI 启动，monitor loop 已绑定。")
     _wx_load_disk()   # 工作台天气：先吃磁盘缓存，首屏秒出
     threading.Thread(target=_wx_warm, daemon=True).start()   # 后台预热默认城市（外网首次实测 ~16s）
+    # v3.1 语音转文字：后台把模型加载进内存**常驻** ✓
+    # 为什么要预热：实测模型冷加载 8.5s ✗ 而真正推理只要 0.24s ✓ —— 放启动后台跑，
+    # 用户第一次长按说话就不用干等 9 秒 ✓（与天气预热同款做法 ✓）
+    from tools import voice_asr as _voice_asr
+    threading.Thread(target=_voice_asr.warmup, daemon=True).start()
     from api.digest_scheduler import start as start_digest_sched
     start_digest_sched()
 
@@ -488,6 +561,7 @@ async def api_chat(
     token: str = Query(..., description="登录 token"),
     thread_id: str = Query(None, description="会话 ID（前端「+ 新对话」建的 UUID）；缺省=用户名单会话（兼容 v1.0）"),
     skills: str = Query("", description="M4a：本轮启用的技能名，逗号分隔（如 '竞品对比,来源标注'）；空=不用技能"),
+    images: str = Query("", description="v3.1 视觉：本轮贴的图 image_id，逗号分隔（最多 3 张）；空=纯文字"),
 ):
     sess = get_session(token)  # 校验登录，无效抛 401
     # 会话存储在本函数多处要用（含 v1.0 兼容路径下的 last_msg_id），提到函数顶部
@@ -495,6 +569,26 @@ async def api_chat(
     from agent import conversation_store as cs
     # M4a：技能名列表（一次性，仅本轮生效；后端按账号读文件，越权名会被静默跳过）
     skill_names = [s.strip() for s in (skills or "").split(",") if s.strip()]
+    # ★ v3.1 视觉：解析本轮图片 id（最多 3 张 ✓）并**逐个校验归属**（越权/不存在/超量 → 400 人话 ✓）
+    _image_ids = [x.strip() for x in (images or "").split(",") if x.strip()]
+    # ★ v3.1：生效模型是否支持图片（无自定义配置 = 走 .env 默认模型 ✓ 项目默认 agnes 本身多模态 ✓）
+    _act = cust.get_active_provider(sess.get("account_id"))
+    _vision_ok = (_act is None) or bool(_act.get("supports_vision"))
+    if _image_ids:
+        from tools import chat_images as _ci
+        if len(_image_ids) > _ci.MAX_IMAGES:
+            raise HTTPException(status_code=400, detail=f"一次最多 {_ci.MAX_IMAGES} 张图片")
+        try:
+            for _iid in _image_ids:
+                _ci.resolve(sess.get("account_id"), _iid)      # 只认自己账号的图 ✓ 防越权 ✓
+        except _ci.ChatImageError as _exc:
+            raise HTTPException(status_code=400, detail=str(_exc))
+        # ★ v3.1 视觉闸：当前生效配置**没勾「支持图片」** → 明确拦下（**绝不静默丢图** ✗ 用户拍板 ✓）
+        #   None = 该账号没配自定义模型 → 走 .env 默认模型（项目默认 agnes 本身多模态 ✓ 放行 ✓）
+        if not _vision_ok:
+            raise HTTPException(status_code=400, detail=(
+                "当前生效的模型配置「%s」未开启「支持图片」：请到『模型选型』勾上该配置，或换一个多模态模型后再发图"
+                % (_act.get("provider_name") or "未命名")))
     if not thread_id:
         thread_id = sess["username"]  # v1.0 兼容：以用户名为 thread
     else:
@@ -507,19 +601,24 @@ async def api_chat(
         # 画像变更通知：记录调用前的 MEMORY.md 内容，回复末尾对比提示
         before_memory = cust.memory_get(token).get("content", "")
         answer = await asyncio.to_thread(_run_agent, question, thread_id,
-                                        sess.get("account_id"), skill_names)
+                                        sess.get("account_id"), skill_names,
+                                        image_ids=_image_ids or None,
+                                        vision_capable=_vision_ok)
         try:
             after_memory = cust.memory_get(token).get("content", "")
             if after_memory != before_memory:
                 answer = f"{answer}\n\n---\n📝 已更新你的记忆画像（智能体在本次对话中做了记忆维护），可在「定制助手 → 记忆画像」查看或编辑。"
         except Exception:
             pass
-    except agent_cancel.AgentCancelled:
+    except agent_cancel.AgentCancelled as _cancelled_exc:
         # 用户点了「中断」（v2.0 聊天界面优化）：不是错误，转成正常响应。
         # 落一条占位回答，保持「问-答成对」——否则历史里悬着一个没有回答的提问，
         # 下一轮装配时模型会把它当成待答问题；前端也用这条回复挂「删除」按钮。
+        # ★ v3.1：流式路径会把「已经流出去的那半截」附在异常上 → 一并落库，
+        #   这样刷新后看到的与中断前气泡里看到的**是同一条内容** ✓（没有半截就仍是占位语 ✓）
         cancelled = True
-        answer = "⏹ 本轮回答已被中断（未完成）。"
+        _partial = str(getattr(_cancelled_exc, "partial", "") or "").strip()
+        answer = ((_partial + "\n\n---\n") if _partial else "") + "⏹ 本轮回答已被中断（未完成）。"
         try:
             cs.save_turn(sess.get("account_id"), thread_id, question,
                          [AIMessage(content=answer)])
@@ -1230,6 +1329,35 @@ from fastapi import UploadFile as _UpFile, File as _File, Body as _Body
 async def bg_upload(token: str = Query(...), file: _UpFile = _File(...)):
     return cust.bg_upload(token, file)
 
+# ----------------------------- 视觉能力：聊天图片（v3.1，用户 2026-09-30 拍板）-----------------------------
+# 口径：单张一次 ✓（前端最多累计 3 张，超了在装配处再拦一道 ✓）；校验/压缩/账号隔离全在 tools/chat_images.py ✓
+@app.post("/api/chat/upload", summary="上传聊天图片：校验→压缩→按账号隔离落盘，返回 image_id")
+async def chat_image_upload(token: str = Query(...), file: _UpFile = _File(...)):
+    from tools import chat_images as _ci
+    sess = get_session(token)                      # 无效 token → 401（与 /api/chat 同一套 ✓）
+    data = await file.read()
+    try:
+        saved = _ci.save(sess["account_id"], data)
+    except _ci.ChatImageError as exc:              # 人话错误直接给前端展示 ✓
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"ok": True, "image": saved.to_dict()}
+
+@app.get("/api/asr/status", summary="语音转文字状态（前端据此决定话筒可用性 ✓ 不触发加载 ✓）")
+async def asr_status(token: str = Query(...)):
+    from tools import voice_asr as _va
+    get_session(token)                      # 无效 token → 401（与 /api/chat 同一套 ✓）
+    return _va.status()
+
+@app.post("/api/asr", summary="语音转文字：录音 → 文字（★ 音频只在内存 ✓ 出结果即弃不落盘 ✓）")
+async def asr_transcribe(token: str = Query(...), file: _UpFile = _File(...)):
+    from tools import voice_asr as _va
+    get_session(token)                      # 无效 token → 401（与 /api/chat 同一套 ✓）
+    data = await file.read()
+    try:
+        return {"ok": True, **_va.transcribe(data)}
+    except _va.VoiceAsrError as exc:        # 人话错误直接给前端展示 ✓（与贴图通道同款 ✓）
+        raise HTTPException(status_code=400, detail=str(exc))
+
 @app.get("/api/bg/list", summary="我的背景图列表")
 async def bg_list(token: str = Query(...)):
     return cust.bg_list(token)
@@ -1510,8 +1638,10 @@ async def cli_ability_draft(req: dict = Body(...), token: str = Query(...)):
     """生成能力描述草稿（用户语言：触发关键词 + 用户说法→命令映射）。
 
     **只返回草稿，不写库**——用户在表单里确认/修改后，走 /api/cli/save 保存。
-    证据分层（2026-09-24）：① 文档地址 `docs`（README）当**语义依据**；② 逐条 `<bin> <cmd> --help`
-    当**校验依据**（形态分类 + 生成后审计）；③ 都没有就用 `help_text`（用户粘贴）或保守化。
+    依据来源三选一（`docs_mode`，2026-10-07）：① `url` 网址（README）；② `path` 本机文件；
+    ③ `help` 跑一遍 `--help`（闭源 / 自研、没有文档页的工具，`--help` 是唯一方法信息源）。
+    它给出**语义依据**；另有逐条 `<bin> <cmd> --help` 的**校验依据**（形态分类 + 生成后审计）；
+    都没有就用 `help_text`（用户粘贴）或保守化。
     描述里的命令必须来自该 CLI 的只读清单（清单为空则拒绝生成，先填清单）。
     返回值额外带 `evidence`（读了哪份文档、覆盖几条命令）与 `warnings`（审计发现的可疑映射）。
     """
@@ -1519,6 +1649,7 @@ async def cli_ability_draft(req: dict = Body(...), token: str = Query(...)):
     return cust.cli_ability_generate(req.get("name") or "", req.get("bin") or "",
                                      req.get("readonly") or "",
                                      docs=req.get("docs") or "",
+                                     docs_mode=req.get("docs_mode") or "url",
                                      help_text=req.get("help_text") or "",
                                      username=sess.get("username"),
                                      account_id=sess.get("account_id"),

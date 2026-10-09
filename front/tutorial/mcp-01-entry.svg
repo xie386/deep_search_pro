@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 430" font-family="Microsoft YaHei, PingFang SC, sans-serif">
+  <rect width="980" height="430" fill="#f3f5f2"/>
+  <g transform="translate(24,18)">
+    <rect x="0" y="0" width="88" height="30" rx="15" fill="#eef5ee" stroke="#cfe3d1"/>
+    <text x="44" y="20" font-size="13" fill="#5b6b5e" text-anchor="middle">技能</text>
+    <rect x="96" y="0" width="96" height="30" rx="15" fill="#eef5ee" stroke="#cfe3d1"/>
+    <text x="144" y="20" font-size="13" fill="#5b6b5e" text-anchor="middle">CLI 面板</text>
+    <rect x="200" y="0" width="112" height="30" rx="15" fill="#eef5ee" stroke="#cfe3d1"/>
+    <text x="256" y="20" font-size="13" fill="#5b6b5e" text-anchor="middle">自定义 CLI</text>
+    <rect x="320" y="0" width="104" height="30" rx="15" fill="#dff0e2" stroke="#54aa69" stroke-width="1.6"/>
+    <text x="372" y="20" font-size="13" fill="#2f7a43" text-anchor="middle" font-weight="bold">MCP 服务</text>
+    <rect x="432" y="0" width="104" height="30" rx="15" fill="#eef5ee" stroke="#cfe3d1"/>
+    <text x="484" y="20" font-size="13" fill="#5b6b5e" text-anchor="middle">API 工具</text>
+  </g>
+  <g transform="translate(24,62)">
+    <rect x="0" y="0" width="932" height="196" rx="12" fill="#fbfdfb" stroke="#cfe3d1"/>
+    <text x="18" y="32" font-size="17" fill="#2b3a2e" font-weight="bold">🔌 MCP 工具接入</text>
+    <rect x="196" y="12" width="112" height="28" rx="8" fill="#eaf2ff" stroke="#7aa7e6"/>
+    <text x="252" y="31" font-size="12.5" fill="#2f5fa8" text-anchor="middle">📘 教程指导</text>
+    <text x="18" y="60" font-size="12.5" fill="#6b7a6e">MCP 的标准接法：一个来源 = 一个 MCP 服务（本地命令 stdio，或远程端点 http），服务里有什么工具由服务自己说了算</text>
+    <text x="18" y="80" font-size="12.5" fill="#6b7a6e">—— 点「发现工具」连上去把它列出来，勾选确认后才进 Agent 的能力池。文档只在本机解析、密钥只存在你本机库里。</text>
+    <text x="18" y="108" font-size="12.5" fill="#a8620f">⚠️ 未确认的工具 Agent 看不到、也调不到；没声明"只读"的工具一律按写操作处理，要单独勾一次「我确认这是写操作」才放行。</text>
+    <text x="18" y="128" font-size="12.5" fill="#a8620f">stdio 来源还受命令白名单约束（只允许跑你填进去的那几个可执行文件）。</text>
+      <rect x="18" y="144" width="110" height="24" rx="6" fill="#0b1220" stroke="#26314a"/>
+      <text x="73" y="160" font-size="11.5" fill="#9fd4ff" text-anchor="middle">我的 MCP 来源 5</text>      <rect x="136" y="144" width="108" height="24" rx="6" fill="#0b1220" stroke="#26314a"/>
+      <text x="190" y="160" font-size="11.5" fill="#9fd4ff" text-anchor="middle">已接入工具 21</text>      <rect x="252" y="144" width="92" height="24" rx="6" fill="#0b1220" stroke="#26314a"/>
+      <text x="298" y="160" font-size="11.5" fill="#9fd4ff" text-anchor="middle">待确认 0</text>      <rect x="352" y="144" width="100" height="24" rx="6" fill="#0b1220" stroke="#26314a"/>
+      <text x="402" y="160" font-size="11.5" fill="#9fd4ff" text-anchor="middle">体检通过 5</text>      <rect x="460" y="144" width="104" height="24" rx="6" fill="#eef5ee" stroke="#cfe3d1"/>
+      <text x="512" y="160" font-size="11.5" fill="#3d6b4a" text-anchor="middle">↻ 重新拉取</text>      <rect x="572" y="144" width="118" height="24" rx="6" fill="#eef5ee" stroke="#cfe3d1"/>
+      <text x="631" y="160" font-size="11.5" fill="#3d6b4a" text-anchor="middle">＋ 新增 MCP 来源</text>
+    <text x="18" y="188" font-size="11.5" fill="#8a978d">两种来源各长什么样：stdio 例如 npx -y @modelcontextprotocol/server-everything（命令 npx + 参数 ["-y", "@modelcontextprotocol/server-everything"]）；http 例如 http://127.0.0.1:8000/mcp。</text>
+  </g>
+</svg>

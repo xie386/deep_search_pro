@@ -493,11 +493,29 @@ def execute(command: str, args: list[str] | None = None, timeout: int | None = N
                 "rejected": msg, "cwd": str(sandbox)})
         return _result(False, error=msg, command=command, args=args, cwd=str(sandbox))
 
+    # ★ Windows：npm / pipx 在 PATH 上放的是 `.cmd` / `.bat` **垫片**（如 node_global\agently-cli.CMD），
+    #   CreateProcess 不能直接执行它们——实测报 `[WinError 193] %1 不是有效的 Win32 应用程序`。
+    #   所以经 `cmd.exe /c` 启动，**仍然传参数列表、shell=False、不做字符串拼接**；
+    #   只有那两处 shell 元字符要额外挡（cmd.exe 会二次解析）：
+    #     · `%` —— 命令行里也会做变量展开（`%PATH%`），且引号挡不住 → 直接拒绝；
+    #     · `"` / 换行 —— cmd.exe 不认 list2cmdline 的 `\"` 转义，会破坏引号配对 → 拒绝。
+    #   其余 `&` `|` `>` 等在被引号包住时是字面量（cmd.exe 遵守双引号），不额外处理。
+    argv = [exe, *args]
+    if os.name == "nt" and exe.lower().endswith((".cmd", ".bat")):
+        bad = [a for a in args if ("%" in a) or ('"' in a) or ("\n" in a) or ("\r" in a)]
+        if bad:
+            msg = ("该 CLI 是 Windows 批处理垫片（%s），参数里不能带 `%%` / 双引号 / 换行"
+                   "（cmd.exe 会二次解析，可能被注入）——请换一种写法" % os.path.basename(exe))
+            _audit({"ts": ts, "user": uname, "cmd": command, "args": args, "ok": False,
+                    "rejected": msg, "cwd": str(sandbox)})
+            return _result(False, error=msg, command=command, args=args, cwd=str(sandbox))
+        argv = [os.environ.get("COMSPEC") or "cmd.exe", "/c", exe, *args]
+
     # adhoc（服务端草稿接口）只给了 readonly、没有 max_runtime → 用默认上限兜底
     runtime_cap = int(meta["max_runtime"]) if meta is not None else int(dyn.get("max_runtime") or 30)
     limit = max(1, min(int(timeout or DEFAULT_TIMEOUT), runtime_cap))
     try:
-        proc = subprocess.run([exe, *args], cwd=str(sandbox), capture_output=True,
+        proc = subprocess.run(argv, cwd=str(sandbox), capture_output=True,
                               timeout=limit, shell=False, env=_execute_env(sandbox))
     except subprocess.TimeoutExpired:
         el = time.time() - t0
