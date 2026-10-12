@@ -104,6 +104,41 @@ def ensure_tables() -> None:
         except Exception as _e:
             print("[schema] usage_events 补列跳过:", _e)
 
+        # v4.0 大点 03（用户 2026-10-11 裁定）：会话加 `kind`（`chat` | `probe`）——
+        #   工具池测评的每条题都会**真建一个会话**（要读它的工具调用序列），但那不是用户的正常会话：
+        #   · `list_sessions` 只列 `kind<>'probe'` → 测评会话**从不进会话库**；
+        #   · 测评开跑前 + 跑完后各 `purge_probe_sessions()` 一次 → 中断/崩溃也不残留。
+        #   幂等补列（老库）：表不存在时 PRAGMA 返回空 → 靠 try 兜住，随后由带新列的 DDL 建表 ✓
+        try:
+            _have = {r[1] for r in conn.execute("PRAGMA table_info(conversations)")}
+            if _have and "kind" not in _have:
+                conn.execute("ALTER TABLE conversations ADD COLUMN kind TEXT NOT NULL DEFAULT 'chat'")
+            conn.commit()
+        except Exception as _e:
+            print("[schema] conversations 补 kind 跳过:", _e)
+
+        # v4.0 大点 03 追加（用户 2026-10-11 裁定）：账号加 `digest_auto` —— **每天 9:00 是否自动生成周报**，
+        #   **默认 0=关**。为什么：用户把服务挂着过夜，调度器把所有账号的周报都跑了一遍，而那晚 VPN
+        #   是关的 → 每个账号都吐一大段 `APIConnectionError` 报错。自动任务必须由账号**显式开启** ✓
+        try:
+            _have = {r[1] for r in conn.execute("PRAGMA table_info(accounts)")}
+            if _have and "digest_auto" not in _have:
+                conn.execute("ALTER TABLE accounts ADD COLUMN digest_auto INTEGER NOT NULL DEFAULT 0")
+            conn.commit()
+        except Exception as _e:
+            print("[schema] accounts 补 digest_auto 跳过:", _e)
+
+        # v4.0 大点 02 追加（用户 2026-10-13 裁定）：账号加 `decision_router` —— **是否启用决策模型精排**，
+        #   **默认 0=关**。为什么：不要把「开不开」写在 `.env` 里（那是模型**配置**的地方），
+        #   开关必须能在前端 AI 对话区一键切换、按账号生效 → 存账号字段，`.env` 只留模型与凭据。
+        try:
+            _have = {r[1] for r in conn.execute("PRAGMA table_info(accounts)")}
+            if _have and "decision_router" not in _have:
+                conn.execute("ALTER TABLE accounts ADD COLUMN decision_router INTEGER NOT NULL DEFAULT 0")
+            conn.commit()
+        except Exception as _e:
+            print("[schema] accounts 补 decision_router 跳过:", _e)
+
         # M5-1：products / company_products 加列（方案 §5.1）。同一套幂等写法。
         #   教训：这两段都必须待在**函数体顶层**（与外层 try 同级），一旦嵌进别人的 if/except 里就永不执行，
         #   而且不报错、只是"列悄悄没加上" —— 所以每次改完都要**真跑一次并断言列存在**。
@@ -335,6 +370,7 @@ def ensure_tables() -> None:
                 title         TEXT,                   -- 首问前 20 字，可手动重命名
                 token_usage   INTEGER DEFAULT 0,      -- 累计 token 估算
                 message_count INTEGER DEFAULT 0,      -- 历史消息数
+                kind          TEXT NOT NULL DEFAULT 'chat',  -- chat|probe；probe=测评会话，**从不进会话库** ✓
                 created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
             );
@@ -458,6 +494,35 @@ def ensure_tables() -> None:
                 account_id   INTEGER PRIMARY KEY REFERENCES accounts(id),
                 pool_version INTEGER NOT NULL DEFAULT 0,
                 updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+
+            -- ===== v4.0 大点 03：账号级测评指标（每账号**一行**，2026-10-10 立）=====
+            -- 口径见 docs/v4.0/v4.0规划文档.md §03 的 ③E：
+            --   · **每账号只保留一行**：指标变化直接 UPDATE（INSERT … ON CONFLICT(account_id) DO UPDATE），
+            --     **不做历史行、不做词法设计回退**（用户 2026-10-09 裁定）。历史靠快照文件
+            --     output/{username}/probe_打分表YYYYMMDD_HHMMSS.md（版本列表 + 阅读器）。
+            --   · 这些指标是**账号级**的，与大点 01 的项目级 12 项（precision@1 等）**永不混表**。
+            --   · 真值一律从 messages.tool_calls 读；对错一律取**人工终判**（脚本只记录、不判定）。
+            --   · 带 account_id → purge_account() 自省 sqlite_master 时**自动纳入清理**，无需改它。
+            CREATE TABLE IF NOT EXISTS probe_metrics (
+                account_id         INTEGER PRIMARY KEY REFERENCES accounts(id),
+                pool_version       INTEGER NOT NULL DEFAULT 0,   -- 本轮测评时的池版本（池一变即不可比）
+                pool_size          INTEGER NOT NULL DEFAULT 0,
+                cases_total        INTEGER NOT NULL DEFAULT 0,
+                single_total       INTEGER NOT NULL DEFAULT 0,
+                single_hit         INTEGER NOT NULL DEFAULT 0,
+                multi_total        INTEGER NOT NULL DEFAULT 0,
+                multi_hit          INTEGER NOT NULL DEFAULT 0,
+                noise_total        INTEGER NOT NULL DEFAULT 0,
+                noise_over         INTEGER NOT NULL DEFAULT 0,   -- 噪声越线数（期望不路由却路由了）
+                verdict_ok         INTEGER NOT NULL DEFAULT 0,   -- 判分分布（人工终判）：✓
+                verdict_partial    INTEGER NOT NULL DEFAULT 0,   -- △
+                verdict_bad        INTEGER NOT NULL DEFAULT 0,   -- ✗
+                verdict_unknown    INTEGER NOT NULL DEFAULT 0,   -- 未测（限流/故障，不计入能力评价）
+                avg_ext_retrievals REAL    NOT NULL DEFAULT 0,   -- 本轮平均外部检索次数（额度实耗，取自 usage_events）
+                elapsed_sec        REAL    NOT NULL DEFAULT 0,
+                sheet_name         TEXT,                         -- 最新快照文件名
+                updated_at         DATETIME DEFAULT CURRENT_TIMESTAMP
             );
 
             -- ===== v3.0 M3-9：画像版本快照（D9，用户 2026-09-25 新增）=====

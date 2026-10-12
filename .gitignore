@@ -66,3 +66,9 @@ tests/test_out/
 
 # 任务书迭代时的备份快照（本地留存，不入库）
 docs/v3.1/backups/
+
+# v4.0 起：改用户数据前的只读快照（整库 + 行级回滚 JSON），口径见 docs/版本文档规范.md §一
+docs/v4.0/backups/
+
+# 调研期脚本与实验数据（docs 放代码的破例，2026-10-12 用户裁定：隔离在 *-demo/ 子目录里，本地留存不入库）
+docs/v4.0/research/*-demo/

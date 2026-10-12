@@ -6,8 +6,19 @@
   ② --live-pool   真实账号池（当前库里的素材）—— 测「库里现状怎么样」
   ③ --live-pool --draft   真实池 + 草稿 —— 测「在现状之上再补这批素材会怎样」
 
-输出三段：5 例回归的期望 ref 落位 · 30 题五指标（与基线逐项对比）· 噪声题逐题体检。
+输出三段：5 例回归的期望 ref 落位 · 30 题指标（precision@1 / precision@3 / recall@3 / hit@3 / 灰区分栏 /
+噪声假阳性 / 注入量，与基线逐项对比）· 噪声题逐题体检。
 ★ 只读：不写数据库、不写夹具、不改冻结池。
+
+★ 2026-10-09 口径收口后：**默认模式（冻结池＋草稿）就是「库里入库口径」**——判「素材层生效后的系统」
+  看它，判「素材层有没有效」看两模式之差；口径三条（precision@3 结构上限 / 灰区分栏 / 冻结池=素材层前）
+  见 `docs/v4.0/Done/01-度量口径收口工程·实现记录.md`。
+
+★ 草稿口径 = 入库口径（2026-10-09 收口）：`material_layer_draft.json` 只保留**库里真正入库的那些条目**。
+  裁决（任务书 §九 9）把 `api:xxapi#ipQuery` / `api:xxapi#douyinHot` /
+  `mcp:12306-mcp/get-station-by-telecode` 定为「保持原状并关闭」（三者 `abilities_user` 在库里为空），
+  故已从草稿中移除 —— 否则默认模式会把它们也算进去，得出「噪声假阳性 0.333」这类**与入库现状不符**的假差
+  （2026-10-09 实测过：保留它们时 noise_fp=0.333，移除后回到 0.000）。将来若又给某条目做素材层，记得同步这里与库。
 
 ⚠️ 噪声假阳性是**硬判据**，但它在池内余弦标准差极小（≈0.01）时**不稳定**——
    小改动会让它 0↔4 跳变。所以不要只看布尔值，要结合逐题体检里的 z 值判断。
@@ -54,13 +65,18 @@ def _apply_draft(entries):
     return out
 
 
+_ORIG_LOAD_ENTRIES = bench.load_entries        # ★ 必须在打补丁**之前**留好原引用
+
+
 def loader(derive_kw=True):
     if LIVE:
         sys.path.insert(0, os.path.join(ROOT, "tests", "live"))
         import m6b_delta_rerun as dr
         _, _, ents = dr._live_entries()
     else:
-        ents = bench.load_entries(derive_kw)
+        # ★ 走原函数，不能写 bench.load_entries —— 下面第 67 行会把那个名字换成 loader 自己，
+        #   否则默认（冻结池）模式一进来就自递归 → RecursionError（2026-10-09 实跑踩到）
+        ents = _ORIG_LOAD_ENTRIES(derive_kw)
     return _apply_draft(ents) if USE_DRAFT else ents
 
 

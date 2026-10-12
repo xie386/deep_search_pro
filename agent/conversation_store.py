@@ -98,31 +98,67 @@ def message_to_dict(m: BaseMessage) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def create_session(account_id: int, title: str = "新对话") -> dict:
-    """新建空会话（UUID thread_id）。返回会话信息。"""
+CHAT_KIND = "chat"      # 用户正常会话
+PROBE_KIND = "probe"    # 工具池测评会话（**从不进会话库**，见 list_sessions / purge_probe_sessions）
+KINDS = (CHAT_KIND, PROBE_KIND)
+
+
+def create_session(account_id: int, title: str = "新对话", kind: str = CHAT_KIND) -> dict:
+    """新建空会话（UUID thread_id）。返回会话信息。
+
+    `kind`：`chat`（默认，用户会话）| `probe`（工具池测评会话 —— 不进会话库、跑完即清 ✓）。
+    ≤ 其它值一律按 `chat` 处理（不给出「未知 kind」这种能进会话库又会漏删的中间态）。
+    """
     thread_id = uuid.uuid4().hex
+    kind = kind if kind in KINDS else CHAT_KIND
     conn = get_personal_conn()
     try:
         cur = conn.execute(
-            "INSERT INTO conversations (account_id, thread_id, title) VALUES (?, ?, ?)",
-            (account_id, thread_id, title or "新对话"),
+            "INSERT INTO conversations (account_id, thread_id, title, kind) VALUES (?, ?, ?, ?)",
+            (account_id, thread_id, title or "新对话", kind),
         )
         conn.commit()
-        return {"id": cur.lastrowid, "thread_id": thread_id, "title": title or "新对话"}
+        return {"id": cur.lastrowid, "thread_id": thread_id, "title": title or "新对话", "kind": kind}
     finally:
         conn.close()
 
 
 def list_sessions(account_id: int) -> list[dict]:
-    """该账号全部会话（按 updated_at DESC，含消息数/活跃时间）。"""
+    """该账号**正常会话**列表（按 updated_at DESC，含消息数/活跃时间）。
+
+    ★ 测评会话（`kind='probe'`）**从不出现**在这里（用户 2026-10-11 裁定：禁止测试会话入会话库）✓
+    """
     conn = get_personal_conn()
     try:
         rows = conn.execute(
-            """SELECT id, thread_id, title, token_usage, message_count, created_at, updated_at
-               FROM conversations WHERE account_id=? ORDER BY updated_at DESC""",
-            (account_id,),
+            """SELECT id, thread_id, title, kind, token_usage, message_count, created_at, updated_at
+               FROM conversations WHERE account_id=? AND kind<>? ORDER BY updated_at DESC""",
+            (account_id, PROBE_KIND),
         ).fetchall()
         return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def purge_probe_sessions(account_id: int) -> dict:
+    """删掉该账号**全部测评会话**（含消息）→ 返回 `{"conversations": n, "messages": m}`。
+
+    ★ 为什么不用水位线（`id > 开跑前 MAX(id)`）就够：水位线只在**跑完那一刻**执行，测评中途崩溃/被中断
+      就会把一堆「新对话」留在会话库里。这里按 `kind` 全量清，**开跑前也清一次** → 上一轮残留当场收掉 ✓
+    """
+    conn = get_personal_conn()
+    try:
+        ids = [int(r[0]) for r in conn.execute(
+            "SELECT id FROM conversations WHERE account_id=? AND kind=?", (account_id, PROBE_KIND))]
+        if not ids:
+            return {"conversations": 0, "messages": 0}
+        ph = ",".join("?" * len(ids))
+        n_msg = int(conn.execute("SELECT COUNT(*) FROM messages WHERE conversation_id IN (%s)" % ph,
+                                 ids).fetchone()[0])
+        conn.execute("DELETE FROM messages WHERE conversation_id IN (%s)" % ph, ids)
+        conn.execute("DELETE FROM conversations WHERE id IN (%s)" % ph, ids)
+        conn.commit()
+        return {"conversations": len(ids), "messages": n_msg}
     finally:
         conn.close()
 

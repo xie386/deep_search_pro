@@ -65,8 +65,16 @@ def run_all_due(scope: str | None = None):
         rows = conn.execute(
             "SELECT s.id, s.owner_id, s.scope, a.username "
             "FROM digest_subs s JOIN accounts a ON a.id = s.owner_id "
-            "WHERE s.enabled=1" + (" AND s.schedule='weekly'" if scope == "weekly" else "")
+            # ★ 2026-10-11：**账号级总开关**（`accounts.digest_auto`，默认 0=关）——
+            #   订阅自己的 `enabled=1` 不再足够：自动任务必须由账号显式开启，
+            #   否则挂机过夜会把所有账号的周报都跑一遍（那晚 VPN 关着 → 满屏 APIConnectionError ✗）
+            "WHERE s.enabled=1 AND COALESCE(a.digest_auto, 0)=1"
+            + (" AND s.schedule='weekly'" if scope == "weekly" else "")
         ).fetchall()
+    except Exception as e:  # noqa: BLE001
+        # ★ 开关列缺失（老库没迁移成功）等异常 → **本次一个都不跑**，绝不在状态不明时自动开跑 ✗
+        print("[digest-sched] 查询订阅失败（本轮不自动生成任何报告）: %s: %s" % (type(e).__name__, e))
+        return
     finally:
         conn.close()
 

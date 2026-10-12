@@ -557,6 +557,220 @@
     .sk-card { background: var(--panel2); border: 1px solid rgba(84,170,105,.28); border-radius: 12px;
                padding: 14px 16px; margin-bottom: 14px; }
     .sk-card h3 { margin: 0 0 8px; font-size: 15px; }
+
+    /* ==================== v4.0 大点 03：工具池测评（第 6 个页签） ==================== */
+    /* 视觉：沿用「技能与工具」的绿系 token（--accent/--panel2/--line），
+       信息层级 = ① 英雄条（池摘要 + 大号读数）② 五步流程 ③ 数据大屏 ④ 工具池体检表
+       ⑤ 历史打分表版本 + 页内 markdown 阅读器。动效克制但都有（hover / 进度 / 运行 loader）。 */
+    .pb-hero { position: relative; overflow: hidden; border-radius: 16px; padding: 18px 20px;
+               border: 1px solid rgba(84,170,105,.3); margin-bottom: 14px;
+               background: linear-gradient(120deg, rgba(84,170,105,.22), rgba(245,197,66,.16) 62%, rgba(84,170,105,.1)); }
+    .pb-hero::after { content: ''; position: absolute; right: -60px; top: -70px; width: 220px; height: 220px;
+                      border-radius: 50%; background: radial-gradient(circle, rgba(84,170,105,.35), transparent 68%); }
+    .pb-hero h2 { margin: 0 0 4px; font-size: 19px; letter-spacing: .3px; position: relative; }
+    .pb-hero .pb-sub { font-size: 12px; color: var(--muted); line-height: 1.7; position: relative; max-width: 720px; }
+    .pb-hero-row { display: flex; gap: 18px; align-items: flex-end; justify-content: space-between;
+                   flex-wrap: wrap; position: relative; margin-top: 10px; }
+    .pb-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+    .pb-chip { font-size: 11.5px; padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,.62);
+               border: 1px solid var(--line); color: var(--text); }
+    .pb-chip b { color: var(--accent); }
+    .pb-big { text-align: right; line-height: 1.05; }
+    .pb-big .n { font-size: 34px; font-weight: 800; color: var(--accent);
+                 text-shadow: 0 2px 0 rgba(255,255,255,.6); }
+    .pb-big .l { font-size: 11.5px; color: var(--muted); }
+    .pb-big.empty .n { color: var(--muted); font-size: 20px; }
+
+    .pb-steps { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+    .pb-step { flex: 1 1 168px; min-width: 158px; position: relative; padding: 12px 13px 12px 44px;
+               border-radius: 12px; background: var(--panel2); border: 1px solid var(--line);
+               transition: transform .2s, border-color .2s, box-shadow .2s; cursor: pointer; }
+    .pb-step:hover { transform: translateY(-2px); border-color: rgba(84,170,105,.6);
+                     box-shadow: 0 8px 18px rgba(84,170,105,.16); }
+    .pb-step.done { border-color: rgba(84,170,105,.55); background: rgba(84,170,105,.16); }
+    .pb-step.busy { border-color: rgba(245,197,66,.75); background: rgba(245,197,66,.14); }
+    .pb-step.dis { opacity: .55; cursor: not-allowed; }
+    .pb-step .num { position: absolute; left: 12px; top: 12px; width: 24px; height: 24px; border-radius: 50%;
+                    display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800;
+                    color: #14381f; background: linear-gradient(140deg, var(--accent2), var(--accent)); }
+    .pb-step .t { font-size: 13px; font-weight: 700; margin-bottom: 3px; }
+    .pb-step .d { font-size: 11px; color: var(--muted); line-height: 1.55; }
+
+    .pb-tip { font-size: 11.5px; color: #7a4a04; background: rgba(245,197,66,.2);
+              border: 1px solid rgba(245,197,66,.55); border-radius: 9px; padding: 7px 10px; line-height: 1.6; }
+    .pb-tip.red { color: #8f1d20; background: rgba(229,72,77,.12); border-color: rgba(229,72,77,.5); }
+    .pb-tip.ok { color: #1d5c33; background: rgba(84,170,105,.14); border-color: var(--line); }
+
+    .pb-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(126px, 1fr)); gap: 10px; }
+    .pb-stat { border-radius: 12px; padding: 11px 12px; background: var(--panel2);
+               border: 1px solid var(--line); position: relative; overflow: hidden; }
+    .pb-stat::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+                       background: linear-gradient(180deg, var(--accent), var(--accent2)); }
+    .pb-stat .k { font-size: 11px; color: var(--muted); margin-bottom: 5px; }
+    .pb-stat .v { font-size: 19px; font-weight: 800; color: var(--text); }
+    .pb-stat .v small { font-size: 11.5px; font-weight: 600; color: var(--muted); margin-left: 3px; }
+    .pb-stat.warn .v { color: #b45309; }
+    .pb-stat.bad .v { color: #e5484d; }
+
+    .pb-bar { display: flex; height: 12px; border-radius: 999px; overflow: hidden;
+              border: 1px solid var(--line); background: rgba(0,0,0,.06); margin: 6px 0 8px; }
+    .pb-bar i { display: block; height: 100%; transition: width .5s; }
+    .pb-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--muted); }
+    .pb-legend span { display: flex; align-items: center; gap: 5px; }
+    .pb-legend i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+
+    .pb-pool { display: grid; grid-template-columns: repeat(auto-fill, minmax(268px, 1fr)); gap: 8px; }
+    .pb-item { border-radius: 10px; padding: 9px 11px; background: rgba(84,170,105,.08);
+               border: 1px solid rgba(84,170,105,.22); transition: border-color .2s, transform .2s; }
+    .pb-item:hover { border-color: rgba(84,170,105,.55); transform: translateY(-1px); }
+    .pb-item .r { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: var(--muted);
+                  word-break: break-all; }
+    .pb-item .n { font-size: 12.5px; font-weight: 700; margin: 2px 0 5px; }
+    .pb-item .f { display: flex; gap: 5px; flex-wrap: wrap; }
+    .pb-f { font-size: 10.5px; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line);
+            color: var(--muted); background: rgba(255,255,255,.5); }
+    .pb-f.ok { color: #1d5c33; border-color: rgba(84,170,105,.5); }
+    .pb-f.no { color: #8f1d20; border-color: rgba(229,72,77,.35); background: rgba(229,72,77,.08); }
+    .pb-f.wn { color: #7a4a04; border-color: rgba(245,197,66,.6); background: rgba(245,197,66,.15); }
+    /* ★ 2026-10-11 用户裁定（纯前端）：**二次判分（人工终判）的选项选中后太不明显** ——
+       原来只是「文字由灰变绿 + 描边微亮」，一眼看不出选没选。改成**颜色翻转**：
+       选中 = 实心填色 + 反白字 + 描边同色 + 轻微上浮/投影，且按判定给语义色
+       （✓ 绿 / △ 部分对 琥珀 / ✗ 红 / 未测 灰蓝），未选中仍是纸底浅描边 → 对比强烈 ✓ */
+    /* ★ 2026-10-11 用户裁定（纯前端）：**每个阶段区块加一键收起** —— 只按「版本」看时，
+       题集 43 张卡 + 池 29 行 + 历史列表要滚很久。这里用 **CSS 折叠**（给卡片加 `.folded`
+       只留 `<h3>` 标题行），**不动结构**、不重排布局 ✓ */
+    .sk-card.folded > *:not(h3) { display: none !important; }
+    .pb-fold { display: inline-block; margin-left: 10px; cursor: pointer; user-select: none;
+               font-size: 11.5px; font-weight: 700; padding: 2px 10px; border-radius: 999px;
+               border: 1.5px solid var(--line); color: var(--muted); background: rgba(255,255,255,.5);
+               transition: all .12s ease; white-space: nowrap; }
+    .pb-fold:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-1px); }
+    .sk-card.folded { padding-bottom: 10px; }
+    .sk-card.folded > h3 { margin-bottom: 0; }
+    .pb-fold-all { font-size: 11.5px; font-weight: 700; padding: 3px 11px; border-radius: 999px;
+                   border: 1.5px solid var(--line); color: var(--muted); background: rgba(255,255,255,.5);
+                   cursor: pointer; user-select: none; transition: all .12s ease; }
+    .pb-fold-all:hover { border-color: var(--accent); color: var(--accent); }
+    .pb-vote { font-size: 11.5px; font-weight: 700; padding: 3px 11px; border-radius: 999px;
+               border: 2px solid var(--line); color: var(--muted); background: rgba(255,255,255,.55);
+               cursor: pointer; user-select: none; line-height: 1.35; transition: all .12s ease; }
+    .pb-vote:hover { border-color: var(--form-ink, var(--text)); color: var(--form-ink, var(--text));
+                     transform: translateY(-1px); }
+    .pb-vote.on { color: #fff; border-color: transparent; transform: translateY(-1px);
+                  box-shadow: 0 3px 10px rgba(0,0,0,.18); }
+    .pb-vote.on.v-ok { background: #2f8b4c; }
+    .pb-vote.on.v-wn { background: #b07d0a; }
+    .pb-vote.on.v-no { background: #c0392b; }
+    .pb-vote.on.v-na { background: #667880; }
+    /* ★ 出题/测评加载态：参考「组件设计.md」里 Uiverse doodle-loader 的 **loading + 任务词切换** 思想，
+       但改造成项目绿 + **真实进度**（任务词来自后端 stage/name；Vue 靠 :key 变化重挂载 → 入场动画重播 ✓） */
+    .pb-loader { border: 1px dashed var(--line); border-radius: 10px; padding: 13px 16px;
+                 background: rgba(84,170,105,.05); }
+    .pb-loader .row { display: flex; align-items: baseline; gap: 9px; }
+    .pb-loader .pre { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #7a8a7d; }
+    .pb-loader .word { font-size: 18px; font-weight: 700; color: #1d5c33; display: inline-block;
+                       animation: pb-word-in .45s cubic-bezier(.2,.8,.3,1); }
+    @keyframes pb-word-in { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }
+    .pb-loader .track { height: 8px; border-radius: 999px; background: rgba(0,0,0,.08);
+                        overflow: hidden; margin: 10px 0 6px; }
+    .pb-loader .fill { height: 100%; border-radius: 999px; display: block;
+                       background: linear-gradient(90deg,#54aa69,#8fd3a0); transition: width .4s ease; }
+    .pb-loader .sub { font-size: 12px; color: #5a6b5d; }
+    .pb-loader .sub.detail { margin-top: 5px; opacity: .85; }
+    .pb-loader .dots { display: flex; gap: 6px; margin-top: 9px; }
+    .pb-loader .dots i { width: 6px; height: 6px; border-radius: 50%; background: #54aa69;
+                         animation: pb-dot .9s ease-in-out infinite; }
+    .pb-loader .dots i:nth-child(2) { animation-delay: .15s; }
+    .pb-loader .dots i:nth-child(3) { animation-delay: .3s; }
+    @keyframes pb-dot { 0%,100% { opacity: .25; transform: translateY(0); } 45% { opacity: 1; transform: translateY(-4px); } }
+    .pb-tip.model { background: rgba(84,170,105,.07); border-color: rgba(84,170,105,.35); }
+    .pb-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+    .pb-dot.ok { background: var(--accent); box-shadow: 0 0 0 3px rgba(84,170,105,.2); }
+    .pb-dot.wn { background: #f5c542; box-shadow: 0 0 0 3px rgba(245,197,66,.22); }
+
+    .pb-cases { display: grid; gap: 8px; }
+    .pb-case { display: grid; grid-template-columns: 42px 74px 1fr; gap: 8px; align-items: start;
+               border-radius: 10px; padding: 8px 10px; background: var(--panel2); border: 1px solid var(--line); }
+    .pb-case .id { font-weight: 800; color: var(--accent); font-size: 12.5px; }
+    .pb-case .kd { font-size: 10.5px; padding: 2px 6px; border-radius: 999px; text-align: center;
+                   border: 1px solid var(--line); color: var(--muted); }
+    .pb-case .kd.multi { color: #7a4a04; border-color: rgba(245,197,66,.6); background: rgba(245,197,66,.14); }
+    .pb-case .kd.noise { color: #8f1d20; border-color: rgba(229,72,77,.4); background: rgba(229,72,77,.08); }
+    .pb-case .q { font-size: 12.5px; line-height: 1.6; }
+    .pb-case .e { font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; color: var(--muted);
+                  margin-top: 3px; word-break: break-all; }
+
+    .pb-sheets { display: flex; gap: 7px; flex-wrap: wrap; }
+    .pb-sheet { font-size: 11.5px; padding: 5px 11px; border-radius: 999px; cursor: pointer;
+                background: rgba(84,170,105,.12); border: 1px solid rgba(84,170,105,.3); color: var(--muted);
+                transition: background .2s, color .2s, transform .2s; }
+    .pb-sheet:hover { color: var(--text); background: rgba(84,170,105,.24); transform: translateY(-1px); }
+    .pb-sheet.on { background: rgba(84,170,105,.42); color: #14381f; font-weight: 700; }
+
+    /* 页内 markdown 阅读器（**自写极简渲染**，不引任何第三方 JS ✓ 离线前提） */
+    .pb-reader { max-height: 560px; overflow-y: auto; border-radius: 12px; padding: 16px 18px;
+                 background: rgba(255,255,255,.72); border: 1px solid var(--line); }
+    .pb-reader h1 { font-size: 17px; margin: 4px 0 10px; }
+    .pb-reader h2 { font-size: 14.5px; margin: 16px 0 8px; padding-bottom: 5px;
+                    border-bottom: 1px dashed var(--line); }
+    .pb-reader h3 { font-size: 13px; margin: 12px 0 5px; color: var(--accent); }
+    .pb-reader p { font-size: 12.5px; line-height: 1.75; margin: 5px 0; }
+    .pb-reader blockquote { margin: 6px 0; padding: 6px 11px; border-left: 3px solid var(--accent);
+                            background: rgba(84,170,105,.08); border-radius: 0 8px 8px 0;
+                            font-size: 12px; color: var(--muted); line-height: 1.7; }
+    .pb-reader ul { margin: 5px 0 8px 18px; }
+    .pb-reader li { font-size: 12.5px; line-height: 1.7; margin: 2px 0; }
+    .pb-reader table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 11.5px; }
+    .pb-reader th, .pb-reader td { border: 1px solid var(--line); padding: 5px 8px; text-align: left;
+                                   vertical-align: top; }
+    .pb-reader th { background: rgba(84,170,105,.14); font-weight: 700; }
+    .pb-reader tr:nth-child(even) td { background: rgba(84,170,105,.05); }
+    .pb-reader code { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px;
+                      background: rgba(0,0,0,.07); padding: 1px 5px; border-radius: 5px; }
+    .pb-reader pre { background: rgba(0,0,0,.06); border-radius: 9px; padding: 10px 12px; overflow-x: auto; }
+    .pb-reader hr { border: 0; border-top: 1px dashed var(--line); margin: 12px 0; }
+    .pb-reader .pb-json { display: none; }        /* 机器可读块对人不显示 ✓ */
+
+    .pb-run { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 10px; }
+    .pb-prog { flex: 1 1 220px; height: 9px; border-radius: 999px; background: rgba(0,0,0,.08);
+               overflow: hidden; border: 1px solid var(--line); }
+    .pb-prog i { display: block; height: 100%; width: 0;
+                 background: linear-gradient(90deg, var(--accent), #f5c542); transition: width .4s; }
+    .pb-run .q { font-size: 11.5px; color: var(--muted); flex: 1 1 100%; }
+    /* 001 号 uiverse loader（3d-grid-cube，运行态）：色调改用项目绿 ✓ */
+    .wrapper-grid { --animation-duration: 2.1s; --cube-color: #0000; --highlight-color: #54aa69;
+                    --cube-width: 16px; --cube-height: 16px; position: relative; display: grid;
+                    grid-template-columns: repeat(7, var(--cube-width)); width: calc(7 * var(--cube-width));
+                    height: var(--cube-height); perspective: 350px; }
+    .wrapper-grid .cube { position: relative; transform-style: preserve-3d;
+                          animation: pb-translate-z var(--animation-duration) ease-in-out infinite; }
+    .wrapper-grid .face { position: absolute; width: var(--cube-width); height: var(--cube-height);
+                          background-color: var(--cube-color);
+                          animation: pb-face-color var(--animation-duration) ease-in-out infinite,
+                                     pb-edge-glow var(--animation-duration) ease-in-out infinite;
+                          animation-delay: inherit; }
+    .wrapper-grid .face-front { transform: rotateY(0deg) translateZ(calc(var(--cube-width) / 2)); }
+    .wrapper-grid .face-back { transform: rotateY(180deg) translateZ(calc(var(--cube-width) / 2)); opacity: .6; }
+    .wrapper-grid .face-left { transform: rotateY(-90deg) translateZ(calc(var(--cube-width) / 2)); opacity: .6; }
+    .wrapper-grid .face-right { transform: rotateY(90deg) translateZ(calc(var(--cube-width) / 2)); opacity: .6; }
+    .wrapper-grid .face-top { height: var(--cube-width);
+                              transform: rotateX(90deg) translateZ(calc(var(--cube-width) / 2)); opacity: .8; }
+    .wrapper-grid .face-bottom { height: var(--cube-width);
+                                 transform: rotateX(-90deg) translateZ(calc(var(--cube-height) - var(--cube-width) * .5)); opacity: .8; }
+    .wrapper-grid .cube:nth-child(1) { z-index: 0; animation-delay: 0s; }
+    .wrapper-grid .cube:nth-child(2) { z-index: 1; animation-delay: .2s; }
+    .wrapper-grid .cube:nth-child(3) { z-index: 2; animation-delay: .4s; }
+    .wrapper-grid .cube:nth-child(4) { z-index: 3; animation-delay: .6s; }
+    .wrapper-grid .cube:nth-child(5) { z-index: 2; animation-delay: .8s; }
+    .wrapper-grid .cube:nth-child(6) { z-index: 1; animation-delay: 1s; }
+    .wrapper-grid .cube:nth-child(7) { z-index: 0; animation-delay: 1.2s; }
+    @keyframes pb-translate-z { 0%, 40%, 100% { transform: translateZ(-2px); }
+                                30% { transform: translateZ(12px) translateY(-1px); } }
+    @keyframes pb-face-color { 0%, 50%, 100% { background-color: var(--cube-color); }
+                               10% { background-color: var(--highlight-color); } }
+    /* ★ 001 片段缺 `edge-glow` 关键帧（skill 里已标注）→ 这里按同义补一个，避免引用未定义动画 ✗ */
+    @keyframes pb-edge-glow { 0%, 50%, 100% { box-shadow: none; }
+                              10% { box-shadow: 0 0 14px var(--highlight-color); } }
     .sk-tip { font-size: 12px; color: var(--muted); line-height: 1.65; margin-bottom: 10px; }
     .sk-grid { display: grid; grid-template-columns: 250px 1fr; gap: 14px; align-items: start; }
     .sk-list { max-height: 430px; overflow-y: auto; }
@@ -1562,6 +1776,46 @@
       background: var(--form-paper); color: var(--form-ink); font-weight: 700; font-size: 11.5px;
     }
     .sub-en { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; color: var(--form-ink); }
+    /* ★ 2026-10-11：账号级「每天自动生成周报」开关（默认关）—— 与订阅卡同款墨边纸底，别用灰字 */
+    .sub-auto {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      margin: 10px 0 4px; padding: 9px 12px;
+      border: 2px solid var(--form-ink); border-radius: 14px 4px 14px 4px;
+      background: var(--form-paper); color: var(--form-ink); font-weight: 700;
+    }
+    .sub-auto .sub-auto-tip { font-weight: 600; font-size: 12px; color: var(--form-ink-soft); }
+
+    /* ★ 2026-10-13：AI 对话区的「决策模型精排」开关 —— 采用 front_from_uiverse **017 号**
+       （Creatlydev 的竖向开关）设计：滑块 + 堆叠字母 + **颜色比滑块晚 300ms 切换**（原组件手感）。
+       按项目色板 re-tone（关=墨灰、开=主色绿 `--accent`），尺寸从演示稿的 6rem/155px 缩到侧栏尺度。
+       2026-10-13 用户裁定：**去掉旁边的说明文字**（挤成两行），只留开关 + Jev + 状态徽标，
+       说明改放整行的悬停提示（title）。 */
+    .chat-switch {
+      display: flex; align-items: center; gap: 10px; margin: 0 0 8px;
+      padding: 8px 10px; border: 2px solid var(--form-ink); border-radius: 12px 4px 12px 4px;
+      background: var(--form-paper); color: var(--form-ink); font-weight: 700; font-size: 12px;
+    }
+    .chat-switch .st { margin-left: auto; font-size: 11px; padding: 1px 7px; border-radius: 3px;
+      border: 1.5px solid var(--form-ink); }
+    .chat-switch .st.on { background: var(--accent); border-color: var(--accent); color: var(--form-paper); }
+    /* ---- 竖向开关本体（017 的缩放版）---- */
+    .jev-tgl {
+      width: 20px; height: 44px; border-radius: 0.62rem; background: rgba(17, 26, 6, .22);
+      padding: 3px 0; cursor: pointer; display: flex; justify-content: center; flex: 0 0 auto;
+      transition: background-color 300ms 300ms;
+    }
+    .jev-tgl__circle {
+      width: 15px; height: 15px; border-radius: 50%; background: var(--form-paper);
+      border: 1.5px solid var(--form-ink);
+      margin-top: calc(44px - 6px - 15px); transition: margin 500ms ease-in-out;
+    }
+    .jev-tgl-text {
+      display: flex; flex-direction: column; line-height: .78; font-weight: 900; font-size: 11px;
+      color: var(--form-ink-soft); cursor: pointer;
+    }
+    .chat-switch input:checked + .jev-tgl { background: var(--accent); }
+    .chat-switch input:checked + .jev-tgl > .jev-tgl__circle { margin-top: 0; }
+    .chat-switch input:checked ~ .jev-tgl-text { color: var(--accent); }
 
     /* ---------- ② 跟踪色块：从左侧滑过来吞掉「你正在操作的那一段」 ---------- */
     .list-edit-row, .list-edit-col, .prov-row, .sub-card, .add-form .fg, .soul-switch {
@@ -2307,6 +2561,18 @@
               <span class="session-title">💬 对话</span>
               <button class="mini-btn" @click="newSession" title="新建对话">＋ 新对话</button>
             </div>
+            <!-- ★ 2026-10-13 用户裁定：决策模型精排开关（账号级、默认关）—— 开不开**不再写进 .env**，
+                 由这里一键切换；只在「候选互相咬住」时多问决策模型一次。
+                 组件设计取自 front_from_uiverse 017 号（竖向开关，字母改成 Jev） -->
+            <div class="chat-switch"
+                 :title="decRouter
+                   ? '已开启：候选咬住时会再问一次决策模型（该次约 +0.7~1.7 秒；24 小时内同一问题走缓存、不花钱）'
+                   : '已关闭：完全按路由器的结果，与以前逐字一致（默认关）'">
+              <input hidden id="jev-tgl" type="checkbox" :checked="decRouter" />
+              <label class="jev-tgl" for="jev-tgl" @click.prevent="setDecRouter(!decRouter)"><span class="jev-tgl__circle"></span></label>
+              <span class="jev-tgl-text" @click="setDecRouter(!decRouter)"><span>J</span><span>e</span><span>v</span></span>
+              <span class="st" :class="{ on: decRouter }">{{ decRouter ? '已开' : '已关' }}</span>
+            </div>
             <div class="session-list" v-if="sessions.length">
 
               <div class="session-item" :class="{ active: activeThread === s.thread_id }"
@@ -2728,6 +2994,15 @@
             {{ digestRunning ? '⏳ 生成中…(逐个约1-3分钟/个)' : ('▶ 批量生成（选中 '+selCount+' 个）') }}
           </button>
         </div>
+        <!-- ★ 2026-10-11 用户裁定：每天自动生成改成**账号级开关、默认关** ——
+             别再让服务挂机过夜时把所有账号的周报都自动跑一遍（那晚 VPN 关着，满屏连接报错） -->
+        <label class="sub-auto sub-en">
+          <input type="checkbox" :checked="digestAuto" @change="setDigestAuto($event.target.checked)" />
+          <span class="brut-mark"></span>
+          <span>每天 9:00 自动生成周报（<b>默认关</b>）</span>
+          <span class="sub-auto-tip">—— 关闭时<b>不会</b>自动跑；你随时可以用上面的「▶ 批量生成」手动跑
+            （订阅里的「每天9点/每周一9点」只在打开本开关后才生效）</span>
+        </label>
         <div class="sub-list" v-if="subs.length">
           <div class="sub-card" v-for="s in subs" :key="s.id">
             <label class="sub-ck"><input type="checkbox" v-model="s._sel" /><span class="brut-mark"></span></label>
@@ -2816,6 +3091,7 @@
           <div class="sk-tab" :class="{on: skTab==='cli'}" @click="skTab='cli'">🧩 自定义 CLI</div>
           <div class="sk-tab" :class="{on: skTab==='mcp'}" @click="skTab='mcp'">🔌 MCP 服务</div>
           <div class="sk-tab" :class="{on: skTab==='api'}" @click="skTab='api'">🔗 API 工具</div>
+          <div class="sk-tab" :class="{on: skTab==='probe'}" @click="skTab='probe'">🧪 工具池测评</div>
         </div>
 
         <!-- ========== ⑤ CLI 面板（M4b，011 terminal-cli 主视觉） ========== -->
@@ -3539,6 +3815,351 @@
           </div>
         </template>
 
+        <!-- ========== ⑥ 工具池测评（v4.0 大点 03）==========
+             出题 → 测评 → 判分 → 词法建议 → 数据大屏；每个账号维护自己的路由质量 ✓
+             按钮与后端一一对应（/api/probe/*），五步即四道闸门（题目过目 / 额度确认 / 人工终判 / 改素材前离线自证）。 -->
+        <template v-if="skTab==='probe'">
+          <!-- ① 英雄条：池摘要 + 大号读数 -->
+          <div class="pb-hero">
+            <h2>🧪 工具池测评</h2>
+            <div class="pb-sub">
+              让<b>这个账号自己的工具池</b>被测一遍。换账号、增减工具、或改了素材，都能重跑一轮 ——
+              出题依据的是<b>路由器渲染的同一份卡片</b>，所以测出来的问题就是路由会踩的问题 ✓
+            </div>
+            <div class="pb-hero-row">
+              <div class="pb-chips">
+                <span class="pb-chip">池规模 <b>{{ probe.pool_size }}</b> 条</span>
+                <span class="pb-chip">池版本 <b>{{ probe.pool_version }}</b></span>
+                <span class="pb-chip">题集 <b>{{ probeCases.length }}</b> 题</span>
+                <span class="pb-chip">历史打分表 <b>{{ probeSheets.length }}</b> 份</span>
+                <span class="pb-chip" v-if="probeBadCount">体检待补 <b>{{ probeBadCount }}</b> 条</span>
+                <!-- ★ 一键全部收起/展开（只按「版本」看时省掉大量滚动 ✓） -->
+                <span class="pb-fold-all" @click="probeFoldAll()">
+                  {{ probeFoldAllOn ? '⤢ 全部展开' : '⤡ 全部收起' }}</span>
+              </div>
+              <div class="pb-big" :class="{empty: !probeHasMetrics}">
+                <div class="n">{{ probeHasMetrics ? probeHitRate : '尚无数据' }}</div>
+                <div class="l">{{ probeHasMetrics ? '单工具题命中率（最近一轮）' : '跑一轮就有数据' }}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ★ 用户 2026-10-10 要求：测评界面最上方给一句模型选择建议（三段都靠模型吐结构化 JSON） -->
+          <div class="pb-tip model">
+            💡 <b>当前测评模型：<code>{{ probe.probe_model || '（未配置，回落到主 Agent 模型）' }}</code></b>
+            <span v-if="probe.probe_judge_split">｜ 判分模型：<code>{{ probe.probe_judge_model }}</code></span>
+            —— 出题 / 判分 / 词法建议三段都靠模型吐结构化 JSON，<b>用一个「输出快、严格 JSON」的模型</b>最省事。
+            换法是改 <code>.env</code> 的 <code>PROBE_LLM_MODEL</code>（不动主 Agent 的
+            <code>LLM_MODEL_MAX</code>），另可调 <code>PROBE_LLM_TIMEOUT</code>（单次超时秒数）与
+            <code>PROBE_LLM_MAXTOKENS</code>（输出上限）—— <b>改完要重启服务</b>。<br>
+            ⚠️ <b>思考型模型</b>会把预算花在思考上，容易「思考几百秒、正文为空」；出题现已按
+            <b>每 6 个工具一批并发跑</b>（默认 3 批并发，<code>PROBE_GEN_CONCURRENCY</code> 可调），
+            单批失败也不会丢掉已完成的批次，且会自动<b>归一格式</b>与<b>补漏未覆盖的工具</b> ✓
+          </div>
+
+          <!-- ② 五步流程（点击即执行该步；闸门不满足时按钮禁用并说明原因） -->
+          <div class="pb-steps">
+            <div class="pb-step" :class="{done: probeCases.length, busy: probeBusy==='gen', dis: probeBusy}"
+                 @click="probeBusy || probeGen()">
+              <span class="num">1</span>
+              <div class="t">🧪 生成真机题目</div>
+              <div class="d">按池出题：每个工具 ≥1 题 + 多工具题 + 噪声题；产出先给你过目</div>
+            </div>
+            <div class="pb-step" :class="{done: probeRun.raw_path, busy: probeRun.running, dis: probeBusy || !probeCases.length}"
+                 @click="(probeBusy || !probeCases.length) || probeRunNow()">
+              <span class="num">2</span>
+              <div class="t">▶ 开始测评</div>
+              <div class="d">真机逐题跑一遍（后台），只记录调用序列、不判对错</div>
+            </div>
+            <div class="pb-step" :class="{done: probeJudgeRows.length, busy: probeBusy==='judge', dis: probeBusy || !probeRun.raw_path}"
+                 @click="(probeBusy || !probeRun.raw_path) || probeJudge()">
+              <span class="num">3</span>
+              <div class="t">🧮 判分</div>
+              <div class="d">Agent 预填 ✓/△/✗/未测 → <b>你二次打分做终判</b></div>
+            </div>
+            <div class="pb-step" :class="{done: !!probeAdvisor, busy: probeBusy==='advise', dis: probeBusy || !probeJudgeRows.length}"
+                 @click="(probeBusy || !probeJudgeRows.length) || probeAdvise()">
+              <span class="num">4</span>
+              <div class="t">💡 词法建议</div>
+              <div class="d">按本轮结果指出该改哪几条素材（只建议改素材，不改代码）</div>
+            </div>
+            <div class="pb-step" :class="{busy: probeBusy==='commit', dis: probeBusy || !probeJudgeRows.length}"
+                 @click="(probeBusy || !probeJudgeRows.length) || probeCommit()">
+              <span class="num">5</span>
+              <div class="t">📥 写入大屏</div>
+              <div class="d">按你的终判出<b>打分表</b>（版本快照）并刷新指标</div>
+            </div>
+          </div>
+
+          <!-- 出题进度（后台任务；轮询 /api/probe/status 的 gen 字段 —— 独立通道 ✓） -->
+          <div class="sk-card" v-if="probeGen2.running || probeGen2.error || probeGen2.count">
+            <h3>{{ probeGen2.running ? '⏳ 正在生成题目…'
+                 : (probeGen2.error ? '❌ 出题失败' : '✅ 出题完成：' + probeGen2.count + ' 题') }}</h3>
+            <div class="pb-loader" v-if="probeGen2.running">
+              <div class="row">
+                <span class="pre">loading</span>
+                <span class="word" :key="probeGen2.name || '准备中'">{{ probeGen2.name || '准备中' }}</span>
+              </div>
+              <div class="track"><i class="fill" :style="{width: probeGen2.percent + '%'}"></i></div>
+              <div class="sub">
+                第 {{ probeGen2.done }} / {{ probeGen2.total || '—' }} 步 ｜ 已用 {{ probeGen2.elapsed }}s
+                <span v-if="probeGen2.workers > 1"> ｜ 并发 {{ probeGen2.workers }} 批</span>
+                <span v-if="probeGen2.percent"> ｜ {{ probeGen2.percent }}%</span>
+              </div>
+              <div class="sub detail">{{ probeGen2.detail || '正在读取工具池卡片…' }}</div>
+              <div class="dots"><i></i><i></i><i></i></div>
+            </div>
+            <div class="pb-tip red" v-if="!probeGen2.running && (probeGen2.warnings || []).length">
+              ⚠️ 有 <b>{{ probeGen2.warnings.length }}</b> 批失败 —— <b>其余批次已保留</b>，可手工补题、或只重跑失败那些批：<br>
+              <span v-for="(w, i) in probeGen2.warnings" :key="i">· {{ w }}<br></span>
+            </div>
+            <div class="sk-tip" v-if="!probeGen2.running && !probeGen2.error && !(probeGen2.warnings || []).length">
+              分批出的题目已合并（题面去重、连续编号）<span v-if="probeGen2.salvaged">；本轮有一次输出不完整，已按「括号配平」抢救出其中的完整题目</span>。
+              现在进<b>闸门 1：题目过目</b> —— 改完点「保存题集」再开始测评 ✓
+              （每次调用的原始输出都在服务日志里，前缀 <code>[probe_agent]</code>）
+            </div>
+          </div>
+
+          <div class="pb-tip">
+            ⚠️ 「开始测评」会<b>真实调用模型与外部检索</b> —— <b>对网络搜索额度消耗较大</b>（一轮题数与 v3.1 的 43 题同量级）。<br>
+            🛡 <b>测试不会污染你的数据</b>：测评会话<b>不进会话库</b>、跑完即全清；测试前的
+            <b>画像与笔记</b>会先快照、跑完<b>立刻还原</b>；本轮新建的临时产物按水位线清理，
+            <b>只保留打完分的打分表</b> ✓<br>
+            ⏱ 单题上限 <b>{{ probeAskCap }}s</b>（<code>.env</code> 的 <code>PROBE_ASK_TIMEOUT</code>）：
+            模型对某题**反复翻页/调工具**时会**自动中断**并记「未测」，不会拖着整轮跑不完 ✓
+          </div>
+          <div class="pb-tip red" v-if="probeErr">{{ probeErr }}</div>
+          <div class="pb-tip red" v-if="probeRun.stopped">⚠ {{ probeRun.stopped }}</div>
+          <div class="pb-tip ok" v-if="probeMsg">{{ probeMsg }}</div>
+          <div class="pb-tip ok" v-if="probeRun.profile && !probeRun.running">
+            🛡 画像保护：测试前的 <b>{{ probeRun.profile.backup_count }} 个</b>画像/笔记文件已快照 →
+            {{ probeProfileHint }}
+          </div>
+
+          <!-- 运行中：001 号 loader + 进度（轮询 /api/probe/status，独立通道） -->
+          <div class="sk-card" v-if="probeRun.running || probeRun.total">
+            <h3>{{ probeRun.running ? '⏳ 正在测评…' : '✅ 本轮已跑完' }}</h3>
+            <div class="pb-run">
+              <div class="wrapper-grid" v-if="probeRun.running">
+                <div class="cube" v-for="n in 7" :key="n">
+                  <div class="face face-front"></div><div class="face face-back"></div>
+                  <div class="face face-left"></div><div class="face face-right"></div>
+                  <div class="face face-top"></div><div class="face face-bottom"></div>
+                </div>
+              </div>
+              <div class="pb-prog"><i :style="{width: probeRun.percent + '%'}"></i></div>
+              <span class="sk-cnt">{{ probeRun.i }} / {{ probeRun.total }} 题 ｜ 已用 {{ probeRun.elapsed }}s</span>
+              <div class="q" v-if="probeRun.q">当前：{{ probeRun.q }}</div>
+              <div class="q" v-if="probeRun.error" style="color:#e5484d">出错：{{ probeRun.error }}</div>
+              <div class="q" v-if="probeRun.gone && probeRun.gone.probe_sessions">
+                已清理本轮测评会话 {{ probeRun.gone.probe_sessions.conversations }} 个（未进会话库 ✓）
+              </div>
+            </div>
+          </div>
+
+          <!-- ③ 题集：过目 / 可改（闸门 1） -->
+          <div class="sk-card" :class="{folded: probeFold.cases}" v-if="probeCases.length">
+            <h3>📋 题集（{{ probeCases.length }} 题）—— 过目 / 可直接改，改完保存再跑
+              <span class="pb-fold" @click="probeFoldToggle('cases')">{{ probeFold.cases ? '▸ 展开' : '▾ 收起' }}</span></h3>
+            <div class="pb-tip red" v-if="probePrivacyHint">{{ probePrivacyHint }}</div>
+            <div class="pb-tip" v-if="probeVagueHint">{{ probeVagueHint }}</div>
+            <div class="sk-tip">
+              题面改「用户会怎么说」，<b>期望</b>改「应该用哪个工具」（噪声题没有期望 = 期望不调用任何工具）。
+              题面里出现工具名 / 参数名就是废题；每条题都是独立新会话，所以<b>不能有「它」「这个」这类先行词</b>，
+              更要<b>点名具体对象</b>：「一种新药」「我在吃的降压药」「我看的那个视频」这种"没说是哪个"的题 = 废题（Agent 无从下手）。<br>
+              ★ <b>单工具题 = 只用一个套装</b>（同一套装里**可以调多条子命令/多次**，例：先查聊天记录再筛关键词 —— 仍是单工具题）；
+              <b>多工具题 = 必须跨套装</b>（一个 CLI 子命令集 / 一个 API 服务 / 一个 MCP 服务器各算一个套装）✓<br>
+              ★ <b>备选答案</b>：同一件事**别的工具也算对**时就加进去（例：「找一本书」→ 微信读书 / 图书馆检索），
+              判分时两边都算对 ✓<br>
+              ★ <b>噪声题</b>用闲聊 / 写作类；「推荐 / 最新 / 多少钱 / 天气」这类会**诱发网络搜索**、烧掉搜索额度。
+            </div>
+            <div class="pb-cases">
+              <div class="pb-case" v-for="c in probeCases" :key="c.id">
+                <div class="id">#{{ c.id }}</div>
+                <div class="kd" :class="c.kind">{{ probeKindText(c.kind) }}</div>
+                <div>
+                  <textarea class="sk-ta" style="min-height:42px;font-size:12.5px" rows="2" v-model="c.q"></textarea>
+                  <input v-if="c.expect && c.expect.kind === 'tool'" class="sk-ta"
+                         style="min-height:0;padding:4px 8px;margin-top:5px" v-model="c.expect.ref"
+                         placeholder="期望工具 ref（逐字来自池）">
+                  <input v-else-if="c.expect && c.expect.kind === 'cli'" class="sk-ta"
+                         style="min-height:0;padding:4px 8px;margin-top:5px" v-model="c.expect.bin"
+                         placeholder="期望 CLI 可执行名">
+                  <div class="e" v-else>（噪声题：期望不调用任何工具）</div>
+                  <!-- 涉及套装工具：单工具题=同一个套装内（可多条子命令）；多工具题=≥2 个不同套装 -->
+                  <div class="e" v-if="c.kind !== 'noise'" style="margin-top:6px">
+                    {{ c.kind === 'multi' ? '涉及套装工具（≥2 个、不同来源）'
+                                          : '涉及套装工具（同一套装内，可含多条子命令）' }}：
+                    <span class="pb-f" v-for="(rf, ri) in (c.refs || [])" :key="ri"
+                          style="cursor:pointer" @click="probeListDel(c, 'refs', ri)">{{ rf }} ✕</span>
+                    <input class="sk-ta" style="min-height:0;padding:2px 6px;width:210px;display:inline-block"
+                           placeholder="ref 或 CLI 名，回车添加"
+                           @keyup.enter="probeListAdd(c, 'refs', $event.target.value); $event.target.value = ''">
+                  </div>
+                  <!-- 备选答案：同一件事**别的工具也算对**（判分时两边都算对 ✓） -->
+                  <div class="e" v-if="c.kind !== 'noise'" style="margin-top:4px">
+                    备选答案（可接受的其他工具）：
+                    <span class="pb-f" v-for="(a, ai) in (c.alts || [])" :key="ai"
+                          style="cursor:pointer" @click="probeListDel(c, 'alts', ai)">{{ a }} ✕</span>
+                    <input class="sk-ta" style="min-height:0;padding:2px 6px;width:210px;display:inline-block"
+                           placeholder="ref 或 CLI 名，回车添加"
+                           @keyup.enter="probeListAdd(c, 'alts', $event.target.value); $event.target.value = ''">
+                  </div>
+                  <div class="e" v-if="c.chain">参考链路：{{ c.chain }}</div>
+                  <div class="pb-f" style="margin-top:5px;display:inline-block;cursor:pointer"
+                       @click="probeCases.splice(probeCases.indexOf(c), 1)">✕ 删除此题</div>
+                </div>
+              </div>
+            </div>
+            <!-- ★ 2026-10-11 用户实测教训：保存/出题的提示原来只显示在**卡片上方**，用户滚到卡片处点击时
+                 根本看不见（以为「没有任何提示」）→ 这里在按钮正上方再显示一遍，确保在视口里 ✓ -->
+            <div class="pb-tip red" v-if="probeErr">{{ probeErr }}</div>
+            <div class="pb-tip ok" v-if="probeMsg">{{ probeMsg }}</div>
+            <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+              <button class="bubbles tut-entry" @click="probeSaveCases()">
+                <span class="text">💾 保存题集</span></button>
+              <button class="bubbles tut-entry" @click="probeGen()">
+                <span class="text">↻ 重新出题</span></button>
+            </div>
+          </div>
+
+          <!-- ④ 判分：Agent 预填 + 人工终判 -->
+          <div class="sk-card" :class="{folded: probeFold.judge}" v-if="probeJudgeRows.length">
+            <h3>🧮 判分 —— Agent 预填（灰）＋ <b>你的终判（右）</b>
+              <span class="pb-fold" @click="probeFoldToggle('judge')">{{ probeFold.judge ? '▸ 展开' : '▾ 收起' }}</span></h3>
+            <div class="sk-tip">
+              <b>指标只认你的终判</b> ✓ 预填只是省你一点力气：觉得对就直接点同款。<br>
+              `✓` 链路完整且必要 ｜ `△` 结果对但绕路/漏可选步 ｜ `✗` 用错来源或漏关键步 ｜
+              `未测`（限流/故障）<b>不计入能力评价</b>。
+            </div>
+            <div class="pb-case" v-for="r in probeJudgeRows" :key="r.id"
+                 style="grid-template-columns:42px 74px 1fr">
+              <div class="id">#{{ r.id }}</div>
+              <div class="kd" :class="r.kind">{{ probeKindText(r.kind) }}</div>
+              <div>
+                <div class="q">{{ r.q }}</div>
+                <div class="e">期望：{{ r.expect }}</div>
+                <div class="e">实际：{{ (r.calls || []).join(' ／ ') || '（一次工具都没调）' }}</div>
+                <div class="e" v-if="r.unmeasured">⚠️ 该题标记为未测（限流/故障）—— 不计入能力评价</div>
+                <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                  <span class="pb-f" v-if="probeAgentScore(r.id)"
+                        :title="'Agent 预填：' + probeAgentScore(r.id).why">🤖 预填
+                    {{ probeAgentScore(r.id).verdict }}{{ probeAgentScore(r.id).conf ? '（' + probeAgentScore(r.id).conf + '置信）' : '' }}</span>
+                  <span class="pb-vote" v-for="v in ['✓','△','✗','未测']" :key="v"
+                        :class="{on: probeScoreOf(r.id) === v,
+                                 'v-ok': v === '✓', 'v-wn': v === '△', 'v-no': v === '✗', 'v-na': v === '未测'}"
+                        :title="probeScoreOf(r.id) === v ? '已选（再点一次取消）' : '点这里做人工终判'"
+                        @click="probeSetScore(r.id, v)">{{ v }}</span>
+                  <input class="sk-ta" style="min-height:0;width:220px;padding:3px 8px"
+                         :value="probeNote(r.id)" @input="probeSetNote(r.id, $event.target.value)"
+                         placeholder="备注（写清哪一步错，可留空）">
+                </div>
+              </div>
+            </div>
+            <div style="margin-top:10px">
+              <span class="sk-cnt">终判进度：✓ {{ probeTally('✓') }} ／ △ {{ probeTally('△') }} ／
+                ✗ {{ probeTally('✗') }} ／ 未测 {{ probeTally('未测') }} ／ 未填 {{ probeUntallied }}</span>
+            </div>
+          </div>
+
+          <!-- 词法建议（Agent 只建议改素材） -->
+          <div class="sk-card" :class="{folded: probeFold.advise}" v-if="probeAdvisor">
+            <h3>💡 词法改进建议（待你确认后自行改素材）
+              <span class="pb-fold" @click="probeFoldToggle('advise')">{{ probeFold.advise ? '▸ 展开' : '▾ 收起' }}</span></h3>
+            <div class="sk-tip">
+              改完素材请<b>先跑一次离线 A/B</b> 再回来复测（同一题集重跑 → 大屏对比）✓
+              建议只涉及 <code>name</code> / <code>keywords</code> /
+              <b>能力描述（CLI）</b>或<b>工具描述（API/MCP）</b>，不含代码。<br>
+              ★ <b>改在哪</b>：<b>`cli:*` 类</b>改「技能与工具 → <b>接入 CLI</b>」里那条 CLI 的
+              <b>「能力描述」框</b>（它决定 AI 在你说人话时想不想起它；留空 = AI 只看得到命令名）；
+              <b>`api:*` / `mcp:*` 类</b>改<b>工具描述框</b>。<br>
+              ★ 建议里的「字段：」会写明是「能力描述」还是「工具描述」，照着改就行 ✓
+            </div>
+            <div class="pb-reader" v-html="probeMd(probeAdvisor)"></div>
+          </div>
+
+          <!-- ⑤ 数据大屏（最近一轮） -->
+          <div class="sk-card" :class="{folded: probeFold.board}">
+            <h3>📊 数据大屏 <span class="sk-cnt">（最近一轮 · 每账号只留最新一份）</span>
+              <span class="pb-fold" @click="probeFoldToggle('board')">{{ probeFold.board ? '▸ 展开' : '▾ 收起' }}</span></h3>
+            <div v-if="!probeHasMetrics" class="sk-empty">
+              还没有测评数据 —— 走完「生成题目 → 测评 → 判分 → 写入大屏」，这里就会亮起来 ✓
+            </div>
+            <template v-else>
+              <div class="pb-stats">
+                <div class="pb-stat"><div class="k">单工具题命中率</div>
+                  <div class="v">{{ probeHitRate }}</div></div>
+                <div class="pb-stat"><div class="k">多工具题命中率</div>
+                  <div class="v">{{ probeRate(probe.metrics.multi_hit, probe.metrics.multi_total) }}</div></div>
+                <div class="pb-stat" :class="{bad: probe.metrics.noise_over > 0}">
+                  <div class="k">噪声越线</div>
+                  <div class="v">{{ probe.metrics.noise_over }}<small>/ {{ probe.metrics.noise_total }} 条</small></div></div>
+                <div class="pb-stat"><div class="k">池版本 / 题数</div>
+                  <div class="v">{{ probe.metrics.pool_version }}<small>/ {{ probe.metrics.cases_total }} 题</small></div></div>
+                <div class="pb-stat"><div class="k">平均外部检索</div>
+                  <div class="v">{{ probe.metrics.avg_ext_retrievals }}<small>次/题</small></div></div>
+                <div class="pb-stat"><div class="k">本轮耗时</div>
+                  <div class="v">{{ probe.metrics.elapsed_sec }}<small>s</small></div></div>
+              </div>
+              <div style="margin-top:12px" class="sk-cnt">判分分布（人工终判）</div>
+              <div class="pb-bar">
+                <i v-for="seg in probeDistSegs" :key="seg.k" :style="{width: seg.w + '%', background: seg.c}"></i>
+              </div>
+              <div class="pb-legend">
+                <span v-for="seg in probeDistSegs" :key="seg.k"><i :style="{background: seg.c}"></i>{{ seg.k }} {{ seg.n }}</span>
+              </div>
+              <div class="sk-cnt" style="margin-top:8px" v-if="probe.metrics.updated_at">
+                更新于 {{ probe.metrics.updated_at }}
+                <span v-if="probe.metrics.sheet_name"> ｜ 对应打分表 <code>{{ probe.metrics.sheet_name }}</code></span>
+              </div>
+            </template>
+          </div>
+
+          <!-- 工具池体检表（体检 → 再出题 → 再测评） -->
+          <div class="sk-card" :class="{folded: probeFold.pool}">
+            <h3>🩺 工具池（{{ probe.pool_size }} 条）<span class="sk-cnt"> —— 出题前先看这盏灯</span>
+              <span class="pb-fold" @click="probeFoldToggle('pool')">{{ probeFold.pool ? '▸ 展开' : '▾ 收起' }}</span></h3>
+            <div class="sk-tip">
+              只在<b>真缺</b>时才报警：<b>缺乏关键词</b>、或<b>缺乏描述</b>（手写描述与服务自带摘要都没有）的工具，
+              路由只能靠名字猜、噪声天然更高 —— 建议先补素材再测 ✓
+              <span v-if="probe.problem_count"> ｜ 体检待补 <b>{{ probe.problem_count }}</b> 条</span>
+            </div>
+            <div class="pb-pool">
+              <div class="pb-item" v-for="it in probe.items" :key="it.ref">
+                <div class="r"><span class="pb-dot" :class="it.hard ? 'wn' : 'ok'"></span>{{ it.ref }}</div>
+                <div class="n">{{ it.name || '（未命名）' }}</div>
+                <div class="f">
+                  <span class="pb-f">{{ it.source }}</span>
+                  <span class="pb-f no" v-if="!it.has_keywords">缺乏关键词</span>
+                  <span class="pb-f no" v-if="it.desc_state === 'none'">缺乏描述</span>
+                  <span class="pb-f wn" v-for="(w, wi) in (it.warn || [])" :key="wi">{{ w.msg || w }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 历史打分表版本 + 页内 markdown 阅读器 -->
+          <div class="sk-card" :class="{folded: probeFold.hist}">
+            <h3>🗂️ 历史打分表（{{ probeSheets.length }} 份）
+              <span class="pb-fold" @click="probeFoldToggle('hist')">{{ probeFold.hist ? '▸ 展开' : '▾ 收起' }}</span></h3>
+            <div class="sk-tip">
+              每份打分表都是<b>当轮的池子快照</b>（工具清单 + 那时的素材原文 + 最终数据），
+              所以「池一变两轮不可比」也能人眼对读 ✓ 点开即在此页阅读。
+            </div>
+            <div class="pb-sheets" v-if="probeSheets.length">
+              <div class="pb-sheet" v-for="s in probeSheets" :key="s.name"
+                   :class="{on: probeSheetOn === s.name}" @click="probeSheetOpen(s.name)">
+                {{ probeSheetLabel(s) }}
+              </div>
+            </div>
+            <div class="sk-empty" v-else>还没有打分表 —— 走完一遍流程后，这里会按时间倒序列出每一轮 ✓</div>
+            <div style="margin-top:12px" v-if="probeSheetOn">
+              <div class="sk-cnt" style="margin-bottom:6px">{{ probeSheetOn }}</div>
+              <div class="pb-reader" v-html="probeSheetHtml"></div>
+            </div>
+          </div>
+        </template>
+
         <!-- ===== M5c-2'：工具描述（用户可编辑 + AI 预写）—— API / MCP 两个页签共用这一份 ===== -->
         <div class="mask" v-if="capModal" @click.self="capClose()">
           <div class="modal ts-modal">
@@ -4022,6 +4643,7 @@ createApp({
     const loading = ref(false);
     const stopping = ref(false);   // 已点「中断」，等后端在下一个检查点停下
     let chatAbort = null;          // 当前 /api/chat 的 AbortController（中断兜底用）
+    const decRouter = ref(false);  // ★ 2026-10-13 大点 02：账号级「决策模型精排」开关（默认关，存 accounts.decision_router）
     const exporting = ref(false);
     const scroll = ref(null);
     const toast = ref(''); const toastErr = ref(false);
@@ -4099,6 +4721,7 @@ createApp({
     const newSubScope = ref('personal');
     const newSubLang = ref('zh');
     const selCount = computed(() => subs.value.filter(s => s._sel && s.enabled).length);
+    const digestAuto = ref(false);   // ★ 2026-10-11：账号级「每天自动生成周报」开关（默认关）
 
     async function loadReports() {
       try {
@@ -4120,7 +4743,26 @@ createApp({
             _sel: !!s.enabled,
           }));
         }
+        await loadDigestAuto();
       } catch (e) {}
+    }
+    // ★ 2026-10-11：账号级「每天自动生成周报」开关（默认关）—— 自动任务必须显式开启 ✓
+    async function loadDigestAuto() {
+      try {
+        const r = await fetch('/api/digest/auto?token=' + encodeURIComponent(token.value));
+        if (r.ok) { digestAuto.value = !!(await r.json()).auto; }
+      } catch (e) {}
+    }
+    async function setDigestAuto(on) {
+      try {
+        const r = await fetch('/api/digest/auto?token=' + encodeURIComponent(token.value), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ auto: !!on }),
+        });
+        const d = r.ok ? await r.json() : {};
+        digestAuto.value = !!d.auto;
+        showToast(on ? '已开启：每天 9:00 自动生成周报 ✅' : '已关闭：不再自动生成（仍可手动批量生成）');
+      } catch (e) { showToast('设置失败：' + e.message, true); }
     }
     async function updateSub(s) {
       const kws = s._kws.split(/[,，]/).map(x => x.trim()).filter(Boolean).slice(0, 8);
@@ -4535,6 +5177,7 @@ createApp({
         connectWS(); loadMyData();
         loadReports(); loadSubs(); loadProviders(); loadSouls(); loadMemory(); loadVoicePacks();
         loadSessions();  // M1 会话列表
+        loadDecRouter();  // 大点 02：决策模型精排开关（账号级）
         loadKbStatus();  // M3 知识库
         restoreBg();  // 登录后恢复该账号背景
       } catch (e) { errMsg.value = '网络错误：' + e.message; }
@@ -5952,6 +6595,43 @@ createApp({
 
     // ---------- 对话 ----------
     // ================= M1 会话管理 =================
+    // ★ 2026-10-13 大点 02：账号级「决策模型精排」开关（默认关）—— 开不开由前端按钮决定，
+    //   .env 只留模型与凭据；后端只读 accounts.decision_router 这一处闸门
+    // 让 DOM 的 checkbox 与 Vue 状态对齐。为什么必须：用户点开关时**浏览器已经把 checkbox 拨到新状态**
+    // （轨道变绿），若写入失败，Vue 状态没变 → 不会重渲染 → 开关看着"开"、徽标却是"关"（用户实测踩到：
+    // 后端进程没重启、接口 404）。所以无论成功失败，都把 DOM 同步回状态。
+    function _syncDecTgl() {
+      const el = document.getElementById('jev-tgl');
+      if (el) el.checked = !!decRouter.value;
+    }
+    async function loadDecRouter() {
+      try {
+        const r = await fetch('/api/decision/router?token=' + encodeURIComponent(token.value));
+        if (r.ok) { decRouter.value = !!(await r.json()).on; }
+      } catch (e) {} finally { nextTick(_syncDecTgl); }
+    }
+    async function setDecRouter(on) {
+      try {
+        const r = await fetch('/api/decision/router?token=' + encodeURIComponent(token.value), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ on: !!on }),
+        });
+        if (!r.ok) {
+          showToast(r.status === 404
+            ? '设置失败：后端没有这个接口（服务需要重启后再试）'
+            : ('设置失败：HTTP ' + r.status), true);
+          return;                                  // 状态保持原样，finally 会把 DOM 拨回去
+        }
+        const d = await r.json();
+        decRouter.value = !!d.on;
+        showToast(decRouter.value ? '已开启：候选咬住时会多问一次决策模型（更准，略慢）'
+                                  : '已关闭：完全按路由器的结果（与以前逐字一致）');
+      } catch (e) {
+        showToast('设置失败：' + e.message, true);
+      } finally {
+        nextTick(_syncDecTgl);
+      }
+    }
     async function loadSessions() {
       if (!token.value) return;
       try {
@@ -6358,7 +7038,8 @@ createApp({
     }
 
     // 进 CLI 面板 tab 才拉白名单（省一次请求；切回来复用缓存）
-    watch(skTab, (t) => { if (t === 'shell' && !shAllowed.value.length) shLoadAllowed(); if (t === 'cli' && !cliLoaded.value) loadCliCatalog(); if ((t === 'api' || t === 'mcp') && !mcpAll.value.length) tsLoad(); });
+    watch(skTab, (t) => { if (t === 'shell' && !shAllowed.value.length) shLoadAllowed(); if (t === 'cli' && !cliLoaded.value) loadCliCatalog(); if ((t === 'api' || t === 'mcp') && !mcpAll.value.length) tsLoad(); if (t === 'probe') probeOpen(); });
+    // ★ 工具池测评**每次进页签都刷新**（它是「看完改完再回来复测」的仪表盘，不是一次性目录 ✓ 与上面几个「只加载一次」的页签不同）
 
     // 与后端 customize.py 常量对齐（前后端双硬校验）
     const SK_MAX = 4000;               // SKILL_MAX_LEN 单技能正文字数
@@ -7359,10 +8040,475 @@ createApp({
       if (token.value) {
         if (await verifySession()) {
           connectWS(); loadReports(); loadSubs(); loadMyData(); loadProviders(); loadSouls(); loadMemory();
-          loadVoicePacks(); loadSessions(); loadKbStatus(); loadSkills(); loadAsrStatus();
+          loadVoicePacks(); loadSessions(); loadKbStatus(); loadSkills(); loadAsrStatus(); loadDecRouter();
         }
       }
       wxStart();
+    });
+
+    // ==================== v4.0 大点 03：工具池测评（第 6 个页签） ====================
+    // 与后端 /api/probe/* 一一对应；出题/判分/建议是**独立小 Agent**（不进主 Agent 体系）
+    // 进度走**独立轮询** /api/probe/status（不碰主 Agent 的 WS 语义 ✓）
+    const probe = ref({ pool_version: 0, pool_size: 0, items: [], health: {}, metrics: {},
+                        sheet_count: 0, latest_sheet: null, running: false });
+    const probeCases = ref([]);          // 题集（可编辑；改完「保存题集」才生效）
+    const probeSheets = ref([]);         // 历史打分表（严格格式过滤，倒序）
+    const probeSheetOn = ref('');        // 当前阅读的打分表名
+    const probeSheetHtml = ref('');      // 渲染后的 HTML
+    const probeBusy = ref('');           // '' | gen | judge | advise | commit
+    const probeErr = ref('');
+    const probeMsg = ref('');
+    const probeRun = reactive({ running: false, i: 0, total: 0, q: '', elapsed: 0,
+                                raw_path: '', error: null, percent: 0,
+                                profile: null, gone: null, stopped: '' });
+    const probeScores = ref({});         // {题号: {verdict, note}} —— **人工终判**（指标只认它 ✓）
+    const probeJudgeRows = ref([]);      // 判分用的逐题行（题面/期望/实际调用）
+    const probeAgent = ref({});          // {题号: {verdict, why, conf}} —— Agent **预填**
+    const probeAdvisor = ref('');
+    const probeGen2 = reactive({ running: false, stage: '', name: '', done: 0, total: 0,
+                                 detail: '', error: null, elapsed: 0, percent: 0, count: 0,
+                                 salvaged: false, warnings: [], failed: 0, workers: 1 });
+    let _probeTimer = null;
+    let _probeGenTimer = null;
+
+    // ★ 错误文案去重：接口的 detail 有时已带「出题失败：」前缀，前端再加一次就成双份（用户 2026-10-10 实测看到过）
+    function _probeErrMsg(e, label) {
+      let m = String((e && e.message) || e || '');
+      m = m.replace(/^(出题失败|判分失败|建议生成失败|建议失败|写入失败|归档失败|保存失败|启动失败|加载失败)[：:]\s*/, '');
+      return (label ? label + '：' : '') + m;
+    }
+
+    function _probeGet(path) {
+      const u = path + (path.indexOf('?') < 0 ? '?' : '&') + 'token=' + encodeURIComponent(token.value);
+      return fetch(u).then(async function (r) {
+        const d = await r.json().catch(function () { return {}; });
+        if (!r.ok) { throw new Error(d.detail || ('HTTP ' + r.status)); }
+        return d;
+      });
+    }
+    function _probePost(path, body) {
+      const u = path + (path.indexOf('?') < 0 ? '?' : '&') + 'token=' + encodeURIComponent(token.value);
+      return fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body || {}) }).then(async function (r) {
+        const d = await r.json().catch(function () { return {}; });
+        if (!r.ok) { throw new Error(d.detail || ('HTTP ' + r.status)); }
+        return d;
+      });
+    }
+
+    async function probeOpen() {                 // 进页签即刷新（幂等）
+      probeErr.value = '';
+      try {
+        const d = await _probeGet('/api/probe/overview');
+        probe.value = d;
+        const c = await _probeGet('/api/probe/cases');
+        if (!probeCases.value.length) { probeCases.value = (c.doc && c.doc.cases) || []; }
+        probePriv.value = (c.doc && c.doc.privacy) || null;   // 旧题集没这字段 → 清掉上一轮的提醒 ✓
+        probeVague.value = (c.doc && c.doc.vague) || null;    // 同上：无对象自检结果
+        probeSheets.value = (await _probeGet('/api/probe/sheets')).sheets || [];
+        if (d.running) { probeRun.running = true; probePoll(0); }
+      } catch (e) { probeErr.value = _probeErrMsg(e, '加载失败'); }
+    }
+
+    async function probeGen() {
+      if (probeCases.value.length && !confirm('已有 ' + probeCases.value.length +
+          ' 道题，重新出题会覆盖当前题集（未保存的修改会丢）。继续？')) { return; }
+      probeBusy.value = 'gen'; probeErr.value = ''; probeMsg.value = '';
+      Object.assign(probeGen2, { running: true, stage: '', name: '准备中', done: 0, total: 0,
+                                 detail: '', error: null, elapsed: 0, percent: 0, count: 0,
+                                 salvaged: false, warnings: [], failed: 0, workers: 1 });
+      try {
+        await _probePost('/api/probe/gen_cases');       // 后台任务：立刻返回，进度靠轮询
+        probeGenPoll(500);
+      } catch (e) {
+        probeErr.value = _probeErrMsg(e, '出题失败');
+        probeGen2.running = false; probeGen2.error = probeErr.value;
+        probeBusy.value = '';
+      }
+    }
+
+    function probeGenPoll(delay) {
+      if (_probeGenTimer) { clearTimeout(_probeGenTimer); }
+      _probeGenTimer = setTimeout(async function () {
+        try {
+          const s = await _probeGet('/api/probe/status');
+          const g = s.gen || {};
+          if (!g.running && !g.finished && !g.error) { probeGenPoll(1500); return; }  // 任务还没登记上
+          probeGen2.running = !!g.running;
+          probeGen2.stage = g.stage || probeGen2.stage;
+          probeGen2.name = g.name || probeGen2.name;
+          probeGen2.detail = g.detail || '';
+          probeGen2.done = g.done || 0;
+          probeGen2.total = g.total || 0;
+          probeGen2.elapsed = g.elapsed || 0;
+          probeGen2.error = g.error || null;
+          probeGen2.percent = probeGen2.total
+            ? Math.round(100 * probeGen2.done / probeGen2.total) : (g.running ? 6 : 0);
+          if (g.running) { probeGenPoll(900); return; }
+          probeBusy.value = '';
+          if (g.error) { probeErr.value = _probeErrMsg(g.error, '出题失败'); return; }
+          if (g.doc) {
+            probeCases.value = (g.doc.cases) || [];
+            probePriv.value = g.doc.privacy || probePriv.value;
+            probeVague.value = g.doc.vague || probeVague.value;
+            probeJudgeRows.value = []; probeScores.value = {}; probeAgent.value = {}; probeAdvisor.value = '';
+            probeGen2.count = g.count || probeCases.value.length;
+            probeGen2.salvaged = !!g.salvaged;
+            probeGen2.warnings = g.warnings || [];
+            probeGen2.failed = g.failed || 0;
+            probeGen2.workers = g.concurrency || 1;
+            const warns = [];
+            if (probeGen2.warnings.length) {
+              warns.push('有 ' + probeGen2.warnings.length + ' 批失败（其余批次已保留，可手工补题或只重跑失败批）：' +
+                         probeGen2.warnings.join('；'));
+            }
+            if (g.errors && g.errors.length) {
+              warns.push('硬规则校验没过（可手工改后再保存）：' + g.errors.join('；'));
+            }
+            if (warns.length) {
+              probeErr.value = '出题完成：' + probeGen2.count + ' 题 ｜ ' + warns.join(' ｜ ');
+            } else {
+              probeMsg.value = '出题完成：' + probeGen2.count + ' 题（池 ' + (g.pool_size || probe.value.pool_size) +
+                               ' 条，' + (probeGen2.total || 0) + ' 步' +
+                               (probeGen2.workers > 1 ? '，并发 ' + probeGen2.workers : '') +
+                               '）。先过目，改完点「保存题集」。';
+            }
+            probeOpen();
+          }
+        } catch (e) { probeGenPoll(2500); }
+      }, delay || 900);
+    }
+
+    // ★ 题集编辑器：refs / alts 这类「字符串数组」的增删（用户 2026-10-10 要的备选答案编辑）
+    function probeListAdd(c, field, text) {
+      const raw = String(text || '').trim();
+      if (!raw) { return; }
+      if (!Array.isArray(c[field])) { c[field] = []; }
+      raw.split(/[，,;；\s]+/).filter(Boolean).forEach(function (t) {
+        if (c[field].indexOf(t) < 0) { c[field].push(t); }
+      });
+    }
+
+    function probeListDel(c, field, i) {
+      if (Array.isArray(c[field])) { c[field].splice(i, 1); }
+    }
+
+    async function probeSaveCases() {
+      probeErr.value = ''; probeMsg.value = '';
+      try {
+        const d = await _probePost('/api/probe/save_cases', { doc: { cases: probeCases.value } });
+        probeMsg.value = '题集已保存：' + d.count + ' 题 ✓' +
+          (d.normalized ? '（自动归一 ' + d.normalized + ' 条 —— 把「CLI 名+子命令」这类写法改成规范形态，' +
+                          '期望工具以保存后的为准）' : '');
+      } catch (e) { probeErr.value = _probeErrMsg(e, '保存失败'); }
+    }
+
+    async function probeRunNow() {
+      if (!confirm('开始真机测评：会逐题调用模型与外部检索，**对网络搜索额度消耗较大**' +
+                   '（本账号当前 ' + probeCases.value.length + ' 题）。\n\n要现在开始吗？')) { return; }
+      probeErr.value = ''; probeMsg.value = '';
+      try {
+        const d = await _probePost('/api/probe/run', {});
+        probeRun.running = true; probeRun.i = 0; probeRun.total = d.total || 0;
+        probeRun.q = ''; probeRun.elapsed = 0; probeRun.error = null; probeRun.percent = 0;
+        probePoll(1200);
+      } catch (e) { probeErr.value = _probeErrMsg(e, '启动失败'); }
+    }
+
+    function probePoll(delay) {
+      if (_probeTimer) { clearTimeout(_probeTimer); }
+      _probeTimer = setTimeout(async function () {
+        try {
+          const s = await _probeGet('/api/probe/status');
+          probeRun.running = !!s.running;
+          probeRun.i = s.i || 0; probeRun.total = s.total || probeRun.total;
+          probeRun.q = s.q || ''; probeRun.elapsed = s.elapsed || 0;
+          probeRun.error = s.error || null;
+          if (s.raw_path) { probeRun.raw_path = s.raw_path; }
+          // ★ 画像保护结果 + 本轮清理情况（界面要能核对「测试有没有动我数据」✓）
+          if (s.profile) { probeRun.profile = s.profile; }
+          if (s.gone) { probeRun.gone = s.gone; }
+          if (s.stopped !== undefined) { probeRun.stopped = s.stopped || ''; }
+          probeRun.percent = probeRun.total ? Math.round(100 * probeRun.i / probeRun.total) : 0;
+          if (probeRun.running) { probePoll(1500); }
+          else {
+            probeMsg.value = probeRun.error ? '' : ('本轮跑完（' + probeRun.i + ' 题）✓ 下一步：点「🧮 判分」');
+            probeOpen();
+          }
+        } catch (e) { probePoll(3000); }
+      }, delay || 1500);
+    }
+
+    async function probeJudge() {
+      probeBusy.value = 'judge'; probeErr.value = ''; probeMsg.value = '';
+      try {
+        const d = await _probePost('/api/probe/judge', { raw_path: probeRun.raw_path });
+        probeJudgeRows.value = d.rows || [];
+        probeAgent.value = d.scores || {};
+        // 预填成「当前选择」：你可以直接确认（点同款）或改成你的终判 ✓
+        Object.keys(probeAgent.value).forEach(function (id) {
+          if (!probeScores.value[id]) {
+            probeScores.value[id] = { verdict: probeAgent.value[id].verdict || '', note: '' };
+          }
+        });
+        if (!Object.keys(probeAgent.value).length) {
+          probeErr.value = '判分没返回结果（模型输出无法解析？）—— 可重试或直接手工判分。';
+        } else {
+          probeMsg.value = 'Agent 已预填 ' + Object.keys(probeAgent.value).length +
+                           ' 条 —— 请逐条核对后点「📥 写入大屏」（也可以先点「💡 词法建议」）。';
+        }
+      } catch (e) { probeErr.value = _probeErrMsg(e, '判分失败'); }
+      probeBusy.value = '';
+    }
+
+    async function probeAdvise() {
+      probeBusy.value = 'advise'; probeErr.value = ''; probeMsg.value = '';
+      try {
+        const d = await _probePost('/api/probe/advise',
+                                   { raw_path: probeRun.raw_path, scores: probeScores.value });
+        probeAdvisor.value = d.text || '';
+        probeMsg.value = '建议已生成 —— 它只涉及素材（name / keywords / 描述），改完先跑离线 A/B 再复测 ✓';
+      } catch (e) { probeErr.value = _probeErrMsg(e, '建议生成失败'); }
+      probeBusy.value = '';
+    }
+
+    async function probeCommit() {
+      const miss = probeUntallied.value;
+      if (miss && !confirm('还有 ' + miss + ' 题没有终判（会记为「未测」）。现在写入大屏吗？')) { return; }
+      probeBusy.value = 'commit'; probeErr.value = ''; probeMsg.value = '';
+      try {
+        const d = await _probePost('/api/probe/commit',
+                                   { raw_path: probeRun.raw_path, scores: probeScores.value,
+                                     advisor: probeAdvisor.value });
+        probeMsg.value = '已写入大屏：打分表 ' + d.sheet + ' ✓';
+        await probeOpen();
+        probeSheetOpen(d.sheet);
+      } catch (e) { probeErr.value = _probeErrMsg(e, '写入失败'); }
+      probeBusy.value = '';
+    }
+
+    async function probeSheetOpen(name) {
+      probeSheetOn.value = name; probeSheetHtml.value = '<p>加载中…</p>';
+      try {
+        const d = await _probeGet('/api/probe/sheet?name=' + encodeURIComponent(name));
+        probeSheetHtml.value = probeMd(d.md || '');
+      } catch (e) { probeSheetHtml.value = '<p style="color:#e5484d">打开失败：' + (e.message || e) + '</p>'; }
+    }
+
+    function probeSheetLabel(s) {
+      const m = /probe_打分表(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})\.md/.exec(s.name || '');
+      if (!m) { return s.name; }
+      const kb = Math.max(1, Math.round((s.size || 0) / 1024));
+      return m[1] + '-' + m[2] + '-' + m[3] + ' ' + m[4] + ':' + m[5] + ' · ' + kb + 'KB';
+    }
+
+    // ---------- 自写极简 markdown 渲染器（打分表 / 建议用）----------
+    // ★ 刻意不引第三方库、不依赖 CDN（本项目是**本地离线应用**，断网/被墙不能白屏 ✓）。
+    //   只支持我们自己产出的子集：#/##/###、表格、有序/无序列表、> 引用、---、**粗体**、`代码`、``` 围栏。
+    function _pbEsc(t) {
+      return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    function _pbInline(t) {
+      return t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+              .replace(/`([^`]+)`/g, '<code>$1</code>');
+    }
+    function probeMd(md) {
+      let src = String(md || '');
+      const cut = src.indexOf('机器可读');            // 机器可读块对人不显示 ✓
+      if (cut > 0) {
+        const mark = src.lastIndexOf('<!--', cut);
+        if (mark > 0) { src = src.slice(0, mark); }
+      }
+      const lines = src.split('\n');
+      const out = [];
+      let i = 0, list = '', para = [];
+      function flushPara() {
+        if (para.length) { out.push('<p>' + _pbInline(_pbEsc(para.join(' '))) + '</p>'); para = []; }
+      }
+      function closeList() { if (list) { out.push('</' + list + '>'); list = ''; } }
+      while (i < lines.length) {
+        const raw = lines[i];
+        const line = raw.replace(/\s+$/, '');
+        if (/^```/.test(line)) {                       // 围栏代码块
+          flushPara(); closeList();
+          const buf = []; i++;
+          while (i < lines.length && !/^```/.test(lines[i])) { buf.push(lines[i]); i++; }
+          i++;
+          out.push('<pre><code>' + _pbEsc(buf.join('\n')) + '</code></pre>');
+          continue;
+        }
+        // 表格：本行 | ... | 且下一行是分隔行
+        if (/^\|/.test(line) && i + 1 < lines.length && /^\|[\s:\-|]+\|$/.test(lines[i + 1].trim())) {
+          flushPara(); closeList();
+          const cells = function (l) {
+            return l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(function (c) {
+              return _pbInline(_pbEsc(c.trim()));
+            });
+          };
+          const head = cells(line);
+          i += 2;
+          const rows = [];
+          while (i < lines.length && /^\|/.test(lines[i])) { rows.push(cells(lines[i])); i++; }
+          out.push('<table><thead><tr>' + head.map(function (c) { return '<th>' + c + '</th>'; }).join('') +
+                   '</tr></thead><tbody>' +
+                   rows.map(function (r) {
+                     return '<tr>' + r.map(function (c) { return '<td>' + c + '</td>'; }).join('') + '</tr>';
+                   }).join('') + '</tbody></table>');
+          continue;
+        }
+        const h = /^(#{1,3})\s+(.*)$/.exec(line);      // 标题
+        if (h) {
+          flushPara(); closeList();
+          const lv = h[1].length;
+          out.push('<h' + lv + '>' + _pbInline(_pbEsc(h[2])) + '</h' + lv + '>');
+          i++; continue;
+        }
+        if (/^-{3,}$/.test(line.trim())) { flushPara(); closeList(); out.push('<hr>'); i++; continue; }
+        if (/^>\s?/.test(line)) {                      // 引用（连续多行合并）
+          flushPara(); closeList();
+          const buf = [];
+          while (i < lines.length && /^>\s?/.test(lines[i])) { buf.push(lines[i].replace(/^>\s?/, '')); i++; }
+          out.push('<blockquote>' + _pbInline(_pbEsc(buf.join(' '))) + '</blockquote>');
+          continue;
+        }
+        if (/^[-*]\s+/.test(line)) {                   // 无序列表
+          flushPara();
+          if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul'; }
+          out.push('<li>' + _pbInline(_pbEsc(line.replace(/^[-*]\s+/, ''))) + '</li>');
+          i++; continue;
+        }
+        if (/^\d+\.\s+/.test(line)) {                  // 有序列表
+          flushPara();
+          if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol'; }
+          out.push('<li>' + _pbInline(_pbEsc(line.replace(/^\d+\.\s+/, ''))) + '</li>');
+          i++; continue;
+        }
+        if (!line.trim()) { flushPara(); closeList(); i++; continue; }   // 空行 = 段落结束
+        para.push(line); i++;
+      }
+      flushPara(); closeList();
+      return out.join('\n');
+    }
+
+    // ---------- 小工具（模板里用的纯函数 / 计算）----------
+    function probeRate(hit, total) {
+      const h = Number(hit || 0), t = Number(total || 0);
+      if (!t) { return '—'; }
+      return (100 * h / t).toFixed(1) + '%';
+    }
+    function probeKindText(k) {
+      return ({ single: '单工具', multi: '多工具', noise: '噪声' })[k] || k || '单工具';
+    }
+    function probeScoreOf(id) { const s = probeScores.value[id]; return s ? (s.verdict || '') : ''; }
+    function probeNote(id) { const s = probeScores.value[id]; return s ? (s.note || '') : ''; }
+    function probeSetScore(id, v) {
+      if (!probeScores.value[id]) { probeScores.value[id] = { verdict: '', note: '' }; }
+      probeScores.value[id].verdict = (probeScoreOf(id) === v ? '' : v);   // 再点一次 = 取消 ✓
+    }
+    function probeSetNote(id, txt) {
+      if (!probeScores.value[id]) { probeScores.value[id] = { verdict: '', note: '' }; }
+      probeScores.value[id].note = txt;
+    }
+    function probeAgentScore(id) { return probeAgent.value[id] || null; }
+    function probeTally(v) {
+      return Object.keys(probeScores.value).filter(function (k) {
+        return probeScores.value[k] && probeScores.value[k].verdict === v;
+      }).length;
+    }
+    const probeUntallied = computed(function () {
+      return probeJudgeRows.value.filter(function (r) { return !probeScoreOf(r.id); }).length;
+    });
+    const probeHasMetrics = computed(function () {
+      const m = probe.value.metrics || {};
+      return !!m.cases_total;
+    });
+    const probeHitRate = computed(function () {
+      const m = probe.value.metrics || {};
+      return probeRate(m.single_hit, m.single_total);
+    });
+    const probeBadCount = computed(function () {
+      // ★ 与素材体检（capability_lint）**同一口径**：只数「会被体检拦下」的硬问题。
+      //   只有自动摘要 / 仅派生关键词属于「能跑但弱」，在体检表的提示条里单独显示，不算待补。
+      return probe.value.problem_count || 0;
+    });
+    const probeAskCap = computed(function () {
+      // ★ 单题墙钟上限（秒）—— 由接口从 `probe_runner.ask_timeout()` 透出（唯一权威 ✓）
+      return probe.value.ask_timeout || 180;
+    });
+    const probeProfileHint = computed(function () {
+      // ★ 画像保护的结果文案（用户 2026-10-11 裁定）：跑完要能一眼看出「测试有没有动我画像」✓
+      var p = probeRun.value.profile || {};
+      var parts = [];
+      if (p.ok === false) {
+        parts.push('⚠ 还原失败：' + (p.error || '未知错误') + ' —— 请到 agents_docs 手工核对');
+      } else if (p.restored && p.restored.length) {
+        parts.push('已还原 ' + p.restored.length + ' 个文件（' + p.restored.join('、') + '）');
+      } else {
+        parts.push('未被本轮改动 ✓');
+      }
+      if (p.removed && p.removed.length) { parts.push('已删掉本轮新建的 ' + p.removed.length + ' 个文件'); }
+      return parts.join('；');
+    });
+    const probePriv = ref(null);         // ★ 2026-10-11：个人数据核查结果（题号+理由），显示在题单最上方
+    const probeVague = ref(null);        // ★ 2026-10-12：「没有具体对象」的题（一种新药 / 我看的那个视频），题单最上方提醒
+    // ★ 2026-10-11 用户裁定（纯前端）：**每个阶段区块一键收起** —— 用 CSS `.folded` 折叠，
+    //   不改结构；六个可折叠区：题集 / 判分 / 建议 / 数据大屏 / 工具池 / 历史打分表 ✓
+    const probeFold = ref({ cases: false, judge: false, advise: false, board: false, pool: false, hist: false });
+    const PROBE_FOLD_KEYS = ['cases', 'judge', 'advise', 'board', 'pool', 'hist'];
+
+    function probeFoldToggle(k) {
+      probeFold.value = Object.assign({}, probeFold.value, { [k]: !probeFold.value[k] });
+    }
+
+    const probeFoldAllOn = computed(function () {
+      const f = probeFold.value || {};
+      return PROBE_FOLD_KEYS.every(function (k) { return !!f[k]; });
+    });
+
+    function probeFoldAll() {
+      const on = !probeFoldAllOn.value;            // 全部收起 ↔ 全部展开（一键切换）
+      const o = {};
+      PROBE_FOLD_KEYS.forEach(function (k) { o[k] = on; });
+      probeFold.value = o;
+    }
+    const probePrivacyHint = computed(function () {
+      var p = probePriv.value || {};
+      var ids = p.ids || [];
+      if (!ids.length) { return ''; }
+      var why = p.why || {};
+      var parts = ids.slice(0, 4).map(function (i) {
+        return '第' + i + '题' + (why[i] || why[String(i)] ? '：' + (why[i] || why[String(i)]) : '');
+      });
+      return '⚠ 第 ' + ids.join('/') + ' 题依赖你的个人数据（' + parts.join('；') +
+             (ids.length > 4 ? ' 等' : '') + '）—— 请先确认你确实有这些数据（看过/收藏过/收到过）；' +
+             '没有就删掉或改题，否则 Agent 会逐页翻找、单题耗时可能到上限 ✓';
+    });
+    // ★ 2026-10-12 用户裁定：「出题 Agent 爱出"想做一件事但没有明确对象"的题」→ 题单最上方标黄
+    const probeVagueHint = computed(function () {
+      var p = probeVague.value || {};
+      var ids = p.ids || [];
+      if (!ids.length) { return ''; }
+      var hits = p.hits || {};
+      var parts = ids.slice(0, 3).map(function (i) {
+        return '第' + i + '题（只说「' + (hits[i] || hits[String(i)] || '某个东西') + '」）';
+      });
+      return '⚠ 第 ' + ids.join('/') + ' 题没有具体对象：' + parts.join('；') +
+             (ids.length > 3 ? ' 等' : '') +
+             ' —— 题面里必须点名「要查的是什么」（药名 / 书名 / BV 号 / 商品名 / 具体检索词），' +
+             '否则 Agent 无从下手、只能乱翻；素材里确实没有对象就改成具体检索词或直接换题 ✓';
+    });
+    const probeDistSegs = computed(function () {
+      const m = probe.value.metrics || {};
+      const segs = [
+        { k: '✓ 完全正确', n: m.verdict_ok || 0, c: '#54aa69' },
+        { k: '△ 部分正确', n: m.verdict_partial || 0, c: '#f5c542' },
+        { k: '✗ 错', n: m.verdict_bad || 0, c: '#e5484d' },
+        { k: '未测', n: m.verdict_unknown || 0, c: '#c9d2cb' },
+      ];
+      const tot = segs.reduce(function (a, s) { return a + s.n; }, 0) || 1;
+      segs.forEach(function (s) { s.w = Math.round(100 * s.n / tot); });
+      return segs.filter(function (s) { return s.n > 0; });
     });
 
     return {
@@ -7370,6 +8516,15 @@ createApp({
       chatImages, chatImgBusy, chatImgErr, chatFileInput, pickChatImages, onChatFiles,
       multiOpen, toggleMulti, pickFromAlbum, soonHint,
       onChatPaste, onChatDrop, removeChatImage, addChatImages, clearChatImages,
+      // v4.0 大点 03：工具池测评（第 6 个页签）
+      probe, probeCases, probeSheets, probeSheetOn, probeSheetHtml, probeBusy, probeErr, probeMsg,
+      probeRun, probeScores, probeJudgeRows, probeAgent, probeAdvisor, probeProfileHint, probeAskCap,
+      probePriv, probePrivacyHint, probeVague, probeVagueHint, probeFold, probeFoldToggle, probeFoldAll, probeFoldAllOn,
+      probeOpen, probeGen, probeGen2, probeGenPoll, probeSaveCases, probeRunNow, probeJudge, probeAdvise, probeCommit,
+      probeSheetOpen, probeSheetLabel, probeMd, probeRate, probeKindText,
+      probeScoreOf, probeNote, probeSetScore, probeSetNote, probeAgentScore, probeTally,
+      probeListAdd, probeListDel,
+      probeUntallied, probeHasMetrics, probeHitRate, probeBadCount, probeDistSegs,
       token, username, password, regRole, errMsg, busy, role, view, go,
       messages, monitor, sessions, activeThread, draft, loading, exporting, scroll, examples, thinkingText,
       loadSessions, newSession, switchSession, delSession, renameSession, fmtTime,
@@ -7414,6 +8569,10 @@ createApp({
       stopping, stopGen, delPair,  // 聊天界面优化：中断本轮回答 / 删除一轮问答
       finishOnboard, skipOnboard, delItem,
       reports, subs, newSubName, newSubScope, newSubLang, selCount, newReports, digestRunning,
+      digestAuto, setDigestAuto,
+      // ★ 2026-10-13 大点 02：AI 对话区的「决策模型精排」开关（模板里用到了，必须在这里暴露，
+      //   否则模板拿到的是 undefined —— 点开关毫无反应，徽标也永远显示"已关"）
+      decRouter, loadDecRouter, setDecRouter,
       loadReports, loadSubs, updateSub, addSub, delSub, runDigestNow,
       // M5c 周报应用内阅读（模板里用到的每个标识符都要在这儿出现，否则静默失效）
       openReport, readerBack, readerHtml, readerLoading, readerTitle, readerMeta, readerItem,

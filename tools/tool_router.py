@@ -24,27 +24,41 @@ from dataclasses import dataclass, field
 from tools import capability_pool as pool_mod
 
 
-def _route_provider() -> str:
-    """工具路由的**仲裁层**实现：`local`（默认，现状）/ `jev`（★ 占位，未实现）。
+def _route_provider(account_id: int | None = None) -> str:
+    """工具路由**仲裁层**的取值：`local`（默认，现状）/ `decision`（决策模型精排，已实现）。
 
-    见 `docs/v3.0/遗留问题v2.0M5c-路由基准与Jev仲裁预研.md` §3.4：Jev 只在**灰色区间**做
-    `choice(该用哪个工具?)` + `noul(需要工具吗?)` 两个判定，confidence 不够仍回退全量。
-    这里先留出配置缝隙（配置导向、**不许硬编码厂商/端点**），真正的实现等基准数字说话。
+    ★ 2026-10-13 用户裁定：开关来源改为**账号级 DB 字段 + 前端开关**（`accounts.decision_router`），
+    `.env` 不再存"开不开"。取值统一由 `tools/decision_router` 决定，这里只做转发（模块不可用即按 local）。
     """
-    return (os.getenv("ZX_TOOL_ROUTE_PROVIDER", "local") or "local").strip().lower()
+    try:
+        from tools import decision_router as _dr
+        return _dr.provider(account_id)
+    except Exception:  # noqa: BLE001
+        return "local"
 
 # ---------------------------------------------------------------- 可调参数（改动须重跑加压探针）
 FAST_PATH_MAX = 4          # 池内条目 ≤ 此数 → 直接走 M5a 全量简报（路由没有收益，省一次 embedding）
 MAX_FULL_CARDS = 3         # 最多给几张完整能力卡
 COMPACT_TOP_N = 2          # 完整卡之后，再给几条紧凑行
 TOTAL_BUDGET_CHARS = 1500  # 注入总量上限（≈750 token）
-Z_STRONG = 2.4             # 向量置信阈值：top1 的 z 分数达到此值才算「有明确目标」
-# ★ 2026-09-27 用基准（28 条池 / 30 题，`tests/m5c_router_bench.py`）标定：2.0 → 2.4 时
-#   precision@3 / recall@3 / hit@3 **完全不变**（0.292 / 0.674 / 0.792），
-#   噪声假阳性 0.333 → **0.000**，代价是灰区回退 0.300 → 0.467（灰区要注入整池 16,408 字符 vs 路由时 ~2,700）。
-#   用户 2026-09-27 拍板取 2.4：宁可多花上下文，也不要「自信地选错」。改这个值必须重跑基准。
-#   （历史：2.0 是 8 工具时期的标定值 —— 无关问句「你是谁」z=1.57、真命中最低 1.65~1.99，
-#    池子涨到 28 条后这套数已经失效，按上面的基准扫描重标定。）
+Z_STRONG = 3.8             # 向量置信阈值：top1 的 z 分数达到此值才算「有明确目标」
+# ★ 2026-10-09 **两轮**重标定（用户拍板；依据与实测表见 `docs/v4.0/Done/01-度量口径收口工程·实现记录.md`）：
+#   ① 2.4 → 3.3（度量口径收口后）：噪声假阳性 0.143 → 0.000，四个质量指标不变，
+#      代价是非噪声灰区 0.087 → 0.217（3 道真命中题改为回退全量）。
+#   ② 3.3 → 3.8（与「素材层第三批」同批落地）：素材改动（把站码工具里的城市名示例拿掉）会把
+#      `city-climate` 的 z 顶上去（改素材前 3.22 → 冻结池 3.59／真机池 3.62；池内余弦标准差 ≈0.01，
+#      这一项本就易跳）。**两个口径分别扫描**后发现平台区不同：
+#        · 冻结池（28 条）：3.4 起就全绿，3.4 ~ 4.0 五个值完全一致；
+#        · 真机池（29 条）：**3.62 起**才全绿，3.62 ~ 4.2 六个值完全一致。
+#      取 **3.8** = 两池都在平台区内、离真机边界（3.62）留 ~0.18 余量，防下次素材微调再次漏过。
+#      落地后（两个口径同值）：precision@1 0.739 → **0.870**、hit@3 **1.000**、非噪声灰区
+#      0.217 → **0.130**、噪声假阳性 **0.000**。
+#   ⚠️ 改这个值必须**两个口径都重跑**（`tests/live/m5c_router_bench.py` + `tests/live/m6b_material_ab.py`，
+#      后者要 `--live-pool` 也跑一遍——**冻结池够不代表真机够**，本次就踩过），
+#      并同步三处：本注释 / `router_bench_baseline.json` / `router_bench_regressions.json` 的 `baseline_metrics`。
+# 历史（2026-09-27）：2.0 → 2.4 —— precision@3 / recall@3 / hit@3 完全不变（0.292 / 0.674 / 0.792），
+#   噪声假阳性 0.333 → 0.000，代价是灰区 0.300 → 0.467。（2.0 是 8 工具时期的标定值：无关问句
+#   「你是谁」z=1.57、真命中最低 1.65~1.99；池子涨到 28 条后那套数已失效，故按基准扫描重标定。）
 LEX_MIN = 2                # 或：top1 的词法命中 ≥ 此值（更可靠的那一路）
 RRF_K = 60                 # RRF 融合常数（与 M3 检索栈同口径）
 
@@ -212,13 +226,17 @@ def _render_routed(entries: list[pool_mod.CapabilityEntry], order: list[str],
 
 # ---------------------------------------------------------------- 主入口
 def route_tools(account_id: int | None, question: str, *,
-                force_full: bool = False, entries: list[pool_mod.CapabilityEntry] | None = None
+                force_full: bool = False, entries: list[pool_mod.CapabilityEntry] | None = None,
+                allow_decision: bool = True
                 ) -> RouteResult:
     """按问题选工具，产出注入文本。
 
     - 快路径（池 ≤ FAST_PATH_MAX / force_full / 无问题）→ M5a 全量简报，行为与 M5a 逐字一致；
     - 路由路径 → 命中给完整卡、次要给紧凑行、其余只留一行名称 + 只对命中工具给 few-shot；
     - 任何异常 → 回退全量简报（绝不让注入变空）。
+    - `allow_decision=False` = **测评请求**（03 路由质量测评走 `/api/chat?probe=1`）：
+      **强制关掉决策模型精排**（2026-10-13 用户裁定）——测评要量的是路由器 + 素材层，
+      带上决策层就换了仪器、与历史基线不可比。
     """
     from tools import cli_registry as cli_reg
 
@@ -263,21 +281,25 @@ def route_tools(account_id: int | None, question: str, *,
     try:
         dense = pool_mod.route_scores(account_id, question)
         dec = decide(question, ents, dense)
+        # ★ 大点 02【决策模型精排】—— 候选互相咬住时请决策模型复核一次，只改写顺序。
+        #   方案见 docs/v4.0/v4.0规划文档.md §02 ③ 段；裁定见 docs/v4.0/Verdict/02-决策模型仲裁层.md。
+        #   未启用（tool_route_provider=local，默认）/ 未触发（灰区题与相距不近的题都不触发）/
+        #   不可用（超时 无额度 形状错 限流 预算用尽）→ 返回 None，下面一切行为逐字等于现状。
+        try:
+            from tools import decision_router as dec_router
+            _refined = dec_router.maybe_refine(account_id, question, ents, dec,
+                                               allow=allow_decision)
+            if _refined:
+                dec = _refined
+        except Exception:  # noqa: BLE001
+            pass
         if not dec["confident"]:
-            # ★ M5c-4【占位】：灰色区间的「仲裁层」预留位 —— **Jev 只做占位，未实现**。
-            #   设计见 docs/v3.0/遗留问题v2.0M5c-路由基准与Jev仲裁预研.md §3.4：
-            #     provider=local（默认）→ 现状：直接回退全量；
-            #     provider=jev（未来）→ 在此把「问句 + 全池 name/keywords」交给 Jev 的
-            #       choice("该用哪个工具？") + noul("需要工具吗？")，confidence ≥ 阈值 → 按 Jev 排序路由，
-            #       否则仍回退全量；一次调用并行两个问题（延迟只付一次）。
-            #   ★ 铁律：Jev 只影响「工具怎么被想起」，**绝不参与「能不能跑」**（六道闸/只读闸/审计一律不动）。
-            #   ★ 立项条件：M5c-3 基准跑出 precision@3 < 0.7 或 灰区 > 30% 或 噪声假阳性 > 10%（任一），
-            #     且 M5c-1 / M5c-2 已落地（否则是把糊在一起的文本喂给更聪明的判断器）。
-            prov = _route_provider()
-            if prov != "local":
-                print("[M5c] 灰色区间仲裁层 provider=%r 尚未实现（占位），本次按 local 回退全量" % prov)
+            # M5c-4【占位已由大点 02 接管】：灰色区间仍然**回退全量**（噪声与「要不要用工具」
+            #   的判定归路由器负责，见裁定 3；决策模型只做「从候选里选」，而灰区题的候选本就全给了模型）。
+            prov = _route_provider(account_id)
             r = _full_auto(ents, "low_confidence")
-            r.detail.update({"z_top": dec["z_top"], "lex_top": dec["lex_top"], "arbiter": prov})
+            r.detail.update({"z_top": dec["z_top"], "lex_top": dec["lex_top"], "arbiter": prov,
+                             "decision": dec.get("decision")})
             return r
         brief, full_refs, order = _render_routed(ents, dec["order"])
         ex_all = cli_reg.ability_examples_block(account_id)
@@ -290,7 +312,8 @@ def route_tools(account_id: int | None, question: str, *,
                     "scores": {k: round(v, 4) for k, v in dec["fused"].items()},
                     "z": {k: round(v, 3) for k, v in dec["z"].items()},
                     "lexical": dec["lexical"],
-                    "pool": len(ents)},
+                    "pool": len(ents),
+                    "decision": dec.get("decision")},
         )
     except Exception as e:  # noqa: BLE001
         r = _full("route_error:%s" % type(e).__name__)

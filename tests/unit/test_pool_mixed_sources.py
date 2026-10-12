@@ -230,13 +230,21 @@ def test_fast_path_stays_identical_for_cli_only_account():
 
     注意：这条对照需要一个"只有 CLI、没有任何 api/mcp 能力"的账号。用户实测时会给常用账号接入
     API（如 `api:xxapi#douyinHot`）→ 那种账号已不满足前提，此处应**跳过**而不是误报失败。
+
+    ★ 2026-10-11 追加前提：**只认非测试残留账号**。教训：某次 e2e 在 bash 循环里被中断，留下
+      `m5broute_*` 临时账号 + 半套 CLI 注册表（池与 `cli_registry` 对不上），于是"取最小 id 的
+      CLI-only 账号"这条对照被它喂中 → 误报失败。测试账号一律不算数 ✓
     """
+    import re
     from tools import cli_registry as cli_reg, tool_router
+    _temp_name = re.compile(r"^(m\d|m5b|v3v|q2_|bk_|probe_|_|m2tester)")
     conn = get_personal_conn()
     try:
-        rows = conn.execute("SELECT id FROM accounts ORDER BY id").fetchall()
+        rows = conn.execute("SELECT id, username FROM accounts ORDER BY id").fetchall()
         picked = None
         for r in rows:
+            if _temp_name.match(str(r["username"])):
+                continue                                    # 测试残留账号不作对照 ✓
             aid0 = int(r["id"])
             ents = cp.pool_entries(aid0)
             if ents and all(e.source == cp.SOURCE_CLI for e in ents):

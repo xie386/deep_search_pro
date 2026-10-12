@@ -7,37 +7,37 @@
  "mcp:bnf/natural_language_search": {
   "name": "Gallica 自然语言检索",
   "keywords": "法国国家图书馆/法语资料/法文文献/外国文献/一手法语史料/自然语言检索馆藏",
-  "abilities_user": "用法语或英语的一句话检索法国国家图书馆（Gallica）馆藏（全字段）。中文主题请先译成法语/英语（例：巴黎公社 → Commune de Paris 1871）。翻页用 page。"
+  "abilities_user": "用法语或英语的一句话检索法国国家图书馆（Gallica）馆藏（全字段）。中文主题请先译成法语/英语（例：巴黎公社 → Commune de Paris 1871）。翻页用 page。\n★ 中文主题**先译成法语/英语**再检索（例：巴黎公社 → Commune de Paris 1871）。\n★ 检索**一次调用**就该有结果：要更多结果用 `page` 翻页，**不要换别的检索工具反复试探**（按书名/主题没搜到时，先换关键词重搜一次）。"
  },
  "mcp:bnf/search_by_subject": {
   "name": "Gallica 按主题检索",
   "keywords": "关于某主题的资料/主题词检索/某个话题的史料/讲某事的文献",
-  "abilities_user": "按主题词检索 Gallica 馆藏；主题词用拉丁字母（法语/英语）。"
+  "abilities_user": "按主题词检索 Gallica 馆藏；主题词用拉丁字母（法语/英语）。\n★ 中文主题**先译成法语/英语**再检索（例：巴黎公社 → Commune de Paris 1871）。\n★ 检索**一次调用**就该有结果：要更多结果用 `page` 翻页，**不要换别的检索工具反复试探**（按书名/主题没搜到时，先换关键词重搜一次）。"
  },
  "mcp:bnf/search_by_title": {
   "name": "Gallica 按书名检索",
   "keywords": "按书名找/书名检索/找某本书/某部作品",
-  "abilities_user": "按书名或作品名检索 Gallica；书名用原文（法语/英语）。"
+  "abilities_user": "按书名或作品名检索 Gallica；书名用原文（法语/英语）。\n★ 中文主题**先译成法语/英语**再检索（例：巴黎公社 → Commune de Paris 1871）。\n★ 检索**一次调用**就该有结果：要更多结果用 `page` 翻页，**不要换别的检索工具反复试探**（按书名/主题没搜到时，先换关键词重搜一次）。"
  },
  "mcp:bnf/search_by_author": {
   "name": "Gallica 按作者检索",
   "keywords": "按作者找/某人的著作/作者的全部作品/某作家写过什么",
-  "abilities_user": "按作者名检索其著作；作者名用原文（法语/英语）。"
+  "abilities_user": "按作者名检索其著作；作者名用原文（法语/英语）。\n★ 中文主题**先译成法语/英语**再检索（例：巴黎公社 → Commune de Paris 1871）。\n★ 检索**一次调用**就该有结果：要更多结果用 `page` 翻页，**不要换别的检索工具反复试探**（按书名/主题没搜到时，先换关键词重搜一次）。"
  },
  "mcp:bnf/search_by_date": {
   "name": "Gallica 按年代检索",
   "keywords": "按年代找/某年出版的文献/1871年的资料/按年份检索",
-  "abilities_user": "按年代（YYYY 或 YYYY-MM）检索 Gallica 馆藏。"
+  "abilities_user": "按年代（YYYY 或 YYYY-MM）检索 Gallica 馆藏。\n★ 中文主题**先译成法语/英语**再检索（例：巴黎公社 → Commune de Paris 1871）。\n★ 检索**一次调用**就该有结果：要更多结果用 `page` 翻页，**不要换别的检索工具反复试探**（按书名/主题没搜到时，先换关键词重搜一次）。"
  },
  "mcp:bnf/search_by_document_type": {
   "name": "Gallica 按文献类型检索",
   "keywords": "手稿/地图/乐谱/报纸/照片/文献类型/manuscrit",
-  "abilities_user": "按文献类型检索：manuscrit 手稿 / carte 地图 / musique 乐谱 / periodique 报刊 / image 图像。"
+  "abilities_user": "按文献类型检索：manuscrit 手稿 / carte 地图 / musique 乐谱 / periodique 报刊 / image 图像。\n★ 中文主题**先译成法语/英语**再检索（例：巴黎公社 → Commune de Paris 1871）。\n★ 检索**一次调用**就该有结果：要更多结果用 `page` 翻页，**不要换别的检索工具反复试探**（按书名/主题没搜到时，先换关键词重搜一次）。"
  },
  "mcp:bnf/advanced_search": {
   "name": "Gallica CQL 高级检索",
   "keywords": "CQL/高级检索/组合条件检索",
-  "abilities_user": "用 CQL 语法做组合条件检索（进阶用法）。"
+  "abilities_user": "用 CQL 语法做组合条件检索（进阶用法）。\n★ 中文主题**先译成法语/英语**再检索（例：巴黎公社 → Commune de Paris 1871）。\n★ 检索**一次调用**就该有结果：要更多结果用 `page` 翻页，**不要换别的检索工具反复试探**（按书名/主题没搜到时，先换关键词重搜一次）。"
  },
  "mcp:bnf/sequential_reporting": {
   "name": "Gallica 分节写研究报告",
@@ -61,58 +61,43 @@
  },
  "mcp:12306-mcp/get-interline-tickets": {
   "name": "查换乘中转车票",
-  "keywords": "换乘/中转/中途转车/需要转几次车/换乘车票方案",
-  "abilities_user": "查需要换乘或中转的车票方案。"
+  "keywords": "中途要换乘哪些车/换乘方案/中转方案/需要转几次车/没有直达怎么走",
+  "abilities_user": "**没有直达、需要中转**时用它：查某天从某站到某站的中转换乘方案。问到「中途要换乘哪些车」「怎么转车」时用它。只查直达余票走「查火车余票」；只想看某趟车停哪些站走「列车经停站」。"
  },
  "mcp:12306-mcp/get-train-route-stations": {
   "name": "列车经停站",
-  "keywords": "经停站/途经站点/这趟车停哪些站/中途停靠",
-  "abilities_user": "查某趟列车的经停站。"
+  "keywords": "经停站/这趟车停哪些站/途经哪些站/中途停靠哪些站",
+  "abilities_user": "查某趟**列车**（按车次）的途经车站与到发时刻。问到「这趟车经过哪些站」时用它。查两地之间有没有票走「查火车余票」；换乘方案走「查换乘中转车票」。"
  },
  "mcp:12306-mcp/get-station-code-of-citys": {
-  "name": "城市换代表站码",
-  "keywords": "城市换站码/成都的站码/城市代表车站",
-  "abilities_user": "城市 → 代表站码（如 成都 → CDW、广州 → GZQ）。"
+  "name": "城市名换站码",
+  "keywords": "城市换站码/这个城市的站码/城市代表车站代码/只拿到城市名的时候",
+  "abilities_user": "12306 查票流程的一步：把**城市名**换成该城市在 12306 里使用的代表站码，供查余票。手上已经是具体车站名（某东站、某南站）时走「车站名换站码」；想列出这个城市的全部火车站走「某城市有哪些火车站」。它给出的是一枚站码。\n★ 参数名就是 `citys`（**不是** `cityNames`）：多个城市用 `|` 分隔，例 `上海|广州`。参数名传错会失败，别反复试别的拼法。"
  },
  "mcp:12306-mcp/get-stations-code-in-city": {
-  "name": "城市全部车站清单",
-  "keywords": "城市里所有车站/这个城市有哪些火车站",
-  "abilities_user": "城市 → 该城市的全部车站清单。"
+  "name": "某城市有哪些火车站",
+  "keywords": "这个城市有哪些火车站/城市里所有车站/一个城市有哪几个火车站",
+  "abilities_user": "列出一个城市的**全部火车站**（含各自站码）。问到「某城市有哪些火车站」时用它。只想拿一枚代表站码去查票走「城市名换站码」；已知具体车站名走「车站名换站码」。"
  },
  "mcp:12306-mcp/get-station-code-by-names": {
   "name": "车站名换站码",
-  "keywords": "车站名换站码/具体车站的编码",
-  "abilities_user": "具体车站名 → 站码。"
+  "keywords": "车站名换站码/某站的车站代码/具体车站的编码",
+  "abilities_user": "12306 查票流程的一步：把**具体车站名**（某东站、某南站）换成它的站码，供查余票。只知道城市名时走「城市名换站码」；要列某个城市的全部车站走「某城市有哪些火车站」。\n★ 参数名就是 `stationNames`：多个车站名用英文逗号分隔，例 `北京南站,上海虹桥站`。"
  },
  "api:steam#searchGame": {
   "name": "Steam 商店搜索",
   "keywords": "搜游戏/这个游戏多少钱/Steam 上有没有/游戏价格/游戏打折了吗",
-  "abilities_user": "Steam 商店按名称检索：返回 appid 与人民币价格。用法：searchGame 拿到 appid → gameDetail 看详情。"
+  "abilities_user": "Steam 商店按名称检索：返回 appid 与人民币价格。用法：searchGame 拿到 appid → gameDetail 看详情。\n★ 用**这款游戏的原语言名称**（它原本发行时使用的语言）去搜，**不要用非原语言的译名**：原语言是中文的游戏就用中文名搜，原语言是别的语言的游戏就用它的原语言名搜 —— 译名往往搜不到。某个写法搜不到时，换成它的**原语言名称**再搜一次，不要反复换译名去试。"
  },
  "api:steam#gameDetail": {
   "name": "Steam 游戏详情",
   "keywords": "游戏详情/发行日期/开发商/游戏简介/配置要求",
-  "abilities_user": "按 appid 返回 Steam 商店的商品详情页字段（发行日期、开发商、简介、配置要求）。"
- },
- "api:xxapi#douyinHot": {
-  "name": "抖音实时热榜",
-  "keywords": "抖音热榜/抖音热搜/短视频热点",
-  "abilities_user": "返回抖音热榜接口的榜单条目（话题名与热度值）。"
- },
- "api:xxapi#ipQuery": {
-  "name": "IP 归属地",
-  "keywords": "IP 归属地/这个 IP 在哪/运营商",
-  "abilities_user": "传入 IP 字符串，返回该 IP 的国家、省市与运营商字段。"
- },
- "mcp:12306-mcp/get-station-by-telecode": {
-  "name": "站码反查车站",
-  "keywords": "已知站码查车站名/车站电报码",
-  "abilities_user": "传入车站电报码（telecode，如 CDW），返回该站名称、拼音、所属城市。查票流程请用「城市换代表站码」。"
+  "abilities_user": "按 appid 返回 Steam 商店的商品详情页字段（发行日期、开发商、简介、配置要求）。\n★ 前置：先用 `searchGame` 按**游戏的原语言名称**拿到 appid（不要用非原语言的译名），再调本工具看详情与价格。"
  },
  "mcp:pdd/search_goods": {
-  "name": "拼多多商品搜索",
-  "keywords": "拼多多搜商品/拼多多有没有卖/多少钱能买到/拼多多比价",
-  "abilities_user": "传入关键词，返回拼多多商品列表（价格、优惠券、goods_sign）。用法：search_goods 拿到 goods_sign → get_goods_detail 看规格。"
+  "name": "拼多多搜商品",
+  "keywords": "拼多多搜商品/拼多多上有吗/拼多多上多少钱/在拼多多买",
+  "abilities_user": "**已经想好要买某样具体的东西**时用它：按关键词搜拼多多商品（返回价格、优惠券、商品标识）。问到「某个东西在拼多多上卖多少钱、有没有」时用它。还没有明确目标、想逛榜单与补贴活动走「拼多多频道榜单」；搜到之后看规格走「拼多多商品详情」。"
  },
  "mcp:pdd/get_goods_detail": {
   "name": "拼多多商品详情",
@@ -121,7 +106,22 @@
  },
  "mcp:pdd/explore_deals": {
   "name": "拼多多频道榜单",
-  "keywords": "拼多多好价榜单/百亿补贴/拼多多热销榜/拼多多精选频道",
-  "abilities_user": "传入频道名（销量榜、百亿补贴、品牌黑标等），返回该频道商品列表；无需关键词。"
+  "keywords": "拼多多榜单/百亿补贴/拼多多有什么值得买/不知道买什么好",
+  "abilities_user": "**还没有明确想买的东西**时用它：按频道（销量榜、热销榜、百亿补贴、品牌黑标）浏览拼多多精选好货，不需要关键词。已经想好了具体要买什么、要按词搜走「拼多多搜商品」。"
+ },
+ "api:xxapi#douyinHot": {
+  "name": "获取抖音实时热榜",
+  "keywords": "",
+  "abilities_user": "关键词：抖音热榜/抖音热搜/今天什么最火/实时热点榜单/抖音上最火的视频\n\n**想看此刻抖音上最火什么**时用它：取抖音实时热榜，返回热门视频与话题的排名列表。问到「抖音热搜、现在什么最火、实时热点榜」用它；只想查一个 IP 在哪儿走「查询IP归属地」。"
+ },
+ "api:xxapi#ipQuery": {
+  "name": "查询IP归属地",
+  "keywords": "",
+  "abilities_user": "关键词：IP归属地/查IP/这个IP是哪儿的/IP定位/运营商查询\n\n**手上只有一个 IP、想知道它在哪**时用它：查该 IP 的归属地（国家、省市、运营商）。问到「这个 IP 是哪儿的、IP 定位、归属地查询」用它；想看抖音热榜走「获取抖音实时热榜」。"
+ },
+ "bili": {
+  "name": "哔哩哔哩CLI",
+  "keywords": "B站视频、bilibili、BV号、视频链接、视频讲了什么、总结视频、视频字幕、视频评论、AI总结、B站搜索、找视频、有没有讲XX的视频、XX的教程、UP主、up、UP主资料、UP主视频、XX的作品、XX的视频列表、我收藏的、收藏夹、我看过的、观看历史、稍后再看、我关注的、我关注的人、我的动态、我发的动态、B站热门、排行榜、热门视频、今天B站在火什么、B站top、B站登录、bili能用吗、B站状态",
+  "abilities_user": "关键词：B站视频、bilibili、BV号、视频链接、视频讲了什么、总结视频、视频字幕、视频评论、AI总结、B站搜索、找视频、有没有讲XX的视频、XX的教程、UP主、up、UP主资料、UP主视频、XX的作品、XX的视频列表、我收藏的、收藏夹、我看过的、观看历史、稍后再看、我关注的、我关注的人、我的动态、我发的动态、B站热门、排行榜、热门视频、今天B站在火什么、B站top、B站登录、bili能用吗、B站状态\n这个视频讲了什么 / 帮我总结这个视频→bili video\nBV开头的视频/完整的bilibili链接→bili video\n提取这个视频的字幕 / 视频里说了什么→bili video\n这个视频的热评 / 评论区→bili video\n记不清BV号的视频（只记得标题或内容）→bili search 再 bili video\n帮我搜B站上关于XX的视频→bili search\nB站有没有讲RAG的视频→bili search\nXX的教程/讲解视频→bili search\nXX这个UP主是谁→bili user\nXX的UP主主页/资料→bili user\nXX发了哪些视频→bili user-videos\n我收藏了什么→bili favorites\n我的收藏夹里的XX视频→bili favorites 再 bili favorites {收藏夹ID}\n我看过哪些视频→bili history\n我的稍后再看→bili watch-later\n我关注了哪些UP主→bili following\n我关注的人最近发了什么→bili feed\n我发过什么动态→bili my-dynamics\nB站今天有什么热门→bili hot\nB站最近的排行榜→bili rank\nbilibili工具现在能用吗→bili status\nB站登录状态→bili status\n★ 同一条子命令**报错时不要一直重复试**（过高的重复调用频次本身就会让工具报错）：先**静默放下一段时间**，去做别的要做的任务，**做完之后再回头重试**。"
  }
 }

@@ -55,6 +55,12 @@
 | `test_tools_sources_api.py` | **M1 工具来源配置面**（配置导向 CRUD · 密钥掩码 · OpenAPI 候选落库但**未确认不进池** · 确认闸（只读直接过 / **写方法必须显式勾选**）· **重复粘贴保留人工决定** · 删除连带清理 · 体检（不联网的配置校验）· 账号隔离） | `api/tools_sources.py` · `api/server.py`(`/api/tools/*`) | `pytest`（**21 项**，全离线 + 临时账号；含"两入口形状一致""重贴文档刷新描述"回归） |
 | `frontend_setup_exports_check.py` | **前端静态不变量**：① 模板引用的标识符 ⊆ `setup()` 的 return（漏导出 → 交互静默失效）；② **`go('x')` 的目标必须是真实视图**（2026-09-25 报障：阅读器返回写成 `go('report')` 而视图名是复数 `reports` → 整页空白，点任意导航才恢复）；③ **模型选型卡片必须有「上下文要求」提示**（`class="cust-tip ctx-tip"`，文案含 32K/128K/512K 且位于该卡片内——2026-09-25 议题 X1 固化：用户自配小上下文模型不会被莫名截断）；④ **API 教程完整性**（正文存在 / 章节齐全 / 含最小 OpenAPI 骨架 / 两条安全口径 / **图片引用逐一存在**——2026-09-26，防止裂图） | `front/index.html` · `front/tutorial/` | `python`（**25 项**；`--fix` 可自动补漏导出） |
 
+| `test_probe_runner.py` | **v4.0 大点 03 测评执行器（`tools/probe_runner.py`）**：题集 JSON 读入与**校验器**（6 类坏题集必须被拦：重复 id / 噪声题带期望 / 单工具题缺期望 / ref 前缀非法 / kind 非法 / 题面重复；短题「你是谁」必须放过 ✓）· 选题（core / 定向复跑）· 调用序列解析（口径与 v3.1 探针**逐条一致**：顺序保留 / MCP 来源按 `/` 切 / 参数摘要 / 坏 json / 换行转义）· 三段式打分表（① 工具清单 ② **全量词法快照** ③ 最终数据 + 逐题 + **机器可读 JSON 块**）· 版本列表（**只认 `probe_打分表YYYYMMDD_HHMMSS.md`**，`output/` 其余文件不串入）· 打分表名**路径防护**（`../`、`a.md` 全拒）· 打分表**不进清理水位线**（裁定 6-⑤）· 账号级指标折算（命中只算人工终判 ✓ / 噪声越线 / 未填=未测 / 平均外部检索）· `probe_metrics` **每账号一行** UPSERT（**临时库上验，不碰真库**）· **原始记录的生命周期**（跑完仍在 ✓ / 不进清理水位线 / 只留最近一份 —— 2026-10-11 用户真机 bug 的回归）· **单题护栏**（`ask()`：超时上限 → 调 `/api/chat/cancel` 中断并记 408「未测」/ 500 与 408 **不重试** / 关服与「线程池已关」→ 提前中止，`doc["stopped"]` 如实记账） | `tools/probe_runner.py` · `tools/schema_personal.py`(`probe_metrics`) | `pytest`（**71 项**，0.3s，**不调模型**） |
+| `test_probe_isolation.py` | **v4.0 大点 03 测评隔离（用户 2026-10-11 三条裁定，全离线、不碰真库）**：① **测评会话不进会话库** —— `create_session(kind='probe')` 的会话不出现在 `list_sessions()`、未知 kind 落回 `chat`（不留能进库又会漏删的中间态）、`purge_probe_sessions()` 连消息一起清且幂等；② **画像/笔记守得住** —— `snapshot_profile()` 整目录进沙箱（且**不参与**水位线清理，否则还原源被删）、`restore_profile()` 把被改文件还原成**逐字一致**、删掉本轮新冒出来的文件、原子写不留 `*.restore_tmp`、幂等（无改动时 `unchanged` 全中）、快照只留最近一份且留的是最新 | `tools/probe_runner.py`（`snapshot_profile`/`restore_profile`/`_sha256`/`_prune_backups`）· `agent/conversation_store.py`（`kind`/`purge_probe_sessions`） | `pytest`（**18 项**，0.3s） |
+| `test_agent_error_report.py` | **「Agent 执行出错」的文案与留证（用户 2026-10-11 真机事故）**：① 文案必须说**真实生效的模型配置** —— 自定义配置报 `#id「厂商 / 模型名」`、项目默认也**报出模型名**（原来只会说「用的是项目默认模型」，而用户明明用的是定制助手的 DeepSeek ✗）；② `cannot schedule new futures after shutdown` / `event loop is closed` 这类**进程级故障不许说成「模型调用失败」**（会误导用户去查没坏的 key），要指出「服务关闭/重启」；③ **依赖缺失**（`ModuleNotFoundError` / `No module named`）也要单独归类为「**项目依赖缺失、别去动模型配置**」（2026-10-11 真机：漏装 `jieba` 竟被报成「模型调用失败」）；④ 出错必须落**完整 traceback** 到 `data/audit/agent_errors.jsonl`（`AGENT_ERROR_LOG` 可覆盖路径），且 traceback 要指到真正的抛出点 | `api/server.py`（`_llm_error_hint` / `_log_agent_error`） | `pytest`（**9 项**，0.2s） |
+| `test_digest_auto_switch.py` | **每日自动生成周报的账号级开关（用户 2026-10-11 裁定 28，默认关）**：① 订阅 `enabled=1` **不再足够**，必须 `accounts.digest_auto=1` 才自动跑（关着的账号一个都不跑）；② **老库没有该列时安全跳过**（查询异常 → 本轮不自动生成任何报告，状态不明绝不自动开跑） | `api/digest_scheduler.py`（`run_all_due`） | `pytest`（**2 项**，临时库，不调模型） |
+| `test_probe_agent.py` | **v4.0 大点 03 测评 Agent 三段（独立小 Agent，全离线）**：三段提示词可读（`probe_writer` / `probe_judge` / `probe_advisor`）· JSON 抽取（裸 / 代码围栏 / 前后噪声 / 无 JSON 抛错）· **ref 归一**（CLI 池条目 ref 是**裸可执行名** → 不归一会把每个 CLI 误判成「没被覆盖」）· 出题硬规则（每个 `ref` ≥1 道单工具题）· 出题/判分/建议的**流程与入参结构**（题量公式写进提示、**卡片文本**进提示 = 与路由同源、往期题面防重复、**判分段不含出题推理** = 防自出题自判分）· 题集落 `data/probe_sets/<用户名>.json` 并可按名读回 | `tools/probe_agent.py` · `prompt/prompts.yml`(`probe_writer`·`probe_judge`·`probe_advisor`) | `pytest`（**86 项**，0.5s；`invoke` 打桩**不调模型**） |
+
 ### ② 前端抽取式 harness（Node，无需服务）
 
 | 脚本 | 测什么（功能） | 对应代码段 | 怎么跑 |
@@ -66,6 +72,8 @@
 | `desktop_export_logic.js` | **导出/下载统一入口** `saveFromUrl`（网页分支 vs 桌面原生另存为、base64 分块一致） | `front/index.html` 的 `saveFromUrl` | `node`（**24 项**） |
 | `m5c_report_reader_frontend.js` | **M5c 周报应用内阅读**（打开→取正文→渲染→返回；缓存键、异常路径、模板契约） | `front/index.html` 的 `openReport`·`readerBack`（真实代码） + **复用的** `tutRender` | `node`（**42 项**） |
 | `m1c_tools_sources_frontend.js` | **M1 工具来源前端逻辑**（表单→请求体校验与后端同口径 · **勾选→确认请求体：写操作必须二次确认** · 徽标/参数摘要 · 添加/体检/编辑/删除/解析候选/确认 的真实调用序列 · 模板结构） | `front/index.html` 的工具来源代码块（真实抽取） | `node`（**11 组**，含弹窗范式：常态无表单 / 打开导入即列已落库工具；**第 9 组 = MCP tab**（分来源过滤 · 发现七步 · 确认带 `source` · 表单只在弹窗）；**第 10 组 = M5c-1 只读声明**（勾选框只在弹窗 · 确认框决定是否刷新已确认行 · 边界文案在位）；**第 11 组 = M5c-2' 工具描述**（弹窗共用 · AI 预写填框 · 与自动摘要相同的按不覆盖 · **两个信息源**：都没填时不发请求并给同一句话、payload/回填带官方文案） |
+
+| `probe_front_logic.js` | **v4.0 大点 03 工具池测评页签**（抽真实代码块 + Vue 极简 shim）：① **自写极简 markdown 渲染器** `probeMd`（真实打分表片段 → h1/h2/h3/表格/引用/列表/粗体/行内码/分隔线；**机器可读 JSON 块对人不显示**；`<script>` 注入被转义；空输入 / 未闭合围栏 / 纯文本等边界不崩）② 指标与显示（`probeRate` / `probeKindText` / `probeSheetLabel` / `probeDistSegs`，含「只留非零项」与宽度和 ≈100）③ 判分逻辑（**再点同款 = 取消**（防空判）· `probeTally` / `probeUntallied` / 备注读写 · Agent 预填可被人工覆盖）④ 页面结构（**引号感知的标签配平** + **与 HEAD 版对照**（只判「这次改动有没有改坏」）+ 锚点位置 + 单文件自足 + 懒加载 watcher 里挂了 `probe` + 渲染器不引第三方库） | `front/index.html`（03 号代码块：`probe*` 状态与函数 + `probeMd`） | `node`（**41 项**，无需服务与浏览器） |
 
 ### ③ TestClient 端到端（进程内，不占端口）
 
@@ -92,20 +100,24 @@
 | `tool_agent_e2e_test.py` | **文档读写工具挂到 Agent 后真能用** | `tools/readtofile.py` · `tools/writetofile.py` · `api/server.py` | `python`（真机） |
 | `tool_file_io_test.py` | 读写工具的轻量验证（路径穿越防护 / 扩展名白名单） | `tools/readtofile.py` · `tools/writetofile.py` | `python` |
 
+| `digest_auto_e2e.py` | **「每天自动生成周报」账号级开关的端到端**（用户 2026-10-11 裁定 28）· 在 **SQLite 热备出的临时库副本**上跑（`PERSONAL_DB_PATH` 必须在 `import api.server` **之前**设置），**真实库只读复核零改动**：默认**关** → 打开 → **GET 读回**（不只信返回值）→ 落库核对 → 关掉 → 缺 `auto` 字段按「关」→ **调度器按开关跳/跑**（订阅已启用时） | `api/server.py`(`/api/digest/auto`) · `api/digest_scheduler.py` | `python`（**11 项**，不调模型、不碰真库） |
+| `probe_api_e2e.py` | **v4.0 大点 03 测评 API（进程内 TestClient，全离线）**：11 个 `/api/probe/*` 路由注册 · 读路径（`overview` 带池规模 / 池版本 / 体检灯字段 / metrics / running，`sheets` 严格过滤 + 倒序，`cases`，`status`）· 四个**守卫**（无题集不许跑 / 无记录不许判分·建议·归档 —— 且**不调模型、不写库**）· 打分表名防护（非法 400 / 不存在的合法名 404）· 题集存取往返（非法空题集 400）· 鉴权口径（**缺 token → 422**＝参数校验层、**无效 token → 401**）· 跑完回收自己签发的 token | `api/probe.py` · `api/server.py`(`/api/probe/*`) | `python`（**35 项**，不耗模型、不跑真机） |
+
 ### ④ 真机 / 外壳 / 真窗口（慢，注意额度）
 
 | 脚本 | 测什么（功能） | 对应代码段 | 怎么跑 / 规模 |
 | --- | --- | --- | --- |
 | `m5_probe_e2e.py` | **M5a 唤醒率量化**（10 正例 + 3 反例，只看审计真值） | `tools/cli_registry.py` · `tools/shell_executor.py` · `data/audit/commands.jsonl` | `python`（真机 10~20 分钟；`SKIP_LLM=1` 只自检 **8 项**；**`STUB_WEBSEARCH=1` 零额度**） |
 
-| `m5b_pressure_probe.py` | **加压探针（v3 记录器）**：**43 条真实工具题集**（覆盖账号 28 条能力 单工具 / 多工具 / 反例三类）—— ★ **脚本不判对错 只记录「调了哪些工具、什么顺序」** 对错由人工打分（链式工具如 12306「取时间 → 站码 → 查票」使「只看首调」必然误判） | `tools/tool_router.py` · `tools/capability_pool.py` · `tests/fixtures/m5b_probe_baseline.json` | `python`（真机 **core 16 条约 8~16 分钟 / full 43 条约 34 分钟**；`SKIP_LLM=1` 只自检；`M5B_SET=core\|full`、`M5B_ONLY=<关键字>`、`M5B_KEEP=1` 保留会话） |
+| `m5b_pressure_probe.py` | **加压探针（v3 记录器；★ v4.0 起为薄壳）**：**43 条真实工具题集**（覆盖账号 28 条能力 单工具 / 多工具 / 反例三类）—— v4.0 改造（见 `docs/v4.0/Verdict/03-….md` 裁定 9）：题集已抽成 `tests/fixtures/probe_sets/m5b_v2.json`（43 题**逐字未改**，可按 `M5B_SET_FILE` 换），执行核心抽到产品模块 `tools/probe_runner.py`（前端「工具池测评」页签共用同一套逻辑），本脚本只剩开发 CLI 外壳；`M5B_*` 环境变量与 `SKIP_LLM=1` 自检**对外行为不变** ✓；产物格式（`data/m5b_pressure_result.json` + `tests/test_out/m6b_score_sheet*.md`）**保持不变**以免断掉 `m6b_score_import → m5b_probe_baseline → m6b_probe_drift` 这条链 ✓—— ★ **脚本不判对错 只记录「调了哪些工具、什么顺序」** 对错由人工打分（链式工具如 12306「取时间 → 站码 → 查票」使「只看首调」必然误判） | `tools/tool_router.py` · `tools/capability_pool.py` · `tests/fixtures/m5b_probe_baseline.json` | `python`（真机 **core 16 条约 8~16 分钟 / full 43 条约 34 分钟**；`SKIP_LLM=1` 只自检；`M5B_SET=core\|full`、`M5B_ONLY=<关键字>`、`M5B_KEEP=1` 保留会话） |
+| `probe_http_live.py` | **v4.0 大点 03 测评 API · 打真服务**（与 `probe_api_e2e.py` 同覆盖面，但走**真实 HTTP**）：证明「服务端跑的就是新代码」（首页含新页签 / `/front/vendor/vue.global.prod.js` 可访问 / 11 个 `/api/probe/*` 都活）· 只走**读路径与守卫**（**不触发真机与模型调用、不烧额度**）· token 用 `create_session()` 直接签发（**不碰密码** ✓）、跑完删除自己那条会话、题集存取后**还原** | `api/probe.py` · `api/server.py`(`/api/probe/*`) | `python`（**25 项**；**需服务已在跑**，默认 `http://localhost:8123`，可用 `PROBE_BASE` 覆盖） |
 | `asr_endpoint_probe.py` | **语音转文字真机探针**：临时账号 → `GET /api/asr/status` → 真音频（16k/mono/16bit WAV）POST `/api/asr` → ★ 文字非空 + 耗时字段 + ★ **转写前后无任何新增音频文件**（不落盘）+ 太短→400 人话 + 坏 token→401（会**自动拉起常驻引擎** 首次 ~9s 之后 ≈0.3s） | `tools/voice_asr.py` · `api/server.py`(`/api/asr*`) · 外部 `asr_cli`(`serve`) | `python`（约 30s） |
 | `stream_delta_verify.py` | **流式语义（真机）**：★ 同一次运行内「流式聚合 == 最终正文（逐字）」 + TTFT < 总耗时 + `usage_metadata` 仍在 + `ZX_STREAM=0` 回退（2 次模型调用、无工具、不花 Tavily） | `agent/stream_sink.py` · `api/server.py`(`_invoke_or_stream`) | `python`（约 20s） |
 | `stream_ws_e2e.py` | **流式传输 e2e（真机）**：自起 uvicorn 8124 → 真 WS 客户端 → ★ 增量比 `/api/chat` 返回**早**到达 + 流式聚合 == 接口 answer 逐字 + `seq` 单调 + 返回体契约不变 + **思考增量也经 WS 到达**（默认问「17*23 两步推理」 可用 `STREAM_E2E_Q` 换）；临时账号跑完回收 预期 **7/7 · `exit=0` · 无残留**（⚠️ 别用 TestClient 改本脚本 会卡在 `__exit__` 等挂着的 WS 会话上 见文件头三条踩坑） | `api/monitor.py`(`report_delta`) · `api/server.py` · `front/index.html`(`applyStreamDelta`) | `python`（约 40s） |
 | `m6b_probe_drift.py` | **探针漂移对比器**（v3）：只看**调用序列差异清单** 不再自动告警对错 | `tests/fixtures/m5b_probe_baseline.json` · `data/m5b_probe_drift.json` | `python`（`--selftest` 自检 / `--diff` 比基线；**离线零额度**） |
 | `m6b_score_import.py` | **人工评分表 → 基线回填器**：解析评分表的 `评分：` + `实际调用序列` → 写 `tests/fixtures/m5b_probe_baseline.json`（符号归一 跨盘符路径已容错 被拆断的续行会自动并回） | 评分表 md（桌面/`tests/test_out/`） | `python`（**离线**；`<评分表路径>`） |
 | `m6b_delta_rerun.py` | **M6b 定向复跑器**：全量里 **√ 类不复跑**，只跑 ① live：上一轮判 △ 的题（默认 #25 #27 #30 #35 #36，经探针新增的 `M5B_IDS` 定向复跑）② offline：v1 遗留的**离线路由 5 例**（`router_bench_regressions.json`，复用基准的冻结池与 top3 口径，纯本地零额度）。★ 两段都**只记录、不判对错**：live 出人工评分表、离线出「期望 ref 落位」对照；`--live-pool` 可改用真实账号池（能看到刷新后的卡片，**不可与冻结基线直接比**） | `tests/live/m5b_pressure_probe.py`（`M5B_IDS`）· `tests/live/m5c_router_bench.py` · `tests/fixtures/router_bench_regressions.json` | `python`（`--selftest`；`--offline-only` 约 1 分钟零额度；live 段约 10~20 分钟 + 模型额度） |
-| `m6b_material_ab.py` | **素材层 A/B 校验器**（只读）：把 `tests/fixtures/material_layer_draft.json`（工具级 keywords / abilities_user / 人话名字的**草稿**）**纯内存替换**进冻结池 → 跑①5 例回归的**期望 ref 落位** ②基准 30 题的**五指标**（与基线逐项对比）③**噪声题逐题体检**（confident 与 top1，用来定位被误路由的肇事条目）。用途：改素材前**先离线证明有效、且不碰硬判据（噪声假阳性）**；★ 不写数据库、不写夹具、不改冻结池 | `tests/fixtures/material_layer_draft.json` · `tests/live/m5c_router_bench.py` · `tests/fixtures/router_bench_regressions.json` | `python`（**离线零额度**，约 20 秒） |
+| `m6b_material_ab.py` | **素材层 A/B 校验器**（只读）：把 `tests/fixtures/material_layer_draft.json`（工具级 keywords / abilities_user / 人话名字的**草稿**）**纯内存替换**进冻结池 → 跑①5 例回归的**期望 ref 落位** ②基准 30 题的**全部指标**（precision@1 / precision@3 / recall@3 / hit@3 / 灰区分栏 / 噪声假阳性 / 注入量，与基线逐项对比）③**噪声题逐题体检**（confident 与 top1，用来定位被误路由的肇事条目）。用途：改素材前**先离线证明有效、且不碰硬判据（噪声假阳性）**；★ 不写数据库、不写夹具、不改冻结池。★ 2026-10-09 口径收口后，**默认模式（冻结池＋草稿）= 库里入库口径**，是判「素材层生效后系统怎么样」的对照基准 | `tests/fixtures/material_layer_draft.json` · `tests/live/m5c_router_bench.py` · `tests/fixtures/router_bench_regressions.json` | `python`（**离线零额度**，约 20 秒） |
 | `m6b_material_lint.py` | **素材层静态闸门**（只读）：逐条检查素材齐不齐——关键词是否可用（去掉泛化词后还剩什么）、工具级描述是否到位、名字是否英文标识符、是否含否定式措辞、同源条目关键词是否高度重叠。★ 规则**对齐 `capability_pool` 的真实语义**（写了 `abilities_user` 后自动摘要不再进向量文本，故「自动摘要过长/是英文」只在没写工具级描述时才算问题） | `tools/capability_pool.py` · `data/personal.db` | `python [账号名或 id，默认 3]`（**只读**，秒级） |
 | `front_template_bindings.js` | **前端不变量：模板绑定必须在 setup 的 return 里**（★ 2026-10-06 立，因用户报障「点开工具描述整页变白」）：这版前端是普通 `<script>`+`setup()`，模板只能看到 `return` 出去的名字 —— 新增模板里要用的函数却忘了 return，就会一渲染抛错、页面只剩背景，而 `m1c` 那种字符串断言抓不到。口径：花括号配对扫描**所有** return 块取并集 + 只认 `{{ }}` 首名 / 绑定里的**函数调用**（跳过 `a.b()` 方法调用）与条件指令；已自证（故意漏 return 时会失败并点名） | `front/index.html` | `node`（毫秒级，**只读**） |
 | `m6b_check_leftovers.py` | **残留复查**：真实账号跑前跑后计数一致（conversations 48 / messages 1096 / sessions 83 / usage_events 111 基准写死） | `data/personal.db` | `python`（**只读**） |
@@ -129,7 +141,7 @@
 | `test_m5c_readonly_declare.py` | **M5c-1 来源级「该服务全是只读」声明**：未声明→可被声明覆盖 · ★ **服务端明确 `readOnlyHint=false` 一律不被覆盖** · `sync_readonly` 才刷新已确认工具（默认受"M1 已确认行保留人工决定"保护）· 取消声明回到保守 · 候选视图与确认闸同口径 | `api/tools_sources.py` | `pytest`（**6 项**，全离线 + 本地 stdio 3 工具 server） |
 | `test_pool_route_text.py` | **M5c-2 向量文本卫生**：送去 embed 的文本优先用**工具级**描述（不再整段带来源级，否则同源工具向量分不开）· 工具级为空才回退 · ★ **CLI 条目向量文本逐字不变**（M5b 的 content_hash 断言）· 卡片文本不受影响 | `tools/capability_pool.py` | `pytest`（**4 项**，纯函数、不读库） |
 | `test_capability_draft.py` | **M5c-2\' 工具级描述**（用户手写 + AI 预写）：草稿解析容错（标识写成名字/尾段、漏写、多写、折行）· README 依据两种形态（网址 / 本地文件，含大小·二进制·不存在边界）· 保存与清除覆盖 · **能力池读取优先级**（手写 > 自动摘要，来源级描述仍保留）· 接线不变量（★ 提示词里不得出现端点 URL/命令行/env/密钥） | `tools/capability_draft.py` · `tools/source_docs.py` · `api/tools_sources.py` · `api/customize.py` | `pytest`（**32 项**，全离线；含**两个信息源**：官方介绍文案优先 / README 只作上下文 / 都不填则不生成 · 老库 `intro` 幂等补列 · 保存与清除覆盖 · 能力池读取优先级 · ★ 提示词里不得出现端点 URL/命令行/env） |
-| `m5c_router_bench.py` | **M5c-3 离线路由基准**（五个数：precision@3 / recall@3 / hit@3 / 灰区比例 / 噪声假阳性率）· **冻结池**（`tests/fixtures/router_pool_snapshot.json`）+ **题库**（`tests/fixtures/router_bench.json`，30 道含噪声与跨工具）· 基线存 `tests/fixtures/router_bench_baseline.json`（`--write-baseline` 更新）· `--legacy`（M5c-2 之前的向量文本）、`--no-derive-keywords` 用于逐项归因对比⚠️ 三份 fixture 必须随仓库提交（别放 `tests/data/`，那里被 `.gitignore` 的 `data/` 吞掉） | `tools/tool_router.py` · `tools/capability_pool.py` | `python`（**全离线**：本地 embedding，不调 LLM、不联网、**不烧 Tavily**；约 14 秒/次） |
+| `m5c_router_bench.py` | **M5c-3 离线路由基准**（★ 2026-10-09 口径收口后的指标：**precision@1** / precision@3 / `precision@3_ceiling`（结构上限，脚本自算）/ recall@3 / hit@3 / **灰区分两栏**（gray_ratio 含噪声题的正确回退、gray_ratio_nonnoise 才是真「路由没把握」）/ 噪声假阳性率 / 注入量（完整卡数 + 注入字符））· **冻结池**（`tests/fixtures/router_pool_snapshot.json`，= 素材层前口径）+ **题库**（`tests/fixtures/router_bench.json`，30 道含噪声与跨工具；2026-10-09 city-climate 由「明确」改判「噪声」→ 非噪声 23 道）· 基线存 `tests/fixtures/router_bench_baseline.json`（`--write-baseline` 更新；`tests/fixtures/router_bench_regressions.json` 的 `baseline_metrics` 需同步）· `--legacy`（M5c-2 之前的向量文本）、`--no-derive-keywords` 用于逐项归因对比⚠️ 三份 fixture 必须随仓库提交（别放 `tests/data/`，那里被 `.gitignore` 的 `data/` 吞掉）。口径三条（precision@3 结构上限 / 灰区分栏 / 冻结池=素材层前）写在脚本 docstring 与 `docs/v4.0/Done/01-度量口径收口工程·实现记录.md` | `tools/tool_router.py` · `tools/capability_pool.py` | `python`（**全离线**：本地 embedding，不调 LLM、不联网、**不烧 Tavily**；约 14 秒/次） |
 | `m1_weather_e2e.py` | **M1 真机：接真实公开 API（Open-Meteo，免密钥）跑通全链路**（自起临时后端 8124+ → 建来源 → 体检 → 粘贴 OpenAPI → 解析候选（未确认不进池）→ 确认入池 → 路由器注入 → `invoke_tool` 真调用拿到气温 → 审计行 → 清理并杀进程） | `api/tools_sources.py` · `tools/openapi_import.py` · `tools/_runtime/api_driver.py` · `tools/capability_invoke.py` · `tools/tool_router.py` | `python`（**23 项**，约 40s；用库里既有会话 token，不猜密码） |
 | `_m5_real_weread_check.py` | **真实账号 + 真实 CLI** 三层证据（注入 / 路由 / 执行） | `tools/cli_registry.py` · `tools/shell_executor.py` | `python`（真机） |
 | `test_ability_draft.py` | **CLI 能力描述的证据链（pytest，纯静态）**：对应 2026-09-24 报障「CLI 能力描述撰写 AI 写的子命令描述经常是错的」——根因是它原先只拿到**命令名清单**、没有任何依据，只能望文生义（实测 13 条映射 3 条错，且**全错在需要判断力的地方**：哪些命令要 ID、哪条是「书名→ID」解析器）。夹具用**本机实测的 weread `--help` 真值**，锁住：① URL 规范化（GitHub blob→raw、仓库根→`HEAD/README.md`、补协议头）；② **SSRF 守卫**（localhost / 127. / 10. / 172.16-31. / 192.168. / 169.254. / `*.local` / `::1` 全部拒绝，公网 IP 放行）；③ 证据抽取（留命令与用法、丢安装/贡献/许可段；抽太狠时整篇回退）与覆盖统计（能报出文档未覆盖的命令）；④ 形态分类三值（`needs_id` / `free_text` / `standalone`，含全大写形参与 `[OPTIONS]` 的边界）；⑤ **审计四条规则**（直调需要 ID 的命令 / 链头就需要 ID / 第 2 步是 standalone 的凭空造链 / 第 1 步不产出 ID），并断言建议里给的是**真解析器**（`book resolve`）而不是 `search`；⑥ 防回退：`api/server.py` 必须透传 docs/help_text/归属上下文、`cli_ability_generate` 必须走文档+help+审计、`prompts.yml` 的「按证据判断、不要凭命令名猜」硬规则不得被冲掉、前端必须回显证据与警告 | `.venv/Scripts/python.exe -m pytest tests/unit/test_ability_draft.py -q`（约 0.15s） | **24 项** |
@@ -216,6 +228,242 @@
 | `_m5b_route_calib.py` | **M5b 阈值标定脚本**（不算测试用例）：8 个异构工具 → 逐问句打印「向量 top3 / z 分数 / 词法命中 / 是否路由 / 命中集」，并给出 `MAX_FULL_CARDS` 1/2/3 对应的注入量敏感性（51% / 59% / 66%）。**改 `tools/tool_router.py` 里的阈值必须重跑它** | `.venv/Scripts/python.exe tests/live/_m5b_route_calib.py`（`--keep` 保留临时账号） | — |
 | `m5_probe_e2e.py` | **M5a 探针组（唤醒率量化）**：隔离账号 + 假可执行名探针 CLI（本机未装 → 执行失败但**调用尝试照样进审计日志**）→ 自检（路由卡/示例注入 + 审计链路）→ **10 条自然语言正例**（问「看看我最近在读什么书」等，断言审计里出现该 CLI 且 argv 命中期望命令，主命中/备选命中都算过）→ **3 条反例**（天气/写诗/概念解释，断言没误调）→ 结论（正例 ≥9/10、反例 3/3）+ 结果落 `data/m5_probe_result.json` → 清理。**判定只看 `data/audit/commands.jsonl` 的调用事实，不采信模型自述** | `.venv/Scripts/python.exe tests/live/m5_probe_e2e.py`；`SKIP_LLM=1` 只跑自检；全量**真机 13 轮对话（约 10-20 分钟）** ⚠️ **不要在探针全量跑的同时另跑本脚本的 `SKIP_LLM=1` 自检**——自检会往审计日志写一条同 bin 的调用，而探针的窗口判定依赖审计计数，会污染「第一条探针」的判定（真值以库里 `messages.tool_calls` 为准）。 ⚙️ 夹具：探针可执行名用**能跑通的桩**（`tests/fixtures/m5_probe_bin/` 下的同名 `.cmd`，输出固定 JSON），否则「未安装」会诱发模型重试风暴、单探针拖到 5+ 分钟；判定**只看第一次调用**（路由决策），后续自纠仅记录不计入。 |
 | `cli_dspro_e2e.py` | **CLI 版 dspro**：子进程真跑 `python -m cli.main`——帮助/落地页、未登录与错密码的退出码与提示、登录态文件（含「不含明文密码」与密码指纹）、`whoami`、`list` 四种形态（`--json` 可解析）、`digest` 参数解析与报错文案、**同名订阅歧义必须报错**、`chat --sessions/--skills`、`logout`；全量模式追加真跑 `digest`（断言落库 +1）与 `chat` 单轮 | `.venv/Scripts/python.exe tests/testclient/cli_dspro_e2e.py`（`SKIP_LLM=1` 只跑不耗模型的用例） |
+
+### v4.0 大点 03 · 工具池测评（2026-10-10）
+
+**做成了什么**：前端「🧩 技能与工具 → 🧪 工具池测评」第 6 个页签 + 后端 `/api/probe/*`（11 个接口）
++ 三段独立小 Agent（`prompt/prompts.yml` 的 `probe_writer` / `probe_judge` / `probe_advisor`）
++ 产品模块 `tools/probe_runner.py`（执行 / 三段式打分表 / 账号级指标）+ `tools/probe_agent.py`（LLM 三段封装）。
+流程：**体检 → 出题 → 人工过目 → 真机测评（只记录）→ Agent 判分预填 → 人工终判 → 词法建议 → 写入大屏**；
+四道闸门 = 题目过目 / 额度确认 / 人工终判 / 改素材前先跑离线 A/B。
+
+**本次脚本测试（阶段 5 前半，全部通过）**：
+- `pytest tests/unit` **593 passed / 1 skipped**（含新增 `test_probe_runner.py` 46 项、`test_probe_agent.py` 31 项）
+- `node tests/harness/probe_front_logic.js` **41 项**；全套 harness **15/15 文件**（含 `front_template_bindings.js` —— 项目自带的「模板绑定必须导出、否则整页白屏」守卫 ✓ 我新加的 33 个绑定全过）
+- `python tests/testclient/probe_api_e2e.py` **20 项**；`python tests/live/probe_http_live.py` **25 项**（打真服务）
+- `m5b_router_e2e` **34/34** · `m5b_pool_e2e` **62/62** · `m5_abilities_e2e` **43/43**（回归不变）
+- `tests/live/m5b_pressure_probe.py` 的 `SKIP_LLM=1` 自检 ✓（题集改从 JSON 读，断言口径未变）
+
+**未验证项（如实记）**：真浏览器渲染（模板在真 DOM 下编译）**未验** —— 我的 `node` 里加载项目自带 Vue
+编译器撞上 DOM 依赖（追不动），本地浏览器驱动又因「Edge 正开着、profile 被锁」不可用（按规矩不擅自关用户浏览器）。
+替代证据：标签配平 + 模板绑定导出集合校验 + 整段 setup 脚本语法检查。**真浏览器这一步留给真机实测**。
+
+**纪律**：本轮所有脚本测试**零额度**（未调模型、未联网、未跑真机）；`probe_http_live.py` 只签发/回收自己的 token，
+不改任何账号数据（题集存取往返已还原）。
+
+**踩坑（当场发现并修）**：新单测给**模块级全局**打桩（`probe_runner._conn` / `schema_personal.ensure_tables`）
+之后**必须还原** —— 不还原会污染同进程里**后跑**的用例（实测：先跑 `test_probe_runner.py` 再跑
+`test_probe_agent.py`，后者报 `sqlite3.OperationalError`（临时库已被删））。而全量 `pytest tests/unit` 跑时
+字母序恰好把两个文件反着排，**掩盖了这个泄漏** —— 所以「换个顺序跑一遍」是这类泄漏的唯一可靠查法（已固化进
+`test_probe_runner.py` 的注释与还原代码）。
+
+**首轮实测报回的 bug 与修复（2026-10-10 用户点页签后交办）**：
+- **现象**：体检表把 4 个 CLI、12306 的 `get-station-by-telecode`、2 个 xxapi 标成「描述 缺」，
+  而「技能与工具 → 素材体检」判定**一条问题都没有**（同数据两套说法）。
+- **根因（三层，逐层剥开）**：① `pool_overview` **自造判据**（只看手写列 `abilities_user`，
+  漏掉 CLI 按约定存在 `abilities` 列的「能力描述」）→ 裁定 16 起**一律复用 `capability_lint`**；
+  ② `api/probe.py::overview` **显式列字段**，新字段被悄悄吞掉 → 前端拿不到 `desc_state` 就
+  **回退旧判断**，表现跟没修一模一样（极易误判）→ 裁定 17 用接口冒烟测把字段钉死；
+  ③ **服务进程没重启**（Python 模块启动时载入）→ 跑的还是旧代码；给 live 测试加了一条
+  「服务端代码新鲜度」探针，失败信息直写「服务需重启」。
+- **数据侧**（用户交办「API 工具的描述我忘记写了，帮我补一下」）：补
+  `api:xxapi#douyinHot` / `api:xxapi#ipQuery` 两条**工具级描述** → 走产品接口
+  `POST /api/tools/sources/cap_abilities`（自动 bump 池版本 + 刷向量，**不直接改库**）；
+  改前整库备份到 `docs/v4.0/backups/personal_before_xxapi_desc_<ts>.db`。副作用是**关键词也跟着修好了**：
+  这两条原先只能落到**来源级描述**（小小API=抖音热搜榜）→ `ipQuery`（查 IP 归属地）被灌进
+  「抖音热榜/抖音热搜…」的短语，属真实路由隐患；现在各取各自的领域词 ✓
+- **回归**：单测 593/1（runner 单测 46→**56** 项）· harness 41→**45** · 接口 e2e 20→**25** ·
+  live 25→**28**（新增的 3 条在**服务重启前**会失败 —— 这是**预期**，它就是用来诊断「服务是旧的」）。
+- **用户当日追加裁定（界面部分被推翻）**：**不做「手写/自动」分类标签**，**只在真缺时报警** ——
+  描述在手写与自动摘要**都没有**时标「缺乏描述」，关键词取不到任何词时标「缺乏关键词」，
+  其余（含只有自动摘要的）**什么都不显示**（与「技能与工具」那边的心智一致）。`desc_state` /
+  `kw_from` 仍作为**数据**保留在响应里（内部判定与取证用），但不进界面文案与打分表。
+  影响：`front/index.html` 徽标改 `v-if` 只在缺时渲染；`build_sheet` ①②节回到「✓ / ✗ 缺」两态；
+  harness 加了一条**反向断言**（界面不得出现「手写/自动/弱(派生)」）。
+
+**第二轮实测报回的问题与修复（2026-10-10 晚，用户点「生成真机题目」两次失败）**：
+- **现象**：deepseek `JSONDecodeError: Expecting ',' delimiter: line 17 col 149`；另一 provider
+  「模型输出里没有 JSON:」（**冒号后是空的**）；前端只有一句红字、看不到 Agent 在干什么；文案还显示成
+  「出题失败: 出题失败: ...」双份。
+- **根因（又是三层）**：① 提示词要求一次吐 36 条题的**长 JSON** → 长输出 + 中文引号极易吐坏/被截断；
+  ② 空内容与「内容里没 JSON」**报同一句话**（content 空、内容在 `reasoning_content` 的 provider 看不出所以然）；
+  ③ 原始输出**没进日志** → 只能猜。
+- **修复（裁定 18/19）**：**分批出题**（每 6 个工具一批）· **JSON 加固**（尾逗号/中文引号/单引号逐个试 →
+  最后**栈式括号配平抢救**截断输出）· **自修复重试**（带错误再要一次）· **空内容单独报错且提示换模型** ·
+  **原始输出打日志**（`[probe_agent]`）· 出题改**后台任务 + `status.gen` 真进度**（照用户给的
+  doodle-loader「loading + 任务词切换」思想做 `.pb-loader`，但用**真实任务词与真进度**，不抄它的固定词表
+  循环与假扫动）· 面板顶部加**模型建议**（输出快 / 严格 JSON；走 `.env` 的 `LLM_MODEL_MAX`、改完重启）。
+- **回归**：单测 593/1（agent 单测 31→**49** 项）· harness 46→**51** · 接口 e2e 25→**26** ·
+  live 28→**29**（其中 `status.gen` 那条在**服务重启前**会失败 = 预期的「服务是旧的」探针）。
+
+**第三轮实测报回的问题与修复（2026-10-10 深夜，裁定 20）**：
+- **现象**：重启后第 1 批成功但**用了 3 分钟**，第 2 批报 `模型返回**空内容**（373.7s；思考字段 13154 字）`。
+- **根因（结构性，不是配置问题）**：① 主 Agent 的模型是**思考型** → 预算全花在 reasoning、`content` 为空；
+  ② 各批**串行** → 7 步 × 3~6 分钟 ≈ 20 分钟；③ 任一批失败就把已完成批次**全扔掉**。
+- **修复**：**并发跑批**（`PROBE_GEN_CONCURRENCY`，默认 3；进度显示已完成步数 + 正在跑几批 + 各批工具名）·
+  **测评专用模型口**（`PROBE_LLM_MODEL` / `PROBE_LLM_TIMEOUT`=240s / `PROBE_LLM_MAXTOKENS`=8192，
+  不设则行为不变 → 可「测评用快模型，主 Agent 保持原样」）· **部分成功也返回**（失败批进 `warnings` 并点名，
+  硬规则点名未覆盖工具；缺噪声/多工具各自告警；**全部失败才抛错**）· **空内容也自修复一次**
+  （追加「不要思考、直接给 JSON」）。失败文案也去了重复前缀（不再出现「第 2/2 批：第 2/2 批…」）。
+- **回归**：单测 593/1（agent 单测 49→**58** 项）· harness 51→**53** · 接口 e2e **26**。
+
+**第四轮：给测评单独选快模型并写入 `.env`（2026-10-10 深夜，裁定 21/22）**：
+- **约束是实测出来的**（不是猜）：账号走 **OpenRouter** → **同一把 key 无需新凭据**；账号**未充值** →
+  非免费模型 `402`；Google/OpenAI 系 → **`403` 地区不可用**；`gemma-4-*:free` → 上游 `429`。
+- **选定** `poolside/laguna-s-2.1:free`（**非思考型**，3/3 轮 JSON 干净、4~8 秒/次），
+  并落 `PROBE_LLM_TIMEOUT=120` / `PROBE_LLM_MAXTOKENS=4096` / `PROBE_GEN_CONCURRENCY=3`；
+  备选 `cohere/north-mini-code:free`（可用但**有时英文出题**）。`.env` 改前已备份 `.env.bak_<ts>`。
+  另加 `PROBE_LLM_BASE_URL`/`PROBE_LLM_API_KEY` 可覆盖口，`overview` 回传**当前测评模型名**（不含 key）。
+- **换快模型后真机验证又抓到两类问题 → 已修**：① 模型把 CLI 写成 `kind=tool` 或把**中文显示名**写进
+  `bin`（覆盖判定永远对不上 → 补漏反复触发、6 题膨胀到 23 题）→ 加 `normalize_expects` 按池子
+  **ref↔名称双映射**归一；② 覆盖缺口 → 加 `_coverage_missing` 只**补一次**。修后真机复跑：
+  **10 题（6 单 + 2 多 + 2 噪）· 校验 ✓ 无错 · 35 秒**。
+- **回归**：单测 593/1（agent 单测 58→**67** 项）· harness 53→**54** · 接口 e2e 26→**27**。
+
+**第五轮：题集口径三条（2026-10-10，裁定 23）—— 套装判据 / 备选答案 / 噪声避搜索**：
+- **套装判据（用户两轮口述，一体两面）**：**单工具题 = 只用一个套装**（同一套装内**可以**调多条
+  子命令/多次，例：先 `wechat-cli history` 再筛关键词 —— **仍是单工具题**）；**多工具题 = 必须跨 ≥2 个套装**
+  （一个 CLI 子命令集 / 一个 API 服务 / 一个 MCP 服务器各算一个套装）。原实现把「一个命令 = 一个工具」，
+  于是「同一套装换子命令」被误判成多工具题（用户实测图 3 两例）。
+- **落地**：`suit_of()`（与 `probe_runner.source_of` 同口径）+ `suit_violations()`（**双向**校验，
+  须给 `refs` 作证据）+ 出题各阶段把**套装分组清单**喂给模型并要求每题给 `refs` + 违规**自动重出一次**
+  + 仍不合格记 warning 交人工。
+- **备选答案 `alts`**（用户要求）：沿用 v3.1 既有管道（`expected_brief`/判分段已会读），补上
+  **出题产出 + 池内归一（中文名→ref、字典形态→ref、认不出的丢弃并记账）+ 界面可增删**。
+- **噪声题避搜索**：提示词明令「不要『推荐/最新/多少钱/天气/新闻/排名』这类会诱发网络搜索的问题
+  （会烧用户搜索额度）」，另加 `noise_warnings()` 软告警。
+- **真机验证（12 个真工具 · 免费快模型）**：**15 题 / 59.4 秒 / 硬规则 ✓ 无错**；
+  多工具题 `#8 → 套装 cli:wechat-cli + mcp:12306-mcp`（真跨套装 ✓）；
+  单工具题 `#15`「找聊天记录里提到『明天会议』的那几条」= 同套装内多步（不越界 ✓）；
+  噪声题「陪我聊天 / 写一首诗」无搜索告警 ✓；备选答案上一轮已实测（`#5 → api:steam#gameDetail ｜
+  备选 api:steam#searchGame`）。
+- **鲁棒性补记（同轮真机暴露）**：模型会把**套装名**（`mcp:12306-mcp`）或带前缀名（`cli:bili`）当 `refs`
+  —— 旧归一「认不出就丢」→ 多工具题被误判「refs 少于 2 个」。已修：`_pool_index` 增建 `cli:<名>` 键
+  （`cli:bili` 正确解析到池内 CLI）；认不出但**长得像套装名**的保留为**套装标记**并记账告警
+  （`refs` 只作证据/展示，判分读 `expect`，保留标记不影响打分）。另：免费模型连发撞 **429**
+  （补漏/重出被限流）→ 瞬时错误默认重试 2 次（`PROBE_LLM_RETRIES=2` 已入 `.env`）。
+- **回归**：单测 593/1（agent 单测 67→**79** 项）· harness 54→**57** · 接口 e2e **27**；
+  `.env` 增 `PROBE_LLM_RETRIES=2`（免费模型 429 实测撞过，瞬时错误默认重试 2 次）。
+
+**第六轮：测评模型改走硅基流动 + 判分可单独配（2026-10-10 深夜，裁定 24）**：
+- 用户给了**硅基流动**额度（`https://api.siliconflow.cn/v1`，key/base_url 已填 `.env`）并定下判据：
+  DeepSeek/GLM 基本是思考模型、千问也多思考 → 按官网标签找「**轻量**、**无推理标签**」的。
+- **量化判据**：以 `reasoning` 字数为准（**=0 才是非推理型**）。真池探针测 24 个候选：
+  - **可用（思考 0 字）**：`inclusionAI/Ling-flash-2.0`、`Qwen/Qwen3-30B-A3B-Instruct-2507`、
+    `Qwen/Qwen2.5-7B/14B/32B-Instruct`、`Qwen/Qwen3-Coder-30B-A3B-Instruct`、
+    `THUDM/GLM-4-9B-0414`、`Pro/Qwen/Qwen2.5-7B-Instruct`
+  - **实为推理型（排除）**：`Qwen/Qwen3.5-9B`（思考 **14735 字/176s**）、`Qwen/Qwen3.5-35B-A3B`（15011/113s）、
+    `Seed-OSS-36B-Instruct`（1440/25s）、`Step-3.5-Flash`（9040/55.9s）、`Hunyuan-A13B-Instruct`（962/17.7s）
+  - 生产链路决赛（12 真工具）：`Ling-flash-2.0` **17 题/26.9s/校验无错**（最快）、
+    `Qwen3-30B-A3B-Instruct-2507` 17 题/37.4s/校验无错、`Qwen2.5-14B-Instruct` 26 题且校验 ✗1（多给+形状错）
+- **选定**：出题 `Qwen/Qwen3-30B-A3B-Instruct-2507`、判分 `Qwen/Qwen2.5-32B-Instruct`（新口
+  `PROBE_LLM_JUDGE_MODEL`，不填=沿用出题模型 ✓）；接口透出 `probe_judge_model/probe_judge_split`，
+  前端仅在两者不同时单独显示。
+- **只用 `.env` 的真机验证**：出题 **16 题 / 28.5s / 校验 ✓ 无错**；判分 **3/3**（命中 ✓ / 用错工具 ✗ /
+  噪声题调了搜索 ✗，理由均准确）；接口与解析一致 ✓。改前备份 `.env.bak_20261010_232346`。
+- **回归**：单测 593/1（agent 单测 79→**86**）· harness **58** · 接口 e2e **27**。
+  另修一处**测试自身的坑**：`probe_model()` 内部会 `load_dotenv()`，会把 `.env` 里真值灌回来 →
+  相关用例改为**隔离 `.env`**（`dotenv.find_dotenv` 指向空文件），否则用例随开发者的 `.env` 时红时绿。
+
+**第七轮：测评隔离（2026-10-11，裁定 25）—— 判分记录 bug + 会话不入库 + 画像自动还原**：
+- **用户真机报 bug**：跑完「开始测试」无误，点「判分」报「找不到这一轮的原始记录」。根因取证：
+  `data/sandbox/尼古喵喵/` 里**没有** `probe_run_*.json` —— 水位线清理把刚写完的原始记录当「本轮新产物」
+  删了（`snapshot_files` 只豁免打分表）；而判分/建议/写入大屏都在**跑完之后**才读它。修法：`RAW_RE`
+  豁免 + `_prune_raw()` 只管「只留最近一份」；报错文案改可操作。
+- **测评会话不进会话库**（用户裁定）：`conversations` 加 `kind`（`chat`/`probe`）→ `list_sessions` 只列 chat；
+  `purge_probe_sessions()` 开跑前 + 跑完后各清一次（中断/崩溃也不留）；建会话口带 `kind` 参数（非法 400）。
+- **画像/笔记测后自动还原**（用户拍板方案四，理由：方案一受 `memory_snapshots` 只留 3 份+混源限制、
+  方案二会破坏测评内部上下文一致性、方案三等于禁用被测工具）：跑前把 `agents_docs/{用户名}/` **整目录**
+  快照进沙箱 → **跑完立刻还原**（sha256 比对 + 原子写 + 删本轮新建文件）；快照目录永不参与清理；
+  结果写进原始记录与界面提示。真号只读验证：8 个文件哈希一致、无改动时 `unchanged=8` ✓
+- **新增单测文件**：`tests/unit/test_probe_isolation.py`（**18 项**：会话隔离 7 + 画像快照/还原 11）。
+- **回归**：单测 **594 passed / 1 skipped** · harness 15/15 文件（probe 前端断言 57→**60**）·
+  接口 e2e **34/34**（+4 条：kind 隔离 / 非法 kind / 本轮记录在→判分 200 / 越权路径 400）·
+  `m5b_router_e2e` 34/34 · `m5b_pool_e2e` 62/62 · `m5_abilities_e2e` 43/43（**单独跑**，见上方循环警告）。
+
+**第八轮：单题护栏 + 报错说真话 + 出错留证（2026-10-11，裁定 26）**：
+- **用户真机报**：某一题**卡死**（日志反复 `开始执行工具: run_shell_command`）4 分钟后 500：
+  `模型调用失败（用的是项目默认模型，来自 .env）` + `RuntimeError: cannot schedule new futures after
+  shutdown`，且**文案说谎**（当时用的是定制助手的 DeepSeek 自定义模型）。
+- **取证**（`data/audit/commands.jsonl`）：该题 `02:27:08→02:30:53` 每 7~9 秒一条 `bili favorites
+  <uid> --page 1..11` —— **模型在无限翻页**，而测评侧**没有任何单题上限** ✗。
+- **修**：① 单题墙钟上限 `PROBE_ASK_TIMEOUT`（默认 180s）→ 超时调 `/api/chat/cancel` 中断、记 `408`
+  走「未测」口径；只对 429/502/503/504 重试，500/408 不重试；② 服务级 `_SHUTTING_DOWN` 标志 +
+  **每题前检查** → 关服/撞上「线程池已关」就**提前中止并如实记账**（`doc["stopped"]`，已完成的行全留）；
+  ③ `_llm_error_hint` 显式接收当前生效配置（自定义报 `#id「厂商/模型名」`、默认也报模型名），并加
+  「**不是模型的锅**」分支（服务关闭/重启）；④ 新增 `_log_agent_error()`：出错落**完整 traceback** 到
+  `data/audit/agent_errors.jsonl`（这次事故前端只有一行 message、根因查不动，就该连这个一起修）。
+- **新增单测文件**：`tests/unit/test_agent_error_report.py`（**7 项**：文案说真话 3 + 不甩锅模型 2 + 留证 2）。
+- **回归**：单测 **595 passed / 1 skipped**（`test_probe_runner.py` 62→**71** 项）· harness 15/15 文件
+  （probe 前端断言 60→**62**）· 接口 e2e **34/34**（+1 `ask_timeout`）。`.env` 增 `PROBE_ASK_TIMEOUT=180`。
+
+
+**第九轮：测试期报错排查 + 依赖兜底 + 周报开关 + 题单个人数据提醒（2026-10-11，裁定 27/28/29）**：
+- **用户报**：全量题干跑完，要求排查**测试过程中**的后端报错（测试后的报错＝挂机过夜自动生成周报、
+  那晚 VPN 关着 → 满屏 `APIConnectionError`，用户已知；仍要求加开关）。
+- **测试期只有一处报错**：第 **30** 题 500，traceback 根因 = `kb_service.py` 里
+  **`ModuleNotFoundError: No module named 'jieba'`**（Agent 调 `query_kb` 触发）—— venv 漏装，
+  而 `uv pip check` **查不出**「未声明但被 import」的缺包（178 包全兼容也没报）。
+  另有 `StarletteDeprecationWarning: … 'timeout' argument with the TestClient`（`ask()` 的 `timeout=900`
+  **不生效**，真正的护栏是裁定 26 的单题墙钟上限）。
+- **修**：① `uv pip install jieba`（0.42.1）；② `_tokenize` 缺 jieba → **降级**为「ASCII 词 + 中文二元组」，
+  只告警一次；③ `query_kb_friendly` **整段兜底**（知识库出错按「无命中」返回空，绝不 500 掉整题）；
+  ④ `_llm_error_hint` 四类分开：**依赖缺失**（别去动模型配置）/ 服务关闭重启 / 真的是接口侧 / 其余不咬定模型；
+  ⑤ 去掉 `TestClient` 不支持的 `timeout=`。
+- **周报自动生成改账号级开关（默认关）**：`accounts.digest_auto`（幂等迁移）+ `run_all_due` 判据加
+  `COALESCE(a.digest_auto,0)=1` + `GET/POST /api/digest/auto` + 前端「我的报告」页开关；查询异常时**一个都不跑**。
+- **题单个人数据提醒**：出题链新增第 ⑦ 步 `privacy_check()`（走 `probe_writer`），只挑「答案只能来自
+  该用户自己的数据」的题（公开信息如火车票/天气/某作家作品**排除**），结果落 `doc.privacy` 并把提醒
+  **插到 warnings 第一条**（前端题单顶部红条）；**核查失败不影响出题** ✓ 进度步数 `批数+2 → +3`。
+- **新增脚本**：`tests/unit/test_digest_auto_switch.py`（**2 项**，调度过滤 + 老库无列安全跳过）·
+  `tests/testclient/digest_auto_e2e.py`（**11 项**：默认关 → 开 → 读回 → 关 → 缺参按关 → 调度器按开关跳/跑
+  → **真实库只读复核零改动**）。★ 该 e2e 用 **SQLite backup API 热备到临时库**（`PERSONAL_DB_PATH`
+  必须在 `import api.server` **之前**设置 —— `schema_personal.DB_PATH` 是导入期读的）。
+- **回归**：单测 **596 passed / 1 skipped** · harness 15/15 文件（probe 前端断言 62→**66**）·
+  `digest_auto_e2e` **11/11** · `probe_api_e2e` 35/35 · 三支旧 e2e 单独跑全绿（**禁用循环连跑**，见下）。
+- **文档**：`docs/v2.0/M3RAG知识库搭建与使用.md` 依赖列表补 **`jieba`**（正是它漏了才踩坑）·
+  `docs/v4.0/Verdict/03` 裁定 27/28/29。
+
+**第九轮追加（同一天，用户实测两个新 bug，裁定 30/31）**：
+- **题集存不进磁盘**：用户点「保存题集」**毫无提示**、且测评只跑 1 题。取证两条：
+  ① 往上滚才看见真错误 `题集不合法：第 32 条 expect.ref 必须 api:/mcp: 开头（bili search）✗`；
+  ② 磁盘上的题集是 e2e 冒烟残留（他 43 题只在页面内存里）。
+  → 修三处：`normalize_expects` 认「CLI 名 + 子命令」（`bili search`/`cli:bili hot`/`微信读书 hot` →
+  `{kind:cli, bin:<池内名>, argv:[…]}`，**api:/mcp: 不拆**）· `save_cases` **校验前先归一**并把
+  `normalized` 条数回给前端（保存成功文案「…（自动归一 4 条）」）· 提示挪到**保存按钮正上方**渲染
+  （原来只在卡片上方，用户滚到卡片处点击时根本看不见 → 判成「没有任何提示」✗）。
+- **e2e 污染真实账号**（我自己踩的）：`probe_api_e2e` 原来直接在用户账号上写题集、往他沙箱造假记录
+  （`_prune_raw` 把他的真机原始记录顶掉了）。→ 改写：**所有写操作改到临时账号**（跑完连账号 + 题集文件
+  + 沙箱一起清），真实账号**只读**，结尾用「题集条数 + 沙箱记录名」**零改动指纹复核** ✓。
+  被删的 03:43 原始记录无法找回（如实记）。
+- **回归**：单测 **596/1**（`test_probe_agent.py` 91→**100**）· harness probe 前端 **68/68** ·
+  `probe_api_e2e` **39/39**（+3：`bili feed` 能存进去 / 落盘是规范形态 / mcp 不动）· 模板绑定守卫 ✓
+
+**第十轮：中断轮调用留痕 + 判分选项颜色翻转 + 区块一键收起（2026-10-11，裁定 32/33/34）**：
+- **用户真机一轮**（43 题 / 110 分钟 / 判定 ✓24 △5 ✗0 未测14 / 外部检索 0 次）跑通并逐题终判，
+  提两条：① 超时被中断的题在打分表里变成「**一次工具都没调用**」（日志里明明有 `run_shell_command`）；
+  ② 每个阶段区块要能**一键收起**（只按版本看时滚动太累）。
+- **修①**：`api/monitor.py::report_tool` 把「工具起跑」落**耐久日志** `data/audit/tool_calls.jsonl`
+  （`TOOL_CALL_LOG` 可覆盖，写盘失败不影响对话）；测评侧新增 `calls_of_thread_src`：**只在读库为空时**
+  回落到该日志（跑完的轮次仍以 `messages.tool_calls` 为准，**保留重复调用** ✓），行里带
+  `interrupted`/`calls_src`，出表把这类题标成 `⏱ 超时中断（非完整轮次）` + 列出中断前的调用；
+  `未测` 口径不变（不计入能力评价 ✓）。**统计佐证**：他那份表 14 题未测里 **13 题耗时 301~330s、
+  calls=0**（正好贴单题上限），另 1 题（#24，30s/2 调用）是他自己判的未测。
+- **修②（纯前端）**：二次判分选项改**颜色翻转**（实心 + 反白字 + 上浮投影；四态语义色）；六个阶段区块
+  （题集/判分/建议/数据大屏/工具池/历史打分表）加 `▾ 收起 / ▸ 展开`，用 **CSS `.folded`** 实现
+  （不动 DOM 结构），顶部加「⤡ 全部收起 ↔ ⤢ 全部展开」总开关。
+- **回归**：单测 **596/1**（`test_probe_runner.py` 71→**81**，含 408 端到端：行带 `interrupted` +
+  调用来自日志）· `probe_api_e2e` **39/39** · probe 前端 harness **76/76** · 模板绑定/导出守卫 ✓
+
+
+> ★ **别在 bash `for` 循环里连跑 ③ 层 e2e**：实测 `m5b_pool_e2e` 会报
+> `sqlite3.OperationalError: disk I/O error`、`m5_abilities_e2e` 会报 pydantic
+> `cannot import name '_core_metadata'` —— **单独跑都是全绿**，是循环里连跑造成的假象
+> （上一个进程尚未完全释放 sqlite / 临时账号时下一个就起来了）。一条一条跑，或 `sleep 2`。
+>
+> ★ **e2e 被中断会留残留**（临时账号 + 半套 CLI 注册表），曾让「取最小 id 的 CLI-only 账号」这条
+> 单测对照误报失败。查残留：`SELECT id,username FROM accounts` 里找 `m5broute_*` / `m5cd_*` /
+> `v3v*` / `q2_*` / `m4u_*` 等前缀；对照类单测只应认**非测试残留**账号（`test_pool_mixed_sources.py` 已加此前提）。
 
 ## 六、接口层 / 冒烟（详细备注）
 

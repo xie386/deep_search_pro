@@ -1,9 +1,14 @@
 {
- "precision@3": 0.292,
- "recall@3": 0.674,
- "hit@3": 0.792,
- "gray_ratio": 0.5,
+ "precision@1": 0.478,
+ "precision@3": 0.29,
+ "precision@3_ceiling": 0.536,
+ "recall@3": 0.659,
+ "hit@3": 0.783,
+ "gray_ratio": 0.633,
+ "gray_ratio_nonnoise": 0.522,
  "noise_false_positive": 0.0,
+ "avg_inject_chars_conf": 9864,
+ "full_inject_chars": 16381,
  "pool_size": 28,
  "questions": 30
 }

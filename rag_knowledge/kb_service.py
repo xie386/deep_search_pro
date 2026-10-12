@@ -351,9 +351,31 @@ def _invalidate_bm25(username: str):
     _corpus_cache.pop(username, None)
 
 
+_JIEBA_MISSING_WARNED = False
+
+
 def _tokenize(text: str) -> list[str]:
-    import jieba  # lazy
-    return [t for t in jieba.lcut(text) if t.strip() and len(t.strip()) > 1]
+    """中文分词（BM25 稀疏检索用）。
+
+    ★ 2026-10-11 用户真机事故：venv 里**漏装 `jieba`**（`uv pip check` 查不出未声明依赖 ✗），
+      这里硬 import → `ModuleNotFoundError` 一路冒到 Agent → **整题 500**
+      （`data/audit/agent_errors.jsonl` 有完整 traceback，题号 30）。
+      修法：**缺 jieba 就降级**为「ASCII 词 + 中文二元组」的粗分词 —— 召回质量降一点，
+      但**绝不让一次知识库检索把整轮问答打死** ✗（已同时把 jieba 装回环境 ✓）。
+    """
+    global _JIEBA_MISSING_WARNED
+    try:
+        import jieba  # lazy
+        return [t for t in jieba.lcut(text) if t.strip() and len(t.strip()) > 1]
+    except ImportError:
+        if not _JIEBA_MISSING_WARNED:
+            _JIEBA_MISSING_WARNED = True
+            logger.warning("未安装 jieba → BM25 中文分词降级为「词+二元组」（`uv pip install jieba` 可恢复）")
+        import re as _re
+        toks = [t.lower() for t in _re.findall(r"[A-Za-z0-9_]+", text) if len(t) > 1]
+        cjk = _re.sub(r"[^\u4e00-\u9fff]", "", text)
+        toks += [cjk[i:i + 2] for i in range(len(cjk) - 1)]
+        return toks
 
 
 def _load_corpus(username: str, account_id: int | None = None) -> tuple[list[str], list[dict]]:
@@ -489,8 +511,17 @@ def query(username: str, question: str, mode: str = "fast", top_k: int | None = 
 
 
 def query_kb_friendly(username: str, question: str, mode: str = "fast", account_id: int | None = None) -> str:
-    """检索并格式化为给 LLM 的片段文本（含 📚 来源）。"""
-    hits = query(username, question, mode=mode, account_id=account_id)
+    """检索并格式化为给 LLM 的片段文本（含 📚 来源）。
+
+    ★ 2026-10-11：**整段兜底** —— 知识库任何一步出错（缺依赖 / 向量库异常 / 模型加载失败）都
+      只该让这一次检索**返回空**，不许把异常冒到 Agent 去 500 掉整题 ✗（用户真机实测踩过：
+      缺 jieba 时 `query_kb` 一被调用，整题报「Agent 执行出错」）。
+    """
+    try:
+        hits = query(username, question, mode=mode, account_id=account_id)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("知识库检索失败（本轮按「无命中」处理）: %s: %s", type(e).__name__, e)
+        return ""
     if not hits:
         return ""  # 调用方决定话术（空库/无命中区分由 kb_exists 处理）
     parts = []

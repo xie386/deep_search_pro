@@ -1,8 +1,44 @@
 import datetime
 import asyncio
+import json
+import os
+import threading
+import time
 from typing import Any, Dict, Optional
 from fastapi import WebSocket
 from api.context import get_thread_context
+
+# ★ 2026-10-11：「工具开始执行」的**耐久日志**（一行一条 JSON）。
+#   为什么必须（用户真机实测）：被**中断**的那一轮（单题超时 → `/api/chat/cancel`）**不会**把
+#   assistant.tool_calls 写进 `messages` 表 → 测评侧读库拿不到任何调用 → 打分表把这一题记成
+#   「**一次工具都没调用**」，而服务端日志里明明有 `run_shell_command` ✗（口径被冤枉成「没调工具」）
+#   → 这里在工具**起跑**时就落一条（与是否跑完无关），测评读它兜底 ✓
+TOOL_CALL_LOG = os.getenv("TOOL_CALL_LOG") or os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "audit", "tool_calls.jsonl")
+
+# ★ 2026-10-13：追加写必须**串行化**。主对话线程与测评跑批线程可能同时落盘，两个 `open(...,"a")`
+#   的缓冲写入会交错 → 文件里出现**半截行**（真机实测：孤立的一行 `'}}'`，那条调用等于丢了）。
+#   读方虽然容错跳过（`calls_from_log` 有 try/except），但它是「被中断轮次」唯一的兜底来源，
+#   丢一条就少一条证据 ✗ → 加进程内互斥锁，一次写一整行。
+_TOOL_LOG_LOCK = threading.Lock()
+
+
+def _slim_args(args, _cap: int = 1000):
+    """把工具入参收敛成可落盘的形状（长字符串截断；不可序列化的转 str）✓"""
+    if not isinstance(args, dict):
+        return args if args is None else str(args)[:_cap]
+    out = {}
+    for k, v in list(args.items())[:40]:
+        if isinstance(v, str):
+            out[k] = v[:_cap]
+        elif isinstance(v, (int, float, bool)) or v is None:
+            out[k] = v
+        else:
+            try:
+                out[k] = json.loads(json.dumps(v, ensure_ascii=False, default=str)[:_cap * 4])
+            except Exception:  # noqa: BLE001
+                out[k] = str(v)[:_cap]
+    return out
 
 # 尝试导入全局运行时（用于脚本模式下的流式输出）
 try:
@@ -138,8 +174,20 @@ class ToolMonitor:
         print(f"\n[Monitor:{event_type}] {message}")
 
     def report_tool(self, tool_name: str, args: Dict[str, Any] = None):
-        """报告工具开始执行"""
+        """报告工具开始执行（★ 同时落**耐久**日志，见 `TOOL_CALL_LOG` 的说明）"""
         self._emit("tool_start", f"开始执行工具: {tool_name}", {"tool_name": tool_name, "args": args})
+        try:                                              # 落盘失败绝不影响对话 ✓
+            tid = self._current_tid()
+            if tid:
+                os.makedirs(os.path.dirname(TOOL_CALL_LOG), exist_ok=True)
+                line = json.dumps({"ts": time.strftime("%F %T"), "thread_id": str(tid),
+                                   "tool": str(tool_name), "args": _slim_args(args)},
+                                  ensure_ascii=False) + "\n"
+                with _TOOL_LOG_LOCK:                      # ★ 串行化：绝不写出半截行（见上面的说明）
+                    with open(TOOL_CALL_LOG, "a", encoding="utf-8", newline="\n") as f:
+                        f.write(line)
+        except Exception:  # noqa: BLE001
+            pass
 
     def report_thinking(self, text: str):
         """报告模型思考过程片段（reasoning_content 旁路捕获，逐段推送）"""

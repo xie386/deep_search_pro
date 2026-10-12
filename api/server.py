@@ -133,6 +133,39 @@ def _usage_provider():
 
 usage_counter.set_provider_resolver(_usage_provider)
 
+# ★ 关服标志：长任务（探针真机测评的 daemon 线程）靠它**及时收手** —— 实测服务重启时探针仍在
+#   发问，会撞上「线程池已关闭后提交任务」→ `RuntimeError: cannot schedule new futures after shutdown` ✗
+_SHUTTING_DOWN = threading.Event()
+
+
+def _log_agent_error(err, thread_id=None, account_id=None, question=None) -> None:
+    """把「Agent 执行出错」的**完整 traceback** 落到控制台 + `data/audit/agent_errors.jsonl`。
+
+    ★ 为什么必须落盘（2026-10-11 用户实测教训）：真机测评里一题卡死 4 分钟后报
+      `RuntimeError: cannot schedule new futures after shutdown` —— 前端只显示一行 message，
+      服务端日志在用户自己的终端里、翻不到那一段，于是**根因无从考据**。落一份就好办了 ✓
+    """
+    try:
+        import traceback
+        tb = traceback.format_exc()
+        print("[Agent 执行出错] thread=%s account=%s\n%s" % (thread_id, account_id, tb), flush=True)
+        rec = {"ts": time.strftime("%Y-%m-%d %H:%M:%S"), "thread_id": thread_id,
+               "account_id": account_id, "question": str(question or "")[:200],
+               "type": type(err).__name__, "message": str(err)[:600], "traceback": tb[-4000:]}
+        path = os.getenv("AGENT_ERROR_LOG") or os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "data", "audit", "agent_errors.jsonl")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception as _e:  # noqa: BLE001 - 记日志绝不能再把主流程搞崩
+        print("[Agent 执行出错] 落盘失败（忽略）: %s: %s" % (type(_e).__name__, _e))
+
+
+def is_shutting_down() -> bool:
+    """服务是否正在关闭（探针/长任务用它**及时收手**，别在关服时继续发问 ✓）。"""
+    return _SHUTTING_DOWN.is_set()
+
 
 def _llm_error_hint(err, provider=None) -> str:
     """把上游的模型调用错误翻成**能照着做**的一句话（2026-09-30 用户实测事故的教训）。
@@ -150,9 +183,28 @@ def _llm_error_hint(err, provider=None) -> str:
             who = "（用的是自定义配置 #%s「%s / %s」）" % (p.get("id"), p.get("provider_name"),
                                                           p.get("model_name"))
         else:
-            who = "（用的是项目默认模型，来自 .env）"
+            who = "（用的是项目默认模型 `%s`，来自 .env）" % (
+                (os.getenv("LLM_MODEL_MAX") or "未配置").strip())
     except Exception:
         who = ""
+    # ★ 2026-10-11：这类错误**不是模型的锅**，别再说「模型调用失败」让人去查 key ✗
+    #   `cannot schedule new futures after shutdown` = 线程池/事件循环已关闭后还有人提交任务；
+    #   实测出现在「长任务跑到一半时服务被重启/关闭」（probe 的 daemon 线程仍在跑）与内部
+    #   执行器被拆之后的残留调用两种情形 —— 文案要能区分，否则用户会去查一个没坏的东西 ✓
+    if "cannot schedule new futures" in low or "event loop is closed" in low \
+            or "interpreter shutdown" in low:
+        return ("本轮执行被**服务关闭/重启**打断（内部线程池已关闭，模型本身没问题）%s → "
+                "看服务端日志确认是否正好在重启；重启完成后重跑这一题即可。"
+                "若并没有在重启，请把服务端日志里这段 traceback 发我（已落 "
+                "`data/audit/agent_errors.jsonl`）" % who)
+    # ★ 2026-10-11 实测（真机测评第 30 题）：venv 漏装 `jieba` → `ModuleNotFoundError` 冒到 Agent →
+    #   这里却报「模型调用失败（用的是自定义配置 #134）」→ 用户**去查了一个没坏的模型配置** ✗
+    if "modulenotfounderror" in low or "importerror" in low or "no module named" in low:
+        return ("**项目依赖缺失**（不是模型问题，别去动模型配置）%s → 按错误里的模块名装回依赖："
+                "本项目手动装的包一律 `uv pip install <包名>`（**别跑 `uv sync`**，会整批卸掉不在 lock 的包）"
+                % who)
+    _api_like = ("openai." in low or "anthropic." in low or "apiconnectionerror" in low
+                 or "connection error" in low or "api key" in low)
     if "401" in t or "authenticationerror" in low or "invalid_api_key" in low:
         return ("密钥无效、或与接口地址不配对%s → 去「定制助手 → 模型选型」用 👁 核对该配置的 key 是否完整；"
                 "或点「✓ 使用中（再点停用）」停用它，先回到项目默认模型" % who)
@@ -164,13 +216,19 @@ def _llm_error_hint(err, provider=None) -> str:
         return "触发上游限流%s → 等几十秒重试；免费模型限流更频繁" % who
     if "timeout" in low or "connect" in low or "ssl" in low:
         return "连不上接口%s → 检查网络与 base_url；本机若开了代理，本地地址要绕开代理" % who
-    return "模型调用失败%s" % who
+    if _api_like:
+        return ("模型调用失败%s → 上游接口不通/鉴权失败；核对「模型选型」里的 base_url 与 key，"
+                "或临时停用该配置回到项目默认模型" % who)
+    # ★ 兜底不再一口咬定「模型调用失败」：不是模型侧的错就别往模型上引（2026-10-11 真机教训）
+    return ("本轮执行失败%s → 若反复出现，请把服务端日志里这段 traceback 发我"
+            "（已落 `data/audit/agent_errors.jsonl`，含完整调用栈）" % who)
 
 # M4-7：注册注入源（依赖倒置的另一半）—— import 一次即完成注册。
 # 回退开关 ZX_ASSEMBLY_SOURCES=legacy → 继续走"server 取好再传参"的老路径（逐字不变）。
 import api.context_providers as ctx_providers          # noqa: E402
 import api.price_api as price_ack                      # noqa: E402  (M5-4)
 import api.cost_api as cost_api                        # noqa: E402  (M6c-5)
+import api.probe as probe_api                          # noqa: E402  (v4.0 大点 03：工具池测评)
 ctx_providers.register_all()
 _USE_SOURCES = os.getenv("ZX_ASSEMBLY_SOURCES", "").strip().lower() != "legacy"
 
@@ -336,7 +394,8 @@ def _invoke_or_stream(agent, payload, cfg, thread_id):
 def _run_agent(question: str, thread_id: str, account_id: int | None = None,
                skill_names: list[str] | None = None,
                image_ids: list[str] | None = None,
-               vision_capable: bool = False) -> str:
+               vision_capable: bool = False,
+               probe: bool = False) -> str:
     """在工作线程里执行同步的 agent.invoke（M1 上下文工程化改造）。
 
     上下文装配：
@@ -381,7 +440,8 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
     if account_id is not None:
         try:
             from tools import tool_router
-            _r = tool_router.route_tools(account_id, question)
+            _r = tool_router.route_tools(account_id, question,
+                                         allow_decision=not bool(probe))   # ★ 测评请求强制关决策层（裁定 6）
             cli_brief = (_r.brief + "\n" + _r.examples) if _r.examples else _r.brief
             route_mode = _r.mode
             if _r.mode == "routed":
@@ -528,6 +588,7 @@ async def _startup():
 
 @app.on_event("shutdown")
 async def _shutdown():
+    _SHUTTING_DOWN.set()                     # ★ 先立旗：长任务（探针）看到它就不再发新问题 ✓
     from api.digest_scheduler import stop as stop_digest_sched
     stop_digest_sched()
 
@@ -562,6 +623,7 @@ async def api_chat(
     thread_id: str = Query(None, description="会话 ID（前端「+ 新对话」建的 UUID）；缺省=用户名单会话（兼容 v1.0）"),
     skills: str = Query("", description="M4a：本轮启用的技能名，逗号分隔（如 '竞品对比,来源标注'）；空=不用技能"),
     images: str = Query("", description="v3.1 视觉：本轮贴的图 image_id，逗号分隔（最多 3 张）；空=纯文字"),
+    probe: str = Query("", description="内部（测评用）：非空=本轮来自 03 路由质量测评 → 强制关闭决策模型精排"),
 ):
     sess = get_session(token)  # 校验登录，无效抛 401
     # 会话存储在本函数多处要用（含 v1.0 兼容路径下的 last_msg_id），提到函数顶部
@@ -603,7 +665,8 @@ async def api_chat(
         answer = await asyncio.to_thread(_run_agent, question, thread_id,
                                         sess.get("account_id"), skill_names,
                                         image_ids=_image_ids or None,
-                                        vision_capable=_vision_ok)
+                                        vision_capable=_vision_ok,
+                                        probe=bool(probe))
         try:
             after_memory = cust.memory_get(token).get("content", "")
             if after_memory != before_memory:
@@ -625,8 +688,13 @@ async def api_chat(
         except Exception as e:
             print(f"[中断] 占位回答落库失败（忽略）: {type(e).__name__}: {e}")
     except Exception as e:  # 不吞掉错误，给出可读信息
+        # ★ 2026-10-11：① 把**当前生效的模型配置**显式传进去 —— 原来这里不传，`_llm_error_hint`
+        #   只能自己猜，猜不到就说「用的是项目默认模型」，而用户明明用的是定制助手的自定义模型 ✗；
+        #   ② 落一份**完整 traceback**（控制台 + `data/audit/agent_errors.jsonl`）——
+        #   实测「Agent 执行出错」只有一行 message 时根本定位不了（卡死 + cannot schedule 那次就是）。
+        _log_agent_error(e, thread_id, sess.get("account_id"), question)
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            f"Agent 执行出错：{_llm_error_hint(e)}\n\n{type(e).__name__}: {e}")
+                            f"Agent 执行出错：{_llm_error_hint(e, provider=_act)}\n\n{type(e).__name__}: {e}")
     finally:
         monitor.clear_current_thread()
     return {
@@ -688,10 +756,13 @@ async def api_sessions_list(token: str = Query(...)):
 
 
 @app.post("/api/chat/sessions", summary="新建空会话（UUID thread_id，前端随后带它发问）")
-async def api_sessions_create(token: str = Query(...)):
+async def api_sessions_create(token: str = Query(...), kind: str = Query("chat")):
+    """`kind=probe` 供工具池测评用：这类会话**不进会话库**、跑完由测评侧全清（用户 2026-10-11 裁定）✓"""
     sess = get_session(token)
     from agent import conversation_store as cs
-    s = cs.create_session(sess["account_id"], "新对话")
+    if kind not in cs.KINDS:
+        raise HTTPException(status_code=400, detail="kind 只能是 chat 或 probe")
+    s = cs.create_session(sess["account_id"], "新对话", kind=kind)
     return s
 
 
@@ -1082,6 +1153,66 @@ async def tools_ability_draft(req: dict = Body(...), token: str = Query(...)):
         refresh_docs=bool(req.get("refresh_docs")))
 
 
+# ----------------------------- v4.0 大点 03：工具池测评（前端第 6 个页签） -----------------------------
+# 与主 Agent 体系无关 ✓：出题/判分/建议 = 独立小 Agent（prompt/prompts.yml 顶层三段），
+# 执行 = 产品模块 tools/probe_runner.py；进度走**独立轮询**（不动主 Agent 的 WS 语义）。
+# 前端按钮与接口一一对应，见 docs/v4.0/v4.0规划文档.md §03 ③B/③C。
+@app.get("/api/probe/overview", summary="本账号工具池逐条（含体检灯）+ 最新一轮指标（数据大屏）")
+async def probe_overview(token: str = Query(...)):
+    return probe_api.overview(token)
+
+
+@app.get("/api/probe/sheets", summary="历史打分表版本列表（只列 probe_打分表*.md）")
+async def probe_sheets(token: str = Query(...)):
+    return probe_api.list_sheets(token)
+
+
+@app.get("/api/probe/sheet", summary="读一份打分表（页内渲染用）")
+async def probe_sheet(name: str = Query(...), token: str = Query(...)):
+    return probe_api.read_sheet(name, token)
+
+
+@app.get("/api/probe/cases", summary="当前题集（供过目 / 编辑）")
+async def probe_cases(token: str = Query(...)):
+    return probe_api.get_cases(token)
+
+
+@app.post("/api/probe/gen_cases", summary="🧪 生成真机题目（出题 Agent；产出待人工过目 = 闸门 1）")
+async def probe_gen_cases(token: str = Query(...)):
+    return probe_api.gen_cases(token)
+
+
+@app.post("/api/probe/save_cases", summary="保存过目 / 改过的题集")
+async def probe_save_cases(req: dict = Body(...), token: str = Query(...)):
+    return probe_api.save_cases((req or {}).get("doc") or {}, token)
+
+
+@app.post("/api/probe/run", summary="▶ 开始测评（后台线程；⚠️ 对网络搜索额度消耗较大）")
+async def probe_run(token: str = Query(...), want: str = Query("full"), ids: str = Query("")):
+    want_ids = [x.strip() for x in ids.replace("，", ",").split(",") if x.strip()] if ids.strip() else None
+    return probe_api.run(token, want=want, ids=want_ids)
+
+
+@app.get("/api/probe/status", summary="轮询本轮测评进度（独立通道）")
+async def probe_status(token: str = Query(...)):
+    return probe_api.status(token)
+
+
+@app.post("/api/probe/judge", summary="🧮 Agent 判分预填（人工再终判）")
+async def probe_judge(req: dict = Body(default=None), token: str = Query(...)):
+    return probe_api.judge(req or {}, token)
+
+
+@app.post("/api/probe/advise", summary="💡 词法改进建议（只建议改素材）")
+async def probe_advise(req: dict = Body(...), token: str = Query(...)):
+    return probe_api.advise(req or {}, token)
+
+
+@app.post("/api/probe/commit", summary="📥 写入大屏（出打分表 + 覆盖式写指标）")
+async def probe_commit(req: dict = Body(...), token: str = Query(...)):
+    return probe_api.commit(req or {}, token)
+
+
 @app.post("/api/me/collection/batch", summary="批量添加收藏（每行 商品名,品牌,参考价）")
 async def me_collection_batch(req: me.BatchReq, token: str = Query(...)):
     return me.collection_batch_add(req, token)
@@ -1148,6 +1279,69 @@ async def me_pproducts_delete(pid: int, token: str = Query(...)):
 
 
 # ----------------------------- Digest 定期推送（M4） -----------------------------
+@app.get("/api/digest/auto", summary="读「每天自动生成周报」开关（账号级，默认关）")
+async def digest_auto_get(token: str = Query(...)):
+    """★ 2026-10-11 用户裁定：自动生成必须**账号显式开启**（默认关），别把所有人的周报都自动跑一遍。"""
+    sess = get_session(token)
+    from tools.schema_personal import get_personal_conn, ensure_tables
+    ensure_tables()
+    conn = get_personal_conn()
+    try:
+        row = conn.execute("SELECT COALESCE(digest_auto, 0) FROM accounts WHERE id=?",
+                           (sess["account_id"],)).fetchone()
+        return {"auto": bool(row[0]) if row else False}
+    finally:
+        conn.close()
+
+
+@app.post("/api/digest/auto", summary="设置「每天自动生成周报」开关（账号级）")
+async def digest_auto_set(req: dict = Body(...), token: str = Query(...)):
+    sess = get_session(token)
+    on = 1 if (req or {}).get("auto") else 0
+    from tools.schema_personal import get_personal_conn, ensure_tables
+    ensure_tables()
+    conn = get_personal_conn()
+    try:
+        conn.execute("UPDATE accounts SET digest_auto=? WHERE id=?", (on, sess["account_id"]))
+        conn.commit()
+    finally:
+        conn.close()
+    print("[digest-sched] 账号 %s 的每日自动生成 → %s" % (sess["account_id"], "开" if on else "关"))
+    return {"auto": bool(on)}
+
+
+# ----------------------------- 决策模型精排开关（v4.0 大点 02） -----------------------------
+@app.get("/api/decision/router", summary="读「决策模型精排」开关（账号级，默认关）")
+async def decision_router_get(token: str = Query(...)):
+    """★ 2026-10-13 用户裁定：开不开由**前端开关控制账号字段**，`.env` 只留模型与凭据、不再存开关。"""
+    sess = get_session(token)
+    from tools.schema_personal import get_personal_conn, ensure_tables
+    ensure_tables()
+    conn = get_personal_conn()
+    try:
+        row = conn.execute("SELECT COALESCE(decision_router, 0) FROM accounts WHERE id=?",
+                           (sess["account_id"],)).fetchone()
+        return {"on": bool(row[0]) if row else False}
+    finally:
+        conn.close()
+
+
+@app.post("/api/decision/router", summary="设置「决策模型精排」开关（账号级）")
+async def decision_router_set(req: dict = Body(...), token: str = Query(...)):
+    sess = get_session(token)
+    on = 1 if (req or {}).get("on") else 0
+    from tools.schema_personal import get_personal_conn, ensure_tables
+    ensure_tables()
+    conn = get_personal_conn()
+    try:
+        conn.execute("UPDATE accounts SET decision_router=? WHERE id=?", (on, sess["account_id"]))
+        conn.commit()
+    finally:
+        conn.close()
+    print("[decision] 账号 %s 的决策模型精排 → %s" % (sess["account_id"], "开" if on else "关"))
+    return {"on": bool(on)}
+
+
 @app.get("/api/digest/subs", summary="我的订阅列表（无则按角色自动建一份默认订阅）")
 async def digest_subs_get(token: str = Query(...)):
     sess = get_session(token)

@@ -1,17 +1,22 @@
 {
- "note": "M6b-S3 实测未命中清单（2026-09-30，冻结池 28 条 / 题库 30 题）—— 裁决②：不在 M6b 修 ✓ 只固化 ✓",
+ "note": "M6b-S3 实测未命中清单（2026-09-30 冻结池 28 条 / 题库 30 题；2026-10-09 口径收口后同步） —— 裁决②：不在 M6b 修 ✓ 只固化 ✓",
  "purpose": "供将来的「路由质量修复」任务用：修完跑 tests/live/m5c_router_bench.py，看这些用例是否由 ✗ 转 ✓",
  "how_to_use": "复跑基准后，把本轮 top3 与本清单的 expect 对比；这些用例转好 = 路由质量修复见效 ✓",
  "baseline_metrics": {
-  "precision@3": 0.292,
-  "recall@3": 0.674,
-  "hit@3": 0.792,
-  "gray_ratio": 0.5,
+  "precision@1": 0.478,
+  "precision@3": 0.29,
+  "precision@3_ceiling": 0.536,
+  "recall@3": 0.659,
+  "hit@3": 0.783,
+  "gray_ratio": 0.633,
+  "gray_ratio_nonnoise": 0.522,
   "noise_false_positive": 0.0,
+  "avg_inject_chars_conf": 9864,
+  "full_inject_chars": 16381,
   "pool_size": 28,
   "questions": 30
  },
- "verdict_rule": "软判据 precision@3≥0.7 仅记录 ✓；硬判据=相对上面 baseline_metrics 不得下降 ✓ 下降才告警 ✓",
+ "verdict_rule": "硬判据 = 相对上面 baseline_metrics：precision@1 / precision@3 / recall@3 / hit@3 **不得下降**，noise_false_positive **不得上升** ✓ 下降/上升才告警 ✓；灰区（gray_ratio / gray_ratio_nonnoise）与注入量**只记录** ✗ 不告警。软判据（能力目标，仅记录）= precision@1 ≥ 0.7 ｜ hit@3 ≥ 0.9 ｜ 噪声假阳性 ≤ 0.1 ｜ 非噪声灰区 ≤ 0.2。★ 2026-10-09 口径收口：原『precision@3 ≥ 0.7』已作废——本题库该指标的结构上限就是 precision@3_ceiling（0.536），该线结构上不可能满足；Jev 立项线同时改写为「非噪声灰区题 ≥ 5 道 或 噪声假阳性 > 0.1」。★ 同两轮阈值重标定（详见 tool_router.py 注释与本文件 threshold_recalibration_20261009）。",
  "cases": [
   {
    "id": "city-en",
@@ -92,5 +97,8 @@
   }
  ],
  "not_a_routing_issue": "★ 本轮 B2 探针的 2 例「未命中」是 429 限流 ✗ 不是路由问题 ✓（见 M6b 方案 §四之二）—— 勿混入本清单",
- "expect_revision": "2026-10-06：trip-mixed 与 trip-transfer 的 expect 按「正确期望」修订（用户裁定）；其余三例未动。修订前副本见 docs/v3.1/backups/router_bench_regressions_before_20261006.json"
+ "expect_revision": "2026-10-06：trip-mixed 与 trip-transfer 的 expect 按「正确期望」修订（用户裁定）；其余三例未动。修订前副本见 docs/v3.1/backups/router_bench_regressions_before_20261006.json",
+ "expect_revision_20261009": "2026-10-09（用户裁决）：题库 city-climate 由「明确」重分类为「噪声」（该题期望工具 mcp:city/search_city 只返回地理信息、答不了气候问题，池内无正解）→ 非噪声题 24 → 23；本案 5 例用例本身不受影响。同期本文件 baseline_metrics 按收口后的口径重写（旧值 precision@3 0.292 / recall@3 0.674 / hit@3 0.792 / gray_ratio 0.5 / noise_false_positive 0.0，见 git 历史与 docs/v4.0/Done/01-度量口径收口工程·实现记录.md）。",
+ "cases_state_20261009": "素材层（库里已入库的 22 条工具级素材）生效后，本清单 5 例在冻结池口径下**全部命中**：city-en search_city@1 · bnf-subject natural_language_search@1、search_by_subject@3 · bnf-report sequential_reporting@1、natural_language_search@2 · trip-mixed get-tickets@1 · trip-transfer get-interline-tickets@2（复跑：tests/live/m6b_material_ab.py 的「5 例回归」段）。⇒ 本清单的验收对象（5 例由 ✗ 转 ✓）在离线口径下已达成。",
+ "threshold_recalibration_20261009": "2026-10-09（用户裁决，两轮）：Z_STRONG 2.4 → **3.3**（度量口径收口后）→ **3.8**（与素材层第三批同批落地）。第二轮的依据：素材改动把 city-climate 的 z 顶到 冻结池 3.59 / 真机池 3.62（改素材前 3.22；池内余弦标准差 ≈0.01，该项本就易跳）→ 两池分别扫描得平台区：冻结池 3.4 起全绿、真机池 3.62 起全绿；取 3.8 使两池都在平台内、离真机边界留约 0.18 余量。落地后：precision@1 0.739 → 0.870、hit@3 1.000、非噪声灰区 0.217 → 0.130、噪声假阳性 0.000。本文件 baseline_metrics 已随 3.8 重写（3.3 时的旧值：gray_ratio 0.600 / gray_ratio_nonnoise 0.478 / avg_inject_chars_conf 9268；更早 2.4 时的旧值见 git 历史与 docs/v4.0/Done/01-度量口径收口工程·实现记录.md）。★ 教训：改阈值必须**两个口径都跑**——冻结池够不代表真机够（本次就踩过：3.4 在冻结池全绿、真机池仍 0.143）。"
 }

@@ -55,7 +55,7 @@
 
 | 阶段 | 文件 | 改动 | 说明 |
 | --- | --- | --- | --- |
-| ① | `pyproject.toml` / venv | 依赖：`chromadb`、`sentence-transformers`、`rank_bm25`、`langchain-chroma`、`langchain-huggingface` | torch 用 CUDA 版（批注 9：一律 GPU）；版本对齐蜀道 requirements（chromadb 1.5.9 / sentence-transformers 5.7.0）|
+| ① | `pyproject.toml` / venv | 依赖：`chromadb`、`sentence-transformers`、`rank_bm25`、`langchain-chroma`、`langchain-huggingface`、**`jieba`**（★ 2026-10-11 补记：BM25 中文分词的**硬依赖**，原先漏写在本列表里 → venv 漏装后 `query_kb` 一路报 `ModuleNotFoundError` 把**整题打成 500**；现已两层兜底 + 依赖列表补全，详见 `docs/v4.0/Verdict/03` 裁定 27）| torch 用 CUDA 版（批注 9：一律 GPU）；版本对齐蜀道 requirements（chromadb 1.5.9 / sentence-transformers 5.7.0）|
 | ② | `rag_knowledge/kb_service.py`（新）| embedding（bge-large-zh，GPU）、collection 管理（按用户）、父子分块入库、检索管线（快/全双模式，见 §五）| 移植蜀道 `rag.py`/`embeddings.py`/`knowledge.py` |
 | ③ | `rag_knowledge/kb_store.py`（新）| 入库记录表（md5 去重 + 用户目录管理）| 与 `digest_reports` 联动见批注 11 |
 | ④ | `rag_knowledge/cleaner.py`（新）| 入库前清洗：去 emoji/表格符/人格口吻残留（批注 8）| 参考 `api/voice_tts.py` 的 `_clean_tts_text` 案例 |

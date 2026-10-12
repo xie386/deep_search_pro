@@ -1,0 +1,575 @@
+{
+ "name": "m5b_v2",
+ "title": "M6b 加压探针 · 问题集 v2（43 题）",
+ "account": "尼古喵喵",
+ "source": "tests/live/m5b_pressure_probe.py:94-199（2026-10-10 机械抽取为 JSON，题面与期望逐字未改）",
+ "notes": [
+  "kind 口径：single=单工具题 / multi=多工具题 / noise=噪声题（原脚本写作 neg，即『期望不调用工具』的反例题）",
+  "expect: null 表示该题期望**不调用任何工具**",
+  "expect.kind: cli → {bin, argv, alts}；tool → {ref, alts}；alts = 可接受的替代答案（人工判分参照）",
+  "chain = 参考链路（给人工打分看的『标准动作』，不参与任何自动判定）"
+ ],
+ "cases": [
+  {
+   "id": 1,
+   "kind": "single",
+   "core": true,
+   "q": "我最近在微信读书上看的是什么书",
+   "expect": {
+    "kind": "cli",
+    "bin": "weread",
+    "argv": [
+     "shelf",
+     "recent"
+    ],
+    "alts": []
+   },
+   "chain": null
+  },
+  {
+   "id": 2,
+   "kind": "single",
+   "core": false,
+   "q": "微信读书上《人类简史》这本书讲什么",
+   "expect": {
+    "kind": "cli",
+    "bin": "weread",
+    "argv": [
+     "book",
+     "resolve"
+    ],
+    "alts": []
+   },
+   "chain": "weread book resolve（书名→bookId）→ weread book info"
+  },
+  {
+   "id": 3,
+   "kind": "single",
+   "core": false,
+   "q": "我这个月在微信读书上读了多久",
+   "expect": {
+    "kind": "cli",
+    "bin": "weread",
+    "argv": [
+     "readdata",
+     "summary"
+    ],
+    "alts": []
+   },
+   "chain": null
+  },
+  {
+   "id": 4,
+   "kind": "single",
+   "core": false,
+   "q": "帮我看看我的读书笔记都在哪",
+   "expect": {
+    "kind": "cli",
+    "bin": "weread",
+    "argv": [
+     "notes",
+     "notebooks"
+    ],
+    "alts": []
+   },
+   "chain": null
+  },
+  {
+   "id": 5,
+   "kind": "single",
+   "core": false,
+   "q": "我最近和谁聊过天",
+   "expect": {
+    "kind": "cli",
+    "bin": "wechat-cli",
+    "argv": [
+     "sessions"
+    ],
+    "alts": []
+   },
+   "chain": null
+  },
+  {
+   "id": 6,
+   "kind": "single",
+   "core": true,
+   "q": "帮我找找我和袁战的聊天记录",
+   "expect": {
+    "kind": "cli",
+    "bin": "wechat-cli",
+    "argv": [
+     "history"
+    ],
+    "alts": []
+   },
+   "chain": null
+  },
+  {
+   "id": 7,
+   "kind": "single",
+   "core": false,
+   "q": "微信里有没有我还没读的消息",
+   "expect": {
+    "kind": "cli",
+    "bin": "wechat-cli",
+    "argv": [
+     "new-messages"
+    ],
+    "alts": [
+     [
+      "unread"
+     ]
+    ]
+   },
+   "chain": null
+  },
+  {
+   "id": 8,
+   "kind": "single",
+   "core": false,
+   "q": "B站我收藏的视频里有没有讲 Rust 的",
+   "expect": {
+    "kind": "cli",
+    "bin": "bili",
+    "argv": [
+     "favorites"
+    ],
+    "alts": []
+   },
+   "chain": null
+  },
+  {
+   "id": 9,
+   "kind": "single",
+   "core": true,
+   "q": "B站今天有什么热门视频",
+   "expect": {
+    "kind": "cli",
+    "bin": "bili",
+    "argv": [
+     "hot"
+    ],
+    "alts": [
+     [
+      "rank"
+     ]
+    ]
+   },
+   "chain": null
+  },
+  {
+   "id": 10,
+   "kind": "single",
+   "core": false,
+   "q": "BV1xx411c7mD 这个视频讲了什么",
+   "expect": {
+    "kind": "cli",
+    "bin": "bili",
+    "argv": [
+     "video"
+    ],
+    "alts": []
+   },
+   "chain": null
+  },
+  {
+   "id": 11,
+   "kind": "single",
+   "core": true,
+   "q": "Steam 上《空洞骑士》卖多少钱",
+   "expect": {
+    "kind": "tool",
+    "ref": "api:steam#searchGame",
+    "alts": []
+   },
+   "chain": null
+  },
+  {
+   "id": 12,
+   "kind": "single",
+   "core": false,
+   "q": "Steam 上 appid 是 774361 的游戏什么时候发售",
+   "expect": {
+    "kind": "tool",
+    "ref": "api:steam#gameDetail",
+    "alts": []
+   },
+   "chain": null
+  },
+  {
+   "id": 13,
+   "kind": "single",
+   "core": true,
+   "q": "抖音今天最热门的那条视频是什么内容",
+   "expect": {
+    "kind": "tool",
+    "ref": "api:xxapi#douyinHot",
+    "alts": []
+   },
+   "chain": null
+  },
+  {
+   "id": 14,
+   "kind": "single",
+   "core": false,
+   "q": "114.114.114.114 这个 IP 是哪儿的",
+   "expect": {
+    "kind": "tool",
+    "ref": "api:xxapi#ipQuery",
+    "alts": []
+   },
+   "chain": null
+  },
+  {
+   "id": 15,
+   "kind": "single",
+   "core": true,
+   "q": "帮我查一下后天成都到重庆还有没有票",
+   "expect": {
+    "kind": "tool",
+    "ref": "mcp:12306-mcp/get-tickets",
+    "alts": []
+   },
+   "chain": "get-current-date（后天→具体日期）→ get-station-code-of-citys（成都/重庆→站点码）→ get-tickets"
+  },
+  {
+   "id": 16,
+   "kind": "single",
+   "core": false,
+   "q": "从成都坐火车去广州，有哪些需要中转的车次",
+   "expect": {
+    "kind": "tool",
+    "ref": "mcp:12306-mcp/get-interline-tickets",
+    "alts": []
+   },
+   "chain": "get-current-date → get-station-code-of-citys（成都/广州）→ get-interline-tickets"
+  },
+  {
+   "id": 17,
+   "kind": "single",
+   "core": true,
+   "q": "G1033 这趟车中间都停哪些站",
+   "expect": {
+    "kind": "tool",
+    "ref": "mcp:12306-mcp/get-train-route-stations",
+    "alts": []
+   },
+   "chain": "get-current-date → get-train-route-stations（车次 + 日期）"
+  },
+  {
+   "id": 18,
+   "kind": "single",
+   "core": false,
+   "q": "「上海虹桥」这个火车站的站点代码是多少",
+   "expect": {
+    "kind": "tool",
+    "ref": "mcp:12306-mcp/get-station-code-by-names",
+    "alts": []
+   },
+   "chain": "get-station-code-by-names（站名→code，**不需要日期** ✓）"
+  },
+  {
+   "id": 19,
+   "kind": "single",
+   "core": false,
+   "q": "上海的车站代码是什么",
+   "expect": {
+    "kind": "tool",
+    "ref": "mcp:12306-mcp/get-station-code-of-citys",
+    "alts": [
+     "mcp:12306-mcp/get-stations-code-in-city"
+    ]
+   },
+   "chain": "get-station-code-of-citys（城市→代表站 code ✓ 不需要日期）"
+  },
+  {
+   "id": 20,
+   "kind": "single",
+   "core": false,
+   "q": "成都有哪几个火车站",
+   "expect": {
+    "kind": "tool",
+    "ref": "mcp:12306-mcp/get-stations-code-in-city",
+    "alts": [
+     "mcp:12306-mcp/get-station-code-of-citys"
+    ]
+   },
+   "chain": "get-stations-code-in-city（城市→该市全部车站 ✓ 不需要日期）"
+  },
+  {
+   "id": 21,
+   "kind": "single",
+   "core": false,
+   "q": "VNP 这个站码对应的是哪个车站",
+   "expect": {
+    "kind": "tool",
+    "ref": "mcp:12306-mcp/get-station-by-telecode",
+    "alts": []
+   },
+   "chain": "get-station-by-telecode（telecode→车站详情 ✓ 不需要日期）"
+  },
+  {
+   "id": 22,
+   "kind": "single",
+   "core": false,
+   "q": "下周三具体是几月几号，我要买那天的票",
+   "expect": {
+    "kind": "tool",
+    "ref": "mcp:12306-mcp/get-current-date",
+    "alts": []
+   },
+   "chain": "get-current-date（本身就这一件事 ✓）"
+  },
+  {
+   "id": 23,
+   "kind": "single",
+   "core": true,
+   "q": "法国国家图书馆里有没有《悲惨世界》",
+   "expect": {
+    "kind": "tool",
+    "ref": "mcp:bnf/search_by_title",
+    "alts": []
+   },
+   "chain": null
+  },
+  {
+   "id": 24,
+   "kind": "single",
+   "core": false,
+   "q": "Gallica 上有没有雨果写的资料",
+   "expect": {
+    "kind": "tool",
+    "ref": "mcp:bnf/search_by_author",
+    "alts": []
+   },
+   "chain": null
+  },
+  {
+   "id": 25,
+   "kind": "single",
+   "core": false,
+   "q": "Gallica 里关于巴黎公社的资料有哪些",
+   "expect": {
+    "kind": "tool",
+    "ref": "mcp:bnf/search_by_subject",
+    "alts": []
+   },
+   "chain": null
+  },
+  {
+   "id": 26,
+   "kind": "single",
+   "core": false,
+   "q": "Gallica 里 1914 年的资料有哪些",
+   "expect": {
+    "kind": "tool",
+    "ref": "mcp:bnf/search_by_date",
+    "alts": []
+   },
+   "chain": null
+  },
+  {
+   "id": 27,
+   "kind": "single",
+   "core": false,
+   "q": "Gallica 里的手稿类文献有哪些",
+   "expect": {
+    "kind": "tool",
+    "ref": "mcp:bnf/search_by_document_type",
+    "alts": []
+   },
+   "chain": null
+  },
+  {
+   "id": 28,
+   "kind": "single",
+   "core": false,
+   "q": "用法语 CQL 语法在 Gallica 检索 dc.creator=Victor Hugo",
+   "expect": {
+    "kind": "tool",
+    "ref": "mcp:bnf/advanced_search",
+    "alts": []
+   },
+   "chain": null
+  },
+  {
+   "id": 29,
+   "kind": "single",
+   "core": false,
+   "q": "用自然语言在 Gallica 上找关于巴黎公社的资料",
+   "expect": {
+    "kind": "tool",
+    "ref": "mcp:bnf/natural_language_search",
+    "alts": []
+   },
+   "chain": null
+  },
+  {
+   "id": 30,
+   "kind": "single",
+   "core": true,
+   "q": "用法语资料帮我做一份关于雨果的研究报告",
+   "expect": {
+    "kind": "tool",
+    "ref": "mcp:bnf/sequential_reporting",
+    "alts": []
+   },
+   "chain": null
+  },
+  {
+   "id": 31,
+   "kind": "single",
+   "core": true,
+   "q": "拼多多上搜一下 iPhone 17 的价格",
+   "expect": {
+    "kind": "tool",
+    "ref": "mcp:pdd/search_goods",
+    "alts": []
+   },
+   "chain": null
+  },
+  {
+   "id": 32,
+   "kind": "single",
+   "core": false,
+   "q": "拼多多百亿补贴现在有什么好东西",
+   "expect": {
+    "kind": "tool",
+    "ref": "mcp:pdd/explore_deals",
+    "alts": []
+   },
+   "chain": null
+  },
+  {
+   "id": 33,
+   "kind": "single",
+   "core": false,
+   "q": "拼多多这个商品 goods_sign 是 E932cKJQRhht7tuxwfDAxrupzXBiZpWMgg_JQPw6VPiN3，帮我看看详情和优惠券",
+   "expect": {
+    "kind": "tool",
+    "ref": "mcp:pdd/get_goods_detail",
+    "alts": []
+   },
+   "chain": "get_goods_detail（题面已给 goods_sign ✓ 也可先 search_goods 拿 sign）"
+  },
+  {
+   "id": 34,
+   "kind": "single",
+   "core": true,
+   "q": "帮我查一下石渠县的地理信息：属于哪个省、经纬度和人口分别是多少",
+   "expect": {
+    "kind": "tool",
+    "ref": "mcp:city/search_city",
+    "alts": []
+   },
+   "chain": "mcp:city/search_city（city_name=石渠县）→ 一级行政区 / 经纬度 / 人口"
+  },
+  {
+   "id": 35,
+   "kind": "single",
+   "core": true,
+   "q": "从成都开车到稻城亚丁大概要多久",
+   "expect": {
+    "kind": "tool",
+    "ref": "mcp:route/plan_route",
+    "alts": []
+   },
+   "chain": null
+  },
+  {
+   "id": 36,
+   "kind": "multi",
+   "core": true,
+   "q": "我想下周去广州，帮我查从成都出发的火车票，再规划一条从广州南站到珠江新城的路线",
+   "expect": {
+    "kind": "tool",
+    "ref": "mcp:12306-mcp/get-tickets",
+    "alts": []
+   },
+   "chain": "get-current-date → get-station-code-of-citys → get-tickets（12306）＋ plan_route（route）"
+  },
+  {
+   "id": 37,
+   "kind": "multi",
+   "core": false,
+   "q": "从成都坐火车去广州，中途要换乘哪些车？把车次和经停站都列出来",
+   "expect": {
+    "kind": "tool",
+    "ref": "mcp:12306-mcp/get-interline-tickets",
+    "alts": []
+   },
+   "chain": "get-current-date → 站点码 → get-interline-tickets → get-train-route-stations（同源两工具）"
+  },
+  {
+   "id": 38,
+   "kind": "multi",
+   "core": true,
+   "q": "帮我翻翻我和袁战的聊天记录，里面提到的那本书在微信读书上有没有",
+   "expect": {
+    "kind": "cli",
+    "bin": "wechat-cli",
+    "argv": [
+     "history"
+    ],
+    "alts": [
+     [
+      "search"
+     ]
+    ]
+   },
+   "chain": "wechat-cli history/search → weread search（跨源两工具）"
+  },
+  {
+   "id": 39,
+   "kind": "multi",
+   "core": false,
+   "q": "Steam 上《空洞骑士》现在多少钱？顺便看看拼多多有没有卖周边的",
+   "expect": {
+    "kind": "tool",
+    "ref": "api:steam#searchGame",
+    "alts": []
+   },
+   "chain": "api:steam#searchGame → mcp:pdd/search_goods（跨源两工具）"
+  },
+  {
+   "id": 40,
+   "kind": "multi",
+   "core": false,
+   "q": "抖音今天最热门的那条视频讲了什么？顺便找找B站有没有相关视频",
+   "expect": {
+    "kind": "tool",
+    "ref": "api:xxapi#douyinHot",
+    "alts": []
+   },
+   "chain": "api:xxapi#douyinHot → bili search（跨源两工具）"
+  },
+  {
+   "id": 41,
+   "kind": "multi",
+   "core": false,
+   "q": "查一下 114.114.114.114 是哪儿的，然后帮我规划从那个城市到成都的路线",
+   "expect": {
+    "kind": "tool",
+    "ref": "api:xxapi#ipQuery",
+    "alts": []
+   },
+   "chain": "api:xxapi#ipQuery → mcp:route/plan_route（跨源两工具）"
+  },
+  {
+   "id": 42,
+   "kind": "noise",
+   "core": true,
+   "q": "你是谁",
+   "expect": null,
+   "chain": "不调用任何工具"
+  },
+  {
+   "id": 43,
+   "kind": "noise",
+   "core": true,
+   "q": "帮我写一首诗",
+   "expect": null,
+   "chain": "不调用任何工具"
+  }
+ ]
+}
