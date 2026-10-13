@@ -1964,6 +1964,132 @@
     .prov-row .prov-key { flex: 2 1 300px; min-width: 240px; font-family: ui-monospace, Consolas, monospace; }
     .prov-row .key-eye { flex: 0 0 auto; }
   </style>
+    <style>
+      /* ===== 设置页（v4.0 大点 04）===== */
+      /* 库规程（front_from_uiverse“注入既有应用”）：类名一律 set- 前缀；keyframes 必须在本处定义齐。 */
+      .set-view .set-key { color: var(--form-ink); font-weight: 700; font-size: 13px; }
+      .set-view .set-key em { font-style: normal; color: var(--form-ink-soft); font-size: 11px; font-weight: 600; }
+      .set-view .set-help { font-size: 11.5px; line-height: 1.55; color: var(--form-ink-soft); margin: 7px 0 0; }
+      .set-view .set-val { max-width: 320px; }
+      .set-view .set-item .set-val.wide { max-width: 430px; }
+      /* 主操作按钮：保存设置要一眼看见（原来和其它小按钮一样弱） */
+      .set-view .set-save .mini-btn.act {
+        padding: 10px 20px; font-size: 13.5px; background: var(--accent); color: #fff;
+        border-color: var(--form-ink); box-shadow: 4px 4px 0 0 var(--form-ink);
+      }
+      .set-view .set-save .mini-btn.act:hover { background: var(--form-ink); color: var(--form-base); }
+      .set-view .set-src {
+        position: absolute; right: 9px; top: -11px; z-index: 2; padding: 2px 7px;
+        background: var(--form-paper); border: 2px solid var(--form-ink); border-radius: 3px;
+        font-size: 11px; font-weight: 700; color: var(--form-ink);
+      }
+
+      /* ---------- ① 每个设置项一个描边盒（原来没有边界框、条目挤在一起）---------- */
+      .set-view .set-item {
+        position: relative; margin: 16px 0 0; padding: 15px 14px 11px;
+        background: var(--form-paper); border: 2px solid var(--form-ink); border-radius: 4px;
+        box-shadow: 4px 4px 0 0 var(--form-ink);
+        transition: box-shadow .2s ease, transform .2s ease;
+      }
+      .set-view .set-item:hover { transform: translate(-1px, -1px); box-shadow: 6px 6px 0 0 var(--form-ink); }
+      /* 019 的签名做法：黑标贴纸式标题，压在上边框、略歪；聚焦时摆正放大 */
+      .set-view .set-sticker {
+        position: absolute; left: 10px; top: -12px; z-index: 2; padding: 3px 9px;
+        transform: rotate(-1.4deg); background: var(--form-ink); color: var(--form-base);
+        font-size: 12px; font-weight: 800; letter-spacing: .2px;
+        transition: transform .2s ease, background .2s ease, color .2s ease;
+      }
+      .set-view .set-item:focus-within > .set-sticker { transform: rotate(0) scale(1.06); background: var(--accent); color: #fff; }
+      .set-view .set-item .m-input { max-width: 100%; }
+      /* 输入框：019 的聚焦抖动（只跑 2 圈；原码是 infinite，密集表单里无限抖会晕） */
+      .set-view .set-item .m-input:focus { animation: set-brut-glitch .28s steps(2) 2; }
+      @keyframes set-brut-glitch {
+        0%, 100% { transform: translate(0, 0); }
+        25% { transform: translate(-1.5px, 1.5px); }
+        50% { transform: translate(1.5px, -1.5px); }
+        75% { transform: translate(-1.5px, -1.5px); }
+      }
+      .set-view .set-item.sw { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; padding: 11px 14px; }
+      .set-view .set-item.sw .set-pix { margin-left: auto; }
+      .set-view .set-item.sw .set-help { flex: 1 1 100%; margin-top: 0; }
+
+      /* ---------- ② 018 像素开关（re-tone 到项目配色：开=跟踪绿、关=橙红）---------- */
+      .set-pix { display: inline-flex; align-items: center; gap: .55em; cursor: pointer; user-select: none; }
+      .set-pix input {
+        appearance: none; -webkit-appearance: none; position: relative; margin: 0; flex: 0 0 auto;
+        width: 3.05em; height: 1.6em; background: #e0653f; border: none; cursor: pointer;
+        image-rendering: pixelated;
+        box-shadow: 0 0 0 .1em var(--form-ink), 0 0 0 .2em var(--form-paper), 0 0 0 .3em var(--form-ink),
+                    0 .3em 0 0 #a8341a, 0 .3em 0 .1em var(--form-ink);
+        transition: background .2s steps(2);
+      }
+      .set-pix input::before {
+        content: ""; position: absolute; top: .2em; left: .2em; width: 1.2em; height: 1.2em;
+        background: var(--form-ink); box-shadow: inset 0 0 0 .09em #fff;
+        transition: transform .2s steps(2);
+      }
+      .set-pix input:checked { background: var(--form-track); }
+      .set-pix input:checked::before { transform: translateX(1.45em); }
+      .set-pix input:focus-visible { outline: 2px dashed var(--form-ink); outline-offset: .3em; }
+      .set-pix input:disabled { opacity: .45; cursor: not-allowed; }
+      .set-pix .set-pix-lbl { font-size: 12px; font-weight: 800; color: var(--form-ink-soft); min-width: 1.6em; }
+      .set-pix input:checked ~ .set-pix-lbl { color: #2f7d4a; }
+
+      /* ---------- ③ 020 滑动单选（横向变体，替换原来的下拉框）---------- */
+      .set-radio {
+        position: relative; display: inline-flex; padding: 3px; vertical-align: middle;
+        background: var(--form-paper); border: 2px solid var(--form-ink); border-radius: 3px;
+        box-shadow: 3px 3px 0 0 var(--form-ink);
+      }
+      .set-radio input { display: none; }
+      .set-radio label {
+        position: relative; z-index: 1; flex: 1 1 0; padding: 6px 18px; text-align: center;
+        font-size: 12.5px; font-weight: 700; color: var(--form-ink-soft); cursor: pointer;
+        transition: color .18s ease; white-space: nowrap;
+      }
+      .set-radio label:has(input:checked) { color: #fff; }
+      .set-radio .set-radio-slide {
+        position: absolute; z-index: 0; top: 3px; bottom: 3px; left: 3px;
+        width: calc((100% - 6px) / var(--n, 2)); border-radius: 2px; background: var(--form-ink);
+        transition: transform .22s cubic-bezier(.22, 1, .36, 1), background .22s ease;
+      }
+      .set-radio label:nth-child(2):has(input:checked) ~ .set-radio-slide { transform: translateX(100%); }
+      .set-radio label:nth-child(3):has(input:checked) ~ .set-radio-slide { transform: translateX(200%); }
+      .set-radio label:nth-child(4):has(input:checked) ~ .set-radio-slide { transform: translateX(300%); }
+      /* 每档一个语义色（020 的做法：档位不同颜色不同） */
+      .set-radio label:nth-child(1):has(input:checked) ~ .set-radio-slide { background: #2f7d4a; }
+      .set-radio label:nth-child(2):has(input:checked) ~ .set-radio-slide { background: #1f6fd0; }
+      .set-radio label:nth-child(3):has(input:checked) ~ .set-radio-slide { background: #d07f22; }
+      .set-radio label:nth-child(4):has(input:checked) ~ .set-radio-slide { background: #7a4fbf; }
+      .set-radio label:has(input:disabled) { cursor: not-allowed; opacity: .55; }
+
+      /* ---------- ④ 注销账号：移到底部 + 深红底白字 + 整体收紧 ---------- */
+      .cust-card.danger {
+        background: #7e1d1d; background-image: none; color: #fff;
+        border-color: var(--form-ink); border-radius: 4px 14px 4px 14px;
+        box-shadow: -9px 0 0 0 var(--form-ink), -9px 5px 5px rgba(0, 0, 0, .16), inset 0 2px 0 rgba(255, 255, 255, .10);
+        padding: 13px 15px 15px;
+      }
+      .cust-card.danger h3 { color: #fff; font-size: 15px; margin: 0 0 7px; }
+      .cust-card.danger h3::before { background: #ffd7d7; border-color: #2b0a0a; box-shadow: 2px 2px 0 0 #2b0a0a; }
+      .cust-card.danger .cust-tip { color: #ffe4e4; font-size: 12px; line-height: 1.55; margin: 3px 0; }
+      .cust-card.danger .cust-tip code { color: #ffe9a8; }
+      .cust-card.danger .m-input {
+        border: 2px solid #fff; box-shadow: 3px 3px 0 0 #2b0a0a; background: rgba(255, 255, 255, .97);
+        color: #1b1b1b; padding: 6px 9px; font-size: 12.5px; max-width: 210px;
+      }
+      .cust-card.danger .m-input:focus { box-shadow: none; background-size: 100% 3px; }
+      .cust-card.danger .mini-btn {
+        padding: 6px 11px; font-size: 12px; border-color: #fff; background: transparent; color: #fff;
+        box-shadow: 3px 3px 0 0 #2b0a0a;
+      }
+      .cust-card.danger .mini-btn:hover { background: #fff; color: #7e1d1d; transform: translate(2px, 2px); box-shadow: 1px 1px 0 0 #2b0a0a; }
+      .cust-card.danger .prov-row { gap: 7px; margin-bottom: 8px; }
+      .cust-card.danger .prov-row .set-val { max-width: 190px; }
+
+      /* ---------- ⑤ 保存行 ---------- */
+      .set-view .set-save { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 18px; }
+    </style>
 </head>
 <body>
 <div id="app">
@@ -2084,6 +2210,7 @@
           <a class="nav-tab" :class="{active: view==='reports'}" href="#/reports">📰 报告<span class="reddot" v-if="newReports">NEW</span></a>
           <a class="nav-tab" :class="{active: view==='customize'}" href="#/customize">🎛️ 定制助手</a>
           <a class="nav-tab" :class="{active: view==='skills'}" href="#/skills">🧩 技能与工具</a>
+          <a class="nav-tab" :class="{active: view==='settings'}" href="#/settings">⚙️ 设置</a>
         </nav>
         <span class="spacer"></span>
         <span class="who">{{ username }}</span>
@@ -3107,7 +3234,7 @@
             <div class="term out-wrap">
               <div class="term-top">
                 <span class="tdot red"></span><span class="tdot yellow"></span><span class="tdot green"></span>
-                <p class="term-title">zhixuan-cli — {{ shSandbox || 'data/sandbox/{你的账号}/' }}</p>
+                <p class="term-title">zhixuan-cli — {{ shSandbox || 'user_data/sandbox/{你的账号}/' }}</p>
               </div>
 
               <div class="term-out" ref="shOut" @click="shFocus()">
@@ -3191,7 +3318,7 @@
                   </div>
                   <div class="sk-tip" style="margin-top:8px">
                     在本页写、或直接让 AI「把刚才这套做法存成技能 XXX」（AI 会写入
-                    <code>agents_docs/{{ username }}/skills/</code>）。
+                    <code>user_data/agents_docs/{{ username }}/skills/</code>）。
                   </div>
                 </template>
               </div>
@@ -4256,6 +4383,119 @@
     </div>
 
 
+    <!-- ==================== v4.0 大点 04：设置（第 8 个页签）====================
+         议题二：账号绑定邮箱 + 一键注销账号（密码 + 邮箱验证码 + 确认词）
+         议题三：把没进 .env 的开关/参数收进表单（开关/参数落库即生效；一切密钥只在 .env，界面不展示）
+         2026-10-13 视觉改造：组件取自 front_from_uiverse 018 像素开关 / 019 粗野输入框 / 020 滑动单选 -->
+    <!-- 设置页样式已移到 <head>（★ 2026-10-13：写在这里会被 Vue 挂载时连根替换掉，样式全部失效） -->
+    <div class="view set-view" v-show="view === 'settings'">
+      <div class="cust-wrap">
+        <div class="cust-head">
+          <h2>⚙️ 设置</h2>
+          <p class="cust-sub">账号安全（绑定邮箱 / 注销账号）与本机开关都在这里。开关与参数保存即生效；<b>一切密钥只在 .env</b>，界面不展示、不回显。</p>
+        </div>
+
+        <!-- ① 账号安全 -->
+        <div class="cust-card">
+          <h3>🔐 账号安全</h3>
+          <div class="cust-tip">当前账号：<b>{{ username }}</b>　角色：{{ role === 'company' ? '公司版' : '个人版' }}</div>
+          <div class="cust-tip">绑定邮箱：<b>{{ sec.email_masked || '（未绑定）' }}</b>
+            <span v-if="sec.bound">　绑定于 {{ fmtTs(sec.email_bound_at) }}</span></div>
+          <div class="cust-tip" v-if="sec.mail_debug">✉️ 邮件当前是<b>调试模式</b>：验证码不真发信，写在 <code>tests/test_out/_mail_outbox.log</code>。配好 .env 的发件箱即可真实发送。</div>
+          <div class="cust-tip" v-if="sec.outbox">📮 最近一次验证码（调试模式）：<code>{{ sec.outbox }}</code></div>
+
+          <template v-if="!sec.bound">
+            <div class="prov-row">
+              <input class="m-input set-val" v-model="sec.newEmail" placeholder="要绑定的 QQ 邮箱，如 12345@qq.com" />
+              <button class="mini-btn" :disabled="sec.sending" @click="sendBindCode()">{{ sec.sending ? '发送中…' : '发送验证码' }}</button>
+            </div>
+            <div class="prov-row">
+              <input class="m-input set-val" v-model="sec.code" placeholder="6 位验证码" maxlength="6" />
+              <button class="mini-btn act" @click="confirmBind()">确认绑定</button>
+            </div>
+          </template>
+          <template v-else>
+            <div class="prov-row">
+              <input class="m-input set-val" v-model="sec.password" type="password" placeholder="账号密码（换绑/解绑需要）" />
+              <button class="mini-btn" :disabled="sec.sending" @click="sendUnbindCode()">{{ sec.sending ? '发送中…' : '向 ' + sec.email_masked + ' 发验证码' }}</button>
+            </div>
+            <div class="prov-row" v-if="sec.unbindSent">
+              <input class="m-input set-val" v-model="sec.code" placeholder="6 位验证码" maxlength="6" />
+              <button class="mini-btn del" @click="confirmUnbind()">确认解绑（换绑请先解绑再绑定）</button>
+            </div>
+          </template>
+        </div>
+
+        <!-- ② 开关 / 参数 / 邮件：由后端分组下发（每项一个描边盒；开关走像素开关，枚举走滑动单选） -->
+        <div class="cust-card" v-for="g in setGroups" :key="g.id">
+          <h3>{{ g.label }}</h3>
+          <div class="cust-tip">{{ g.tip }}</div>
+
+          <div v-for="it in g.items" :key="it.key" class="set-item" :class="{sw: it.kind === 'switch'}">
+            <span class="set-sticker" :title="it.key">{{ it.label }}<template v-if="it.restart">（需重启）</template></span>
+            <span class="set-src" v-if="it.source === 'db'">已改（库）</span>
+            <span class="set-src" v-else-if="it.source === 'env'">来自 .env</span>
+            <span class="set-src" v-else>默认值</span>
+
+            <!-- 开关：018 像素开关 -->
+            <label v-if="it.kind === 'switch'" class="set-pix">
+              <input type="checkbox" :checked="isOn(it)" :disabled="it.readonly"
+                     @change="toggle(it, $event.target.checked)" />
+              <span class="set-pix-lbl">{{ isOn(it) ? '开' : '关' }}</span>
+            </label>
+
+            <!-- 枚举：020 滑动单选（横向变体） -->
+            <div v-else-if="it.kind === 'select'" class="set-radio" :style="'--n:' + it.choices.length">
+              <label v-for="c in it.choices" :key="c">
+                <input type="radio" :name="'set-' + it.key" :value="c" :disabled="it.readonly"
+                       :checked="setVals[it.key] === c" @change="pickVal(it, c)" />
+                <span>{{ c }}</span>
+              </label>
+              <span class="set-radio-slide"></span>
+            </div>
+
+            <!-- 文本 / 数字：019 粗野输入框（硬描边 + 硬投影 + 聚焦抖动由样式统一给） -->
+            <input v-else class="m-input set-val" v-model="setVals[it.key]" :disabled="it.readonly"
+                   :type="it.kind === 'secret' ? 'password' : 'text'"
+                   :placeholder="it.kind === 'secret' ? (it.has_value ? '（已配置；留空=不改）' : '（未配置）') : (it.default || '')" />
+
+            <div class="set-help">{{ it.help }}</div>
+          </div>
+
+          <div class="set-item" v-if="g.id === 'mail'">
+            <span class="set-sticker">✉️ 通道自检</span>
+            <input class="m-input set-val wide" v-model="testTo" placeholder="测试收件邮箱（留空 = 发给项目发件箱自己）" />
+            <button class="mini-btn" @click="testMail()">发测试邮件</button>
+            <div class="set-help">发件邮箱与授权码只在 <code>.env</code>（QQMAIL / QQMSTP），本页不展示、不回显。</div>
+          </div>
+        </div>
+
+        <div class="set-save">
+          <button class="mini-btn act" @click="saveSettings()">💾 保存设置</button>
+          <span class="cust-tip">开关/参数保存即生效；发件邮箱与授权码只在 <code>.env</code>（QQMAIL / QQMSTP）。</span>
+        </div>
+
+        <!-- ③ 危险区（放在最下方）：注销账号 -->
+        <div class="cust-card danger">
+          <h3>🗑 注销账号（不可撤销）</h3>
+          <div class="cust-tip">需要三样：<b>账号密码</b> + 发到绑定邮箱的<b>验证码</b> + 原样输入确认词。执行前会先把本账号全部数据快照到 <code>docs/v4.0/backups/account_delete_&lt;账号&gt;_&lt;时间戳&gt;/</code>，再整体清除。</div>
+          <div class="cust-tip" v-if="!sec.can_delete">⚠️ 当前账号还没绑定邮箱，注销需要邮箱验证码：请先在上面绑定。</div>
+          <template v-if="sec.can_delete">
+            <div class="prov-row">
+              <input class="m-input set-val" v-model="del.password" type="password" placeholder="账号密码" />
+              <button class="mini-btn" :disabled="del.sending" @click="deleteSendCode()">{{ del.sending ? '发送中…' : '发送验证码到 ' + sec.email_masked }}</button>
+            </div>
+            <div class="prov-row" v-if="del.sent">
+              <input class="m-input set-val" v-model="del.email" :placeholder="'绑定邮箱：' + sec.email_masked" />
+              <input class="m-input set-val" v-model="del.code" placeholder="6 位验证码" maxlength="6" />
+              <input class="m-input set-val" v-model="del.word" placeholder="原样输入：注销账号" />
+              <button class="mini-btn del" @click="deleteConfirm()">确认注销</button>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+
     <div class="view customize-view" v-show="view === 'customize'">
       <div class="cust-wrap">
         <div class="cust-head">
@@ -4644,6 +4884,143 @@ createApp({
     const stopping = ref(false);   // 已点「中断」，等后端在下一个检查点停下
     let chatAbort = null;          // 当前 /api/chat 的 AbortController（中断兜底用）
     const decRouter = ref(false);  // ★ 2026-10-13 大点 02：账号级「决策模型精排」开关（默认关，存 accounts.decision_router）
+
+    // ==================== v4.0 大点 04：设置页（议题二 账号安全 + 议题三 开关表单）====================
+    const sec = ref({ bound: false, email_masked: '', email_bound_at: null, can_delete: false,
+                      can_send_mail: false, mail_debug: false, outbox: '', newEmail: '', code: '',
+                      password: '', sending: false, unbindSent: false });
+    const del = ref({ sent: false, email: '', code: '', password: '', word: '', sending: false });
+    const setGroups = ref([]);
+    const setVals = ref({});
+    const testTo = ref('');
+
+    function fmtTs(t) { if (!t) return '-'; try { return new Date(t * 1000).toLocaleString('zh-CN'); } catch (e) { return '-'; } }
+
+    function _setApi(path, body) {
+      return fetch(path + '?token=' + encodeURIComponent(token.value), body === undefined ? {} :
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+        .then(async r => { const d = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(d.detail || ('HTTP ' + r.status)); return d; });
+    }
+
+    async function loadSecurity() {
+      if (!token.value) return;
+      try { Object.assign(sec.value, await _setApi('/api/me/security')); }
+      catch (e) { /* 未登录等情形静默 */ }
+    }
+
+    async function loadSettings() {
+      await loadSecurity();
+      try {
+        const d = await _setApi('/api/settings');
+        setGroups.value = d.groups || [];
+        const vals = {};
+        for (const g of setGroups.value) for (const it of g.items) {
+          if (it.kind === 'secret') continue;              // 密钥不回填明文（留空 = 不改）
+          vals[it.key] = it.kind === 'switch' ? _onFromSpec(it) : it.value;
+        }
+        setVals.value = vals;
+      } catch (e) { showToast('读取设置失败：' + e.message, true); }
+    }
+
+    function isOn(it) { const v = (setVals.value || {})[it.key]; return v === true || v === '1' || v === 1; }
+    // ★ 2026-10-13（真机客户端测试抓到的 bug）：判开关必须看**接口下发的值**，
+    //   不能在构建 setVals 的同一个循环里用 isOn() —— 那时 setVals 还没赋值，
+    //   所有开关都会被判成「关」并原样存回库里（实测把 ZX_STREAM 等 6 个开着的开关写成了 0）。
+    function _onFromSpec(it) { const v = it && it.value; return v === true || v === '1' || v === 1; }
+    function toggle(it, on) { setVals.value = Object.assign({}, setVals.value, { [it.key]: on ? '1' : '0' }); }
+    // ★ 枚举项（020 滑动单选）：与 toggle 一样走不可变赋值，保证 Vue 追踪得到、保存时能带上
+    function pickVal(it, v) { setVals.value = Object.assign({}, setVals.value, { [it.key]: v }); }
+
+    async function saveSettings() {
+      const values = {};
+      for (const g of setGroups.value) for (const it of g.items) {
+        if (it.readonly) continue;
+        const v = setVals.value[it.key];
+        if (it.kind === 'secret') { if (v) values[it.key] = v; continue; }   // 留空 = 不改密钥
+        values[it.key] = (typeof v === 'boolean') ? (v ? '1' : '0') : v;
+      }
+      try {
+        const d = await _setApi('/api/settings', { values });
+        const n = (d.changed || []).length;
+        showToast('设置已保存：' + n + ' 项' + ((d.env_keys || []).length ? ('（含写入 .env 的密钥 ' + d.env_keys.length + ' 项）') : ''));
+        loadSettings();
+      } catch (e) { showToast('保存失败：' + e.message, true); }
+    }
+
+    async function testMail() {
+      const to = (testTo.value || '').trim();     // 留空 = 后端发到项目发件箱自己
+      try {
+        const d = await _setApi('/api/settings/test_mail', { to });
+        showToast('已发送（' + d.mode + '）：' + (d.hint || ''), d.mode === 'debug');
+      } catch (e) { showToast('发送失败：' + e.message, true); }
+    }
+
+    async function sendBindCode() {
+      const email = (sec.value.newEmail || '').trim();
+      if (!email) { showToast('请先填要绑定的邮箱', true); return; }
+      sec.value.sending = true;
+      try {
+        const d = await _setApi('/api/me/email/send_code', { email });
+        sec.value.outbox = d.outbox || '';
+        showToast('验证码已发出（' + d.mode + '，' + d.ttl_s + ' 秒内有效）');
+      } catch (e) { showToast('发送失败：' + e.message, true); }
+      finally { sec.value.sending = false; }
+    }
+
+    async function confirmBind() {
+      const email = (sec.value.newEmail || '').trim();
+      if (!email || !sec.value.code) { showToast('请填邮箱和验证码', true); return; }
+      try {
+        await _setApi('/api/me/email/confirm', { email, code: sec.value.code });
+        showToast('邮箱绑定成功 ✅');
+        sec.value.code = ''; sec.value.newEmail = '';
+        loadSettings();
+      } catch (e) { showToast('绑定失败：' + e.message, true); }
+    }
+
+    async function sendUnbindCode() {
+      if (!sec.value.password) { showToast('请先填账号密码', true); return; }
+      sec.value.sending = true;
+      try {
+        const d = await _setApi('/api/me/email/unbind/send_code', { password: sec.value.password });
+        sec.value.unbindSent = true; sec.value.outbox = d.outbox || '';
+        showToast('验证码已发到 ' + d.email_masked);
+      } catch (e) { showToast('发送失败：' + e.message, true); }
+      finally { sec.value.sending = false; }
+    }
+
+    async function confirmUnbind() {
+      if (!sec.value.password || !sec.value.code) { showToast('请填密码和验证码', true); return; }
+      try {
+        await _setApi('/api/me/email/unbind/confirm', { password: sec.value.password, code: sec.value.code });
+        showToast('已解绑邮箱（可重新绑定新邮箱）');
+        sec.value.unbindSent = false; sec.value.password = ''; sec.value.code = '';
+        loadSettings();
+      } catch (e) { showToast('解绑失败：' + e.message, true); }
+    }
+
+    async function deleteSendCode() {
+      if (!del.value.password) { showToast('请先填账号密码', true); return; }
+      del.value.sending = true;
+      try {
+        const d = await _setApi('/api/me/delete/send_code', { password: del.value.password });
+        del.value.sent = true; del.value.email = '';
+        showToast('验证码已发到 ' + d.email_masked + '；请原样输入确认词「' + d.confirm_word + '」');
+      } catch (e) { showToast('发送失败：' + e.message, true); }
+      finally { del.value.sending = false; }
+    }
+
+    async function deleteConfirm() {
+      const u = username.value || '本账号';
+      if (!window.confirm('确认注销「' + u + '」？\n\n此项不可撤销：账号与全部数据会被删除（删除前会先快照到 docs/v4.0/backups/）。')) return;
+      try {
+        const d = await _setApi('/api/me/delete/confirm', { password: del.value.password,
+          email: del.value.email, code: del.value.code, confirm_text: del.value.word });
+        alert('账号「' + d.deleted + '」已注销。\n\n数据快照（如需取回）：\n' + d.backup);
+        doLogout();
+      } catch (e) { showToast('注销失败：' + e.message, true); }
+    }
     const exporting = ref(false);
     const scroll = ref(null);
     const toast = ref(''); const toastErr = ref(false);
@@ -4860,6 +5237,7 @@ createApp({
       if (view.value === 'chat') nextTick(scrollToBottom);
       if (view.value === 'reports') { newReports.value = 0; loadReports(); loadSubs(); }
       if (view.value === 'skills') loadSkills();
+      if (view.value === 'settings') loadSettings();     // ★ 大点 04：设置页
     });
 
     // ---------- 简报渲染 ----------
@@ -4918,8 +5296,16 @@ createApp({
         if (r.status === 401) { forceLogout('登录已失效，请重新登录'); return; }
         if (!r.ok) return;
         const d = await r.json();
-        d.collection = d.products || [];
-        if (role.value === 'company') d.products = d.products || [];
+        // ★ 2026-10-13 真机测试抓到的白屏（公司账号）：overview 只有一份数据，而"角色"可能是
+        //   稍后才确定的（例如只带 token 打开、或角色接口慢于本接口）。角色未定时模板会先走
+        //   另一个角色的分支，此时缺哪个数组就炸在 `undefined.length` 上 —— 整个挂载会崩成白屏。
+        //   所以这里对**两个角色用到的全部数组**一律归一化，不依赖 role 先到。
+        d.products = d.products || [];
+        d.competitors = d.competitors || [];
+        d.interests = d.interests || [];
+        d.watchlist = d.watchlist || [];
+        d.collection = d.products;
+        if (d.role) role.value = d.role;   // 顺带把角色从本接口补齐（单靠 token 也能恢复角色）
         // 展开 attributes JSON 到可编辑字段（公司产品 + 个人收藏）
         [...(d.products || []), ...(d.collection || [])].forEach(unpackAttrs);
         myData.value = d;
@@ -8441,7 +8827,7 @@ createApp({
       var p = probeRun.value.profile || {};
       var parts = [];
       if (p.ok === false) {
-        parts.push('⚠ 还原失败：' + (p.error || '未知错误') + ' —— 请到 agents_docs 手工核对');
+        parts.push('⚠ 还原失败：' + (p.error || '未知错误') + ' —— 请到 user_data/agents_docs 手工核对');
       } else if (p.restored && p.restored.length) {
         parts.push('已还原 ' + p.restored.length + ' 个文件（' + p.restored.join('、') + '）');
       } else {
@@ -8512,6 +8898,11 @@ createApp({
     });
 
     return {
+      // ★ v4.0 大点 04：设置页（议题二 账号安全 + 议题三 开关表单）——**模板要用到的绑定必须显式 return**，
+      //   漏了会让模板求值抛 TypeError，整个应用渲染空白（2026-10-13 真机客户端测试抓到的正是这个）。
+      sec, del, setGroups, setVals, testTo, fmtTs, loadSettings, 
+      isOn, _onFromSpec, toggle, pickVal, saveSettings, testMail,
+      sendBindCode, confirmBind, sendUnbindCode, confirmUnbind, deleteSendCode, deleteConfirm,
       recOn, recBusy, recCancel, recLevel, recClock, recStart, recStop, recMoveOut, loadAsrStatus,
       chatImages, chatImgBusy, chatImgErr, chatFileInput, pickChatImages, onChatFiles,
       multiOpen, toggleMulti, pickFromAlbum, soonHint,

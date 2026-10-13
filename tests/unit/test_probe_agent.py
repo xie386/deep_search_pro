@@ -213,7 +213,7 @@ def test_probe_agent_offline():
         who = "_probe_agent_selftest"
         p = pa.save_cases(who, g["doc"])
         try:
-            check("题集落 data/probe_sets/", "data%sprobe_sets" % os.sep in p, p)
+            check("题集落 user_data/probe_sets/", "user_data%sprobe_sets" % os.sep in p, p)
             back = pa.load_cases(who)
             check("读回一致", [c["q"] for c in back["cases"]] == [c["q"] for c in g["doc"]["cases"]])
             check("runner 也能按名读到它（③ 查找顺序）",

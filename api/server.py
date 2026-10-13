@@ -152,12 +152,13 @@ def _log_agent_error(err, thread_id=None, account_id=None, question=None) -> Non
         rec = {"ts": time.strftime("%Y-%m-%d %H:%M:%S"), "thread_id": thread_id,
                "account_id": account_id, "question": str(question or "")[:200],
                "type": type(err).__name__, "message": str(err)[:600], "traceback": tb[-4000:]}
-        path = os.getenv("AGENT_ERROR_LOG") or os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "data", "audit", "agent_errors.jsonl")
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        if _settings_store.get_bool("AGENT_ERROR_LOG_ENABLED", True):      # ★ 议题三：开关
+            path = os.getenv("AGENT_ERROR_LOG") or os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "data", "audit", "agent_errors.jsonl")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
     except Exception as _e:  # noqa: BLE001 - 记日志绝不能再把主流程搞崩
         print("[Agent 执行出错] 落盘失败（忽略）: %s: %s" % (type(_e).__name__, _e))
 
@@ -230,7 +231,9 @@ import api.price_api as price_ack                      # noqa: E402  (M5-4)
 import api.cost_api as cost_api                        # noqa: E402  (M6c-5)
 import api.probe as probe_api                          # noqa: E402  (v4.0 大点 03：工具池测评)
 ctx_providers.register_all()
-_USE_SOURCES = os.getenv("ZX_ASSEMBLY_SOURCES", "").strip().lower() != "legacy"
+# ★ 2026-10-13（议题三）：装配来源实现由设置页可切（默认 new）；保存时 settings.apply_runtime_hooks() 就地热更
+from utils import settings as _settings_store                                  # noqa: E402
+_USE_SOURCES = str(_settings_store.get("ZX_ASSEMBLY_SOURCES", "new")).strip().lower() != "legacy"
 
 # deepagents 内置 filesystem 工具（ls/read_file/glob/grep/write_file/edit_file/delete）
 # 与项目自定义文档工具（read_agent_doc/write_agent_doc，仅限 agents_docs 目录）功能重叠，
@@ -342,10 +345,19 @@ def _stream_enabled() -> bool:
     子 Agent / digest / CLI 走的是**调用侧**决定（它们不经过本函数 ✗ 见 `_run_agent` 的
     `stream` 形参）——只有前台问答才会开流 ✓
     """
-    return (os.getenv("ZX_STREAM", "1") or "1").strip().lower() not in ("0", "false", "off", "no", "")
+    try:                                                          # ★ 议题三：开关可由设置页改
+        from utils import settings as _settings
+        return bool(_settings.get_bool("ZX_STREAM", True))
+    except Exception:                                              # noqa: BLE001
+        return (os.getenv("ZX_STREAM", "1") or "1").strip().lower() not in ("0", "false", "off", "no", "")
 
 
 def _invoke_or_stream(agent, payload, cfg, thread_id):
+    try:                                                          # ★ 议题三：提示词调试转储（开关关着=空操作）
+        from agent.prompts import dump_prompts
+        dump_prompts()
+    except Exception:                                             # noqa: BLE001
+        pass
     """跑一轮 agent：流式（默认）或一次性 invoke —— 两者返回**同一形状**的最终状态 ✓
 
     返回 `(final_state, streamed)`：`final_state` 与 `agent.invoke(...)` 的返回值同形，
@@ -613,6 +625,63 @@ async def api_login(req: LoginReq):
 async def api_logout(token: str = Query(...)):
     logout(token)
     return {"ok": True}
+
+
+# ----------------------------- 设置（v4.0 大点 04 · 议题三）-----------------------------
+# ★ 2026-10-13：把「没进 .env 的开关/参数」收进可开关的表单；密钥类仍走 .env（回传只给掩码）。
+import api.settings_api as _settings_api                                       # noqa: E402
+import api.account_sec as _account_sec                                         # noqa: E402
+
+
+@app.get("/api/settings", summary="读全部设置（分组；密钥只回掩码）")
+async def api_settings_get(token: str = Query(...)):
+    return _settings_api.get_all(token)
+
+
+@app.post("/api/settings", summary="保存设置（开关/参数进库即生效；密钥写 .env）")
+async def api_settings_save(req: _settings_api.SettingsSaveReq, token: str = Query(...)):
+    return _settings_api.save(token, req)
+
+
+@app.post("/api/settings/test_mail", summary="用当前 SMTP 配置发一封测试邮件")
+async def api_settings_test_mail(req: _settings_api.TestMailReq, token: str = Query(...)):
+    return _settings_api.test_mail(token, req)
+
+
+# ----------------------------- 账号安全（v4.0 大点 04 · 议题二）-----------------------------
+@app.get("/api/me/security", summary="账号安全状态：邮箱绑定 / 能否注销 / 邮件通道")
+async def api_me_security(token: str = Query(...)):
+    return _account_sec.status_of(token)
+
+
+@app.post("/api/me/email/send_code", summary="绑定邮箱：发验证码")
+async def api_me_email_send(req: _account_sec.EmailReq, token: str = Query(...)):
+    return _account_sec.send_bind_code(token, req)
+
+
+@app.post("/api/me/email/confirm", summary="绑定邮箱：校验验证码并落库")
+async def api_me_email_confirm(req: _account_sec.ConfirmReq, token: str = Query(...)):
+    return _account_sec.confirm_bind(token, req)
+
+
+@app.post("/api/me/email/unbind/send_code", summary="解绑/换绑邮箱：需密码，向旧邮箱发码")
+async def api_me_unbind_send(req: _account_sec.PasswordReq, token: str = Query(...)):
+    return _account_sec.send_unbind_code(token, req)
+
+
+@app.post("/api/me/email/unbind/confirm", summary="解绑邮箱：密码 + 旧邮箱验证码")
+async def api_me_unbind_confirm(req: _account_sec.UnbindConfirmReq, token: str = Query(...)):
+    return _account_sec.confirm_unbind(token, req)
+
+
+@app.post("/api/me/delete/send_code", summary="注销账号（第一步）：验密码 + 向绑定邮箱发码")
+async def api_me_delete_send(req: _account_sec.PasswordReq, token: str = Query(...)):
+    return _account_sec.delete_request(token, req)
+
+
+@app.post("/api/me/delete/confirm", summary="注销账号（第二步）：密码 + 验证码 + 确认词 → 备份并清除")
+async def api_me_delete_confirm(req: _account_sec.DeleteConfirmReq, token: str = Query(...)):
+    return _account_sec.delete_confirm(token, req)
 
 
 # ----------------------------- 问答 -----------------------------
@@ -1002,7 +1071,8 @@ async def api_competitors(token: str = Query(...)):
 
 
 # ----------------------------- 导出（M3） -----------------------------
-OUTPUT_DIR = PROJECT_ROOT / "output"
+from utils.paths import OUTPUT_DIR                                             # noqa: E402
+# ★ 2026-10-13（议题一）：导出/下载目录归口 user_data/output/{账号}/
 
 
 @app.post("/api/export", summary="把回答导出为 Markdown/PDF 文件，返回下载信息")

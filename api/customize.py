@@ -21,8 +21,9 @@ from pydantic import BaseModel
 from tools.schema_personal import get_personal_conn, ensure_tables
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
-PIC_DIR = _PROJECT_ROOT / "pic"                 # 背景图根目录：pic/{username}/
-AGENTS_DOCS = _PROJECT_ROOT / "agents_docs"     # 人格/记忆：agents_docs/{username}/
+from utils import paths as _upaths                                              # noqa: E402
+PIC_DIR = _upaths.PIC_DIR                       # 背景图根：user_data/pic/{username}/（议题一）
+AGENTS_DOCS = _upaths.AGENTS_DOCS               # 人格/记忆：user_data/agents_docs/{username}/
 
 _ALLOWED_IMG_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 

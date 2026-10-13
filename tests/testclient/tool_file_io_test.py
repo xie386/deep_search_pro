@@ -80,10 +80,10 @@ check("不存在文件返回提示", "不存在" in miss, miss)
 print(f"\n结果：通过 {PASS} / 失败 {FAIL}")
 # 清理自测产物
 for f in ("_verify_tmp.md", os.path.join("sub", "note.txt")):
-    p = os.path.join(ROOT, "agents_docs", f)
+    p = os.path.join(ROOT, "user_data", "agents_docs", f)
     if os.path.exists(p):
         os.remove(p)
-sub = os.path.join(ROOT, "agents_docs", "sub")
+sub = os.path.join(ROOT, "user_data", "agents_docs", "sub")
 if os.path.isdir(sub) and not os.listdir(sub):
     os.rmdir(sub)
 if FAIL:

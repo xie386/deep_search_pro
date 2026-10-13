@@ -14,10 +14,23 @@ from services.digest_engine import build_batches, run_digest
 ensure_tables()
 conn = get_personal_conn()
 
-# 1) 找 m2tester 账号 + 竞品
-acc = conn.execute("SELECT id, username FROM accounts WHERE username='m2tester'").fetchone()
-aid = acc[0]
-print(f"[1] 账号: {acc[1]} (id={aid})")
+# 1) 2026-10-13 修（前置清理）：不再占用共享测试号 m2tester，改为自建临时公司账号 + 退出时回收
+import atexit as _atexit, time as _time
+_USER = "t_m4eng_%d" % int(_time.time())
+conn.execute("INSERT INTO accounts (username, password_hash, role) VALUES (?,?,?)", (_USER, "x", "company"))
+conn.commit()
+aid = conn.execute("SELECT id FROM accounts WHERE username=?", (_USER,)).fetchone()[0]
+print(f"[1] 临时账号: {_USER} (id={aid})")
+
+
+@_atexit.register
+def _cleanup_tmp_account():
+    try:
+        from tools.schema_personal import purge_account as _purge
+        _purge(aid)
+        print("[cleanup] 临时账号 %s 已回收" % _USER)
+    except Exception as _e:                                          # noqa: BLE001
+        print("[cleanup] 回收失败（可手动清理 %s）: %s" % (_USER, _e))
 
 # 用 me 库里的竞品（company_competitors）做关键词；没有则手工造两条
 kws = [r[0] for r in conn.execute(

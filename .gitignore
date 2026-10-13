@@ -34,6 +34,11 @@ data/
 *.db-journal
 
 # ── 账号数据（按账号隔离：SOUL 人格 / MEMORY 记忆画像 / ACTIVE 状态）──
+# ── 用户数据统一归口（2026-10-13 大点 04 · 议题一）──
+# 账号级数据全部移到 user_data/ 下（agents_docs / output / pic / rag_knowledge/db /
+# sandbox / probe_sets / tts_ref，约 34MB，不入库）；下面旧的逐条规则保留作兜底。
+user_data/*
+!user_data/.gitkeep
 agents_docs/
 
 # ── 用户产出（周报 output/{user}/、语音合成音频、参考音频）──

@@ -231,7 +231,9 @@ def _calls_of_thread(account_id: int, thread_id: str) -> list[list[str]]:
 # 按账号建目录的根（**purge_account 只管库表，目录得自己清**）。
 # 2026-09-24 实测：库里 0 个 m5p 账号时，data/sandbox/ 下还躺着 6 个孤儿目录 ——
 # 因为旧版 _drop_account 只删了 agents_docs/{username}，把 CLI 沙箱目录漏掉了。
-_ACCOUNT_DIR_ROOTS = ("agents_docs", "output", "pic", "data/sandbox", "data/tts_ref", "rag_knowledge/db")
+# ★ 2026-10-13（议题一）：改由唯一事实源生成（此前这里是一份与代码不一致的副本，见 research/04 §6.1(b)）
+from utils import paths as _upaths                                              # noqa: E402
+_ACCOUNT_DIR_ROOTS = tuple(str(_p.relative_to(ROOT)).replace(os.sep, "/") for _p in _upaths.ACCOUNT_DIRS)
 
 
 def _account_id(username: str):

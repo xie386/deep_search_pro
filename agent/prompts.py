@@ -29,8 +29,24 @@ main_agent_content = prompt_yaml_content["main_agent"]
 #    ① 每次启动刷一屏无用输出；② 在中文 Windows 上，当 stdout 是文件/管道时按 GBK 编码，
 #    提示词里的 emoji（🔍 等）编不出来 → UnicodeEncodeError → **进程 import 阶段直接崩**
 #    （桌面版双击崩溃、`uvicorn > server.log`、`dspro list > out.txt` 全都踩这个）。
-# 需要时临时打开：os.getenv("DS_DEBUG_PROMPTS") == "1"
-# print(main_agent_content, "\n")
+# ★ 2026-10-13（议题三）：改由设置页的「提示词调试转储」开关控制 —— 打开后写**文件**
+#   （`data/audit/prompts_dump.txt`），正好绕开上面那个 GBK 崩溃的坑。
+def dump_prompts(extra: str = "") -> str:
+    """按设置把提示词转储到 data/audit/prompts_dump.txt（开关关着则什么都不做）。"""
+    try:
+        from utils import settings as _settings
+        if not _settings.get_bool("DS_DEBUG_PROMPTS", False):
+            return ""
+        import time as _time
+        d = Path(__file__).parents[1] / "data" / "audit"
+        d.mkdir(parents=True, exist_ok=True)
+        p = d / "prompts_dump.txt"
+        with open(p, "a", encoding="utf-8") as f:
+            f.write("\n===== %s =====\n%s\n" % (_time.strftime("%Y-%m-%d %H:%M:%S"),
+                                                  extra or main_agent_content))
+        return str(p)
+    except Exception:                                              # noqa: BLE001
+        return ""
 # sub_agents_content
 sub_agents_content = prompt_yaml_content["sub_agents"]
 

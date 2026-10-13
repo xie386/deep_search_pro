@@ -306,8 +306,8 @@ async def main():
         ensure_tables()
         _create_account(TMP_USER, _hash_pwd(TMP_PWD), "personal", None)
         # 复制真实账号的技能文件（题面/内容一致，才谈得上复现）
-        src = os.path.join(ROOT, "agents_docs", "尼古喵喵", "skills")
-        dst = os.path.join(ROOT, "agents_docs", TMP_USER, "skills")
+        src = os.path.join(ROOT, "user_data", "agents_docs", "尼古喵喵", "skills")   # ★ 2026-10-13 归口
+        dst = os.path.join(ROOT, "user_data", "agents_docs", TMP_USER, "skills")
         os.makedirs(dst, exist_ok=True)
         if os.path.isdir(src):
             for f in os.listdir(src):
@@ -349,7 +349,7 @@ async def main():
             conn.close()
         if aid:
             purge_account(aid)
-        shutil.rmtree(os.path.join(ROOT, "agents_docs", user), ignore_errors=True)
+        shutil.rmtree(os.path.join(ROOT, "user_data", "agents_docs", user), ignore_errors=True)
         print("\n已清理临时账号 %s" % user)
     return 0
 

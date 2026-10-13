@@ -19,6 +19,20 @@ sys.path.insert(0, ROOT)
 
 from agent.build_context import build_request_context   # noqa: E402
 
+
+@pytest.fixture(autouse=True)
+def _hide_db_settings(monkeypatch):
+    """把「应用设置库(app_settings)」对本模块隐藏。
+
+    ★ 2026-10-13：本模块用环境变量验 `ZX_ASSEMBLY_SOURCES` 两态，但设置项取值顺序是
+      **库 → .env → 默认** —— 用户在设置页保存过（库里是 new）时环境变量压不住，用例假失败。
+    """
+    from utils import settings as _s
+    monkeypatch.setattr(_s, "_load_all", lambda: {})
+    _s.reload()
+    yield
+    _s.reload()
+
 SOUL = "你是女仆，语气轻快。"
 MEM = "# 用户记忆画像（MEMORY）\n\n<!-- memory_meta: init=2026-09-13 refreshed=2026-09-27 sources=3 -->\n\n## USER PROFILE（用户画像）\n\n- 身份与领域：大四学生（人工）\n- 预算范围：≤100 元/瓶\n\n## MEMORY（助手笔记）\n\n- 笔记 1：要记住\n"
 MEM_BIG = MEM.replace("- 预算范围：≤100 元/瓶", "- 预算范围：" + "很久很久以前的故事啊" * 40)
@@ -94,7 +108,10 @@ def test_switch_default_is_registry_path():
 
 def test_switch_env_var_flips_the_path():
     """真起一个子进程读开关（不在本进程 import，避免污染其它用例）。"""
-    code = ("import api.server as s; print('USE_SOURCES=%s' % s._USE_SOURCES)")
+    # ★ 2026-10-13：子进程里先把「应用设置库」藏掉再 import —— 否则用户在设置页保存过的
+    #   ZX_ASSEMBLY_SOURCES（库值优先于 .env）会把下面第二条子进程的环境变量压掉、用例假失败。
+    code = ("import utils.settings as _st; _st._load_all = lambda: {};"
+            "import api.server as s; print('USE_SOURCES=%s' % s._USE_SOURCES)")
     env2 = {**os.environ, 'PYTHONPATH': '', 'PYTHONIOENCODING': ''}
     a = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
                        cwd=ROOT, env=env2)

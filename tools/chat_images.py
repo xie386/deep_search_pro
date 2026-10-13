@@ -115,8 +115,8 @@ class SavedImage:
 
 def images_dir(account_id: int | str) -> str:
     """`pic/{账号}/chat_images/` ✓ —— 与项目既有图片目录（pic/{user}/）同源 ✓ 按账号隔离 ✓。"""
-    # ★ 不臆测项目里的 helper ✗（第一版写成 utils.paths.pic_dir → 该模块根本不存在 ✗）：
-    #   先探测项目**真实存在**的助手函数，探测不到就从项目根兜底拼 pic/{账号}/ ✓ 结果恒定。
+    # ★ 2026-10-13（议题一）：`utils/paths.py` 已存在（当年这段注释里"该模块根本不存在"的窟窿补上了），
+    #   探测即为它的 `pic_dir` —— 用户数据已归口 `user_data/pic/`。探测不到时的兜底见下方。
     cands = []
     for modname, fns in (("utils.paths", ("pic_dir", "account_pic_dir", "user_pic_dir")),
                          ("utils", ("pic_dir", "account_pic_dir")),
@@ -136,7 +136,7 @@ def images_dir(account_id: int | str) -> str:
         base = os.path.join(cands[0], "chat_images")
     else:
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # 项目根 ✓
-        base = os.path.join(root, "pic", str(account_id), "chat_images")
+        base = os.path.join(root, "user_data", "pic", str(account_id), "chat_images")   # ★ 兜底同步归口
     os.makedirs(base, exist_ok=True)
     return base
 

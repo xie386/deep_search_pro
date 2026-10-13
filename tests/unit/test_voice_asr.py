@@ -13,6 +13,21 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, ROOT)
 
 from tools import voice_asr as va          # noqa: E402
+from utils import settings as _app_settings  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _hide_db_settings(monkeypatch):
+    """把「应用设置库(app_settings)」对本模块隐藏。
+
+    ★ 2026-10-13：真机库里可能有用户保存过的值（设置页保存过一次就有），而取值顺序是
+      **库 → .env → 默认** —— 那样 `monkeypatch.setenv("ASR_ENABLED", "0")` 根本压不住，
+      这一组「环境变量关掉 ASR」的用例会假失败。单测只验语义，不该依赖用户真实数据。
+    """
+    monkeypatch.setattr(_app_settings, "_load_all", lambda: {})
+    _app_settings.reload()
+    yield
+    _app_settings.reload()
 
 
 class _FakeResp:

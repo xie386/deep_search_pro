@@ -113,7 +113,11 @@ def main() -> int:
                              seq_key=" || ".join(r["seq"])) for r in rows]}
     os.makedirs(os.path.dirname(out), exist_ok=True)
     if os.path.exists(out) and "--force" not in sys.argv:
-        bak = out + ".bak%d" % int(time.time())
+        # ★ 2026-10-13 修（前置清理）：旧基线备份写到 tests/test_out/（已 gitignore），
+        #   不再落在入库目录 tests/fixtures/ 里（此前留下的 .bak<ts> 会被 git 跟踪）。
+        bak = os.path.join(ROOT, "tests", "test_out",
+                           os.path.basename(out) + ".bak%d" % int(time.time()))
+        os.makedirs(os.path.dirname(bak), exist_ok=True)
         os.replace(out, bak)
         print("（已把旧基线挪到 %s ✓）" % _rel(bak))
     with open(out, "w", encoding="utf-8") as fh:

@@ -8,9 +8,13 @@
 """
 import os
 
+from utils.paths import AGENTS_DOCS as _AGENTS_DOCS_ROOT
+
 # 项目根 = 本文件的上一级（tools/ → 项目根）
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-AGENTS_DOCS = os.path.join(PROJECT_ROOT, "agents_docs")
+# ★ 2026-10-13（大点 04 · 议题一）：根目录改由 `utils/paths.py` 统一提供 ——
+#   用户数据已归口 `user_data/`；本模块保留原有 API（str 版），调用方不必全改。
+AGENTS_DOCS = str(_AGENTS_DOCS_ROOT)
 
 MEMORY_NAME = "MEMORY.md"
 SOUL_NAME = "SOUL.md"

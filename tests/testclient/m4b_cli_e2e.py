@@ -30,8 +30,25 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from api.server import app  # noqa: E402
 
-USER = "尼古喵喵"
-PWD = "123456"
+# ── 2026-10-13 修（前置清理）：原来直接写死**真实账号**（尼古喵喵 / 灵康科技有限公司）与其口令 ——
+#    违反"e2e 冒烟绝不在真实账号上做写操作"，改为**自建临时账号 + 退出时回收**。
+import atexit as _atexit, time as _time
+USER = os.getenv("PROBE_ACCOUNT") or "t_m4b_%d" % int(_time.time())
+PWD = os.getenv("PROBE_PASSWORD") or "t_pwd_%d" % int(_time.time())
+
+
+@_atexit.register
+def _cleanup_tmp_accounts():
+    try:
+        from tools.schema_personal import get_personal_conn as _pc, purge_account as _purge
+        _c = _pc()
+        for _u in (USER,):
+            _row = _c.execute("SELECT id FROM accounts WHERE username=?", (_u,)).fetchone()
+            if _row:
+                _purge(_row[0]); print("[cleanup] 临时账号 %s 已回收" % _u)
+        _c.close()
+    except Exception as _e:                                          # noqa: BLE001
+        print("[cleanup] 回收失败（可手动清理）: %s" % _e)
 MARK = "m4b_e2e_probe"          # Agent 端到端要建的沙箱目录名
 AUDIT = ROOT / "data" / "audit" / "commands.jsonl"
 
@@ -52,6 +69,7 @@ def main():
     c = TestClient(app)
 
     print("\n== 1. 登录 ==")
+    c.post("/api/register", json={"username": USER, "password": PWD, "role": "personal"})   # 自建临时账号（已存在则忽略）
     r = c.post("/api/login", json={"username": USER, "password": PWD})
     check("POST /api/login 200", r.status_code == 200, r.text[:300])
     if r.status_code != 200:
@@ -70,7 +88,7 @@ def main():
     check("含 ls / cat / grep / echo / pwd / mkdir（Python 内建）",
           all(k in names for k in ("ls", "cat", "grep", "echo", "pwd", "mkdir")), names)
     check("python 已从白名单剔除（沙箱后门）", "python" not in names, names)
-    check("返回沙箱绝对路径且指向 data/sandbox/", "sandbox" in (d.get("sandbox") or "").replace("\\", "/"),
+    check("返回沙箱绝对路径且指向 user_data/sandbox/", "sandbox" in (d.get("sandbox") or "").replace("\\", "/"),
           d.get("sandbox"))
     check("返回用法说明 notes（面板底部展示）", bool(d.get("notes")), d.get("notes"))
     for x in d.get("commands", []):

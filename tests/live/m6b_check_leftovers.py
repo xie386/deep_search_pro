@@ -28,8 +28,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 DB = os.path.join(ROOT, "data", "personal.db")
 PROBE_USER = os.getenv("M5B_USER", "尼古喵喵").strip()
 # v1 时代的残留（8 个自造桩工具那套：临时账号 m5b/m5bp + 桩目录 + 账号目录）
-PATS = ("agents_docs/m5b*", "agents_docs/m5bp*", "data/sandbox/m5b*", "data/sandbox/m5bp*",
-        "output/m5b*", "output/m5bp*", "pic/m5b*", "pic/m5bp*", "data/m5b_probe_bin")
+PATS = ("user_data/agents_docs/m5b*", "user_data/agents_docs/m5bp*", "user_data/data/sandbox/m5b*", "user_data/data/sandbox/m5bp*",
+        "user_data/output/m5b*", "user_data/output/m5bp*", "user_data/pic/m5b*", "user_data/pic/m5bp*", "data/m5b_probe_bin")
 PURGE = "--purge" in sys.argv
 
 

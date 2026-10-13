@@ -8,7 +8,26 @@ os.environ.pop("http_proxy", None); os.environ.pop("https_proxy", None)
 os.environ["NO_PROXY"] = "*"; os.environ["no_proxy"] = "*"
 
 BASE = "http://127.0.0.1:8123"
-USER, PWD, ROLE = "m2tester", "m2pass123", "company"
+import os
+# ── 2026-10-13 修（前置清理）：不再使用已删除的共享测试号 m2tester，改为自建临时账号 + 退出回收
+import atexit as _atexit, time as _time
+USER = os.getenv("PROBE_ACCOUNT") or "t_m3smoke_%d" % int(_time.time())
+PWD = os.getenv("PROBE_PASSWORD") or "t_pwd_%d" % int(_time.time())
+ROLE = "company"
+
+
+@_atexit.register
+def _cleanup_tmp_account():
+    try:
+        import sys as _s; _s.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        from tools.schema_personal import get_personal_conn as _pc, purge_account as _purge
+        _c = _pc()
+        _row = _c.execute("SELECT id FROM accounts WHERE username=?", (USER,)).fetchone()
+        _c.close()
+        if _row:
+            _purge(_row[0]); print("[cleanup] 临时账号 %s 已回收" % USER)
+    except Exception as _e:                                          # noqa: BLE001
+        print("[cleanup] 回收失败（可手动清理 %s）: %s" % (USER, _e))
 
 
 def http(method, path, data=None, raw=False):

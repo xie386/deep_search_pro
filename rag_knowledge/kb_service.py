@@ -32,7 +32,8 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 KB_ROOT = PROJECT_ROOT / "rag_knowledge"
-DB_ROOT = KB_ROOT / "db"          # rag_knowledge/db/{username}/chroma（批注 2）
+# ★ 2026-10-13（议题一）：向量库归口 user_data/rag_knowledge/db/{username}/（用户拍板保持旧层级）
+from utils.paths import RAG_DB as DB_ROOT                                        # noqa: E402
 EMBEDDING_MODEL_PATH = os.getenv("EMBEDDING_MODEL_PATH") or r"D:\LLM\model\bge-large-zh"
 RERANKER_MODEL_PATH = os.getenv("RERANKER_MODEL_PATH") or r"D:\LLM\model\bge-reranker-base"
 DEVICE = os.getenv("EMBEDDING_DEVICE") or "cuda"   # 批注 9：一律 GPU

@@ -37,7 +37,8 @@ def test_paths_all_derive_from_one_root():
     assert paths.user_dir(u) == os.path.join(paths.AGENTS_DOCS, u)
     assert paths.memory_path(u) == os.path.join(paths.user_dir(u), "MEMORY.md")
     assert paths.soul_path(u).endswith("SOUL.md") and paths.skills_dir(u).endswith("skills")
-    assert paths.AGENTS_DOCS == os.path.join(ROOT, "agents_docs"), "根目录必须是 项目根/agents_docs"
+    assert paths.AGENTS_DOCS == os.path.join(ROOT, "user_data", "agents_docs"), \
+        "根目录必须是 项目根/user_data/agents_docs（2026-10-13 议题一归口）"
 
 
 def test_customize_delegates_to_the_single_source():

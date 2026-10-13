@@ -25,7 +25,9 @@ _EXIT_WORDS = {":q", ":quit", "exit", "quit", ":exit"}
 
 
 def _skills_dir(username: str):
-    return ss.PROJECT_ROOT / "agents_docs" / username / "skills"
+    # ★ 2026-10-13（议题一）：路径归口 `utils/paths.py`
+    from utils.paths import skills_dir
+    return skills_dir(username)
 
 
 def _list_skills(username: str) -> list[str]:

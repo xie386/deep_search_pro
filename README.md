@@ -45,9 +45,10 @@
 | 工具能力路由（M5a/M5b） | 让 Agent 在**你说人话时想起对的工具**：`user_clis.abilities` 用用户语言写能力描述（关键词 + 「说法→命令路径」映射，需 ID 的命令写两步链）→ 注入「能力路由卡 + few-shot 映射示例」（M5a）；工具变多后按**提问相关性**选工具（bge 稠密 + 关键词词法 → RRF 融合 → 相对置信判定 → 完整卡/紧凑行/仅名称分层注入，**不确定就回退全量、工具永不隐身**）（M5b） |
 | 可观测性 | `ToolMonitor` 单例在每次工具调用时上报进度，支持控制台 / WebSocket 双通道 |
 | 思考过程可视化 | 自定义 `ReasoningChatOpenAI`（继承 ChatOpenAI）透传模型 `reasoning_content`，回答后推前端右栏折叠区（langchain 丢弃非标准字段，官方建议 provider 子类） |
-| 背景图持久化 | `pic/{username}/` 目录存储 + 上传/列表/删除 API + 前端图库网格选择 + 透明度调节（按账号隔离，刷新不丢） |
+| 背景图持久化 | `user_data/pic/{username}/` 目录存储 + 上传/列表/删除 API + 前端图库网格选择 + 透明度调节（按账号隔离，刷新不丢） |
 | 定制助手·模型选型 | `llm_providers` 表（按账号）存模型名/base_url/api_key，前端可选启用；启用后该账号对话走自定义模型，默认 .env 免费模型 |
-| 定制助手·助手人格 | `agents_docs/{username}/SOUL.md` 按账号存储人格，注入 system_prompt（对话+周报措辞均体现）；`soul_writer` 独立段 AI 生成人格（如「活泼女仆」「稳重管家」）一键导入 |
+| 定制助手·助手人格 | `user_data/agents_docs/{username}/SOUL.md` 按账号存储人格，注入 system_prompt（对话+周报措辞均体现）；`soul_writer` 独立段 AI 生成人格（如「活泼女仆」「稳重管家」）一键导入 |
+| ⚙️ 设置（账号安全 + 开关表单） | 第 8 个页签：① **绑定邮箱 + 一键注销账号**（密码 + 绑定邮箱验证码 + 确认词「注销账号」三重校验；执行前先快照到 `docs/v4.0/backups/account_delete_<账号>_<时间戳>/`，再整体清除库行与账号目录）；② **开关/参数表单**（9 开关 + 8 决策参数 + 邮件组 4 项：发件人显示名 / 邮件调试开关 / 每账号与全机的发信配额；保存即生效）。**发件箱只放 `.env`**（`QQMAIL` 发件邮箱 + `QQMSTP` 授权码），不进界面、不回显；收件邮箱是各账号自己绑的那个；③ 账号级用户数据统一归口 `user_data/`，路径由 `utils/paths.py` 单一提供 |
 | 周报时效性保障 | 代码层按 `published_date` 严格剔除超窗旧闻（strict_days）+ 查询词泛用化（去修饰词）+ 中英双语检索合并（bilingual）+ 订阅级检索语言可选（zh/en/both） |
 | 语音朗读与自定义音色 | 联动 `voice_test` 小项目（Qwen3-TTS 音色克隆）：定制页上传参考音频+台词克隆音色包（pkl，按账号隔离），AI 回复框「🔊 朗读」合成语音播放；模型仅在用户使用时临时启动（subprocess 跑脚本），用完即释放显存（RTX 3050 4GB 约束） |
 | Web 服务与实时监控 | FastAPI + WebSocket：登录鉴权（**登录卡 / 注册卡分离**，登录失败绝不自动建号）、账号角色分流（公司/个人双工作台），右栏实时滚动工具调用进度（M2 已装配） |
@@ -103,22 +104,24 @@ deep_search_pro/
 ├── docs/ # 里程碑文档：v1.0 / v2.0 / v2.5 / v3.0 + sql/ + 本规则文件
 │ └── <版本>/backups/ # 按版本存放的备份
 │
-├── data/ # 运行时数据（不入库）：personal.db / sandbox / audit / 各类缓存
-├── output/{账号}/ # ★ agent 的产物：周报 md/pdf、导出、tts/ 语音（不入库）
-├── pic/{账号}/ # 用户上传的背景图（不入库）
-└── agents_docs/{账号}/ # 用户级智能体资料：SOUL.md / MEMORY.md / 人格库 / 技能（不入库）
+├── user_data/ # ★ 账号级用户数据唯一归口（2026-10-13 起，不入库）：agents_docs / output / pic / rag_knowledge/db / sandbox / probe_sets / tts_ref
+│ ├── agents_docs/{账号}/ # 用户级智能体资料：SOUL.md / MEMORY.md / 人格库 / 技能
+│ ├── output/{账号}/ # agent 产物：周报 md/pdf、导出、测评打分表、tts/ 语音
+│ ├── pic/{账号}/ # 用户上传的背景图 + chat_images/
+│ └── rag_knowledge/db · sandbox · probe_sets · tts_ref # 知识库向量 / 命令沙箱 / 题集 / 音色参考（路径由 utils/paths.py 统一提供）
+├── data/ # 运行时数据（不入库）：personal.db（用户指定暂留）/ audit / 各类缓存
 ```
 
 **三条最容易被忽略的规矩**：
 1. **前端一切文件都在 `front/`**，不放别处；
 2. **`tools/` 是"挂给 agent 的内置工具"，`utils/` 是"给开发者用的小工具"**——别混；
-3. **测试账号产出的数据按正常账号规则对待**（在 `output/{账号}/`）；只有**针对整个系统测试运行**的产物才进 `tests/test_out/`。
+3. **测试账号产出的数据按正常账号规则对待**（在 `user_data/output/{账号}/`）；只有**针对整个系统测试运行**的产物才进 `tests/test_out/`。
 
 ### v3.0 / v3.1 新增模块的阅读路径（M1 ~ M6c · M6b）
 
 > 上面那张表是 v1.0/v2.0 的骨架；v3.0 是在同一套骨架上**填槽位**，v3.1 补的是**度量**（怎么证明「没改坏」），
 >
-> 🗺 **先看一张图（读代码前建立全局坐标）**：[`docs/v3.1/agent工作与工具调用体系设计图.html`](docs/v3.1/agent工作与工具调用体系设计图.html)（交互查看器：明暗切换 / 缩放 / 搜索 / 关系追踪 / **点击节点看技术栈** / 4 章导览 / 演示 / 导出）—— 主 Agent 的**调用依据**（能力池与路由 → 系统提示词装配 → `messages[0]` 注入）、三族工具（内置 @tool / 4 个子 Agent / 自配 CLI·API·MCP）如何**纳入**与**联动**、以及执行侧护栏，全在一张图里。
+> 🗺 **先看一张图（读代码前建立全局坐标）**：[`docs/agent工作与工具调用体系设计图.html`](docs/agent工作与工具调用体系设计图.html)（交互查看器：明暗切换 / 缩放 / 搜索 / 关系追踪 / **点击节点看技术栈** / 3 章导览 / 演示 / 导出）—— 主 Agent 的**调用依据**（能力池与路由 → **决策模型精排**（大点 02）→ 系统提示词装配 → `messages[0]` 注入）、三族工具（内置 @tool / 4 个子 Agent / 自配 CLI·API·MCP）如何**纳入**与**联动**、以及执行侧护栏，全在一张图里。
 > 所以按下面这八步接着读即可。每步都留了思考题——它们就是面试里最容易被追问的点。
 
 | 顺序 | 文件 | 看什么 / 思考题 |
@@ -191,7 +194,11 @@ deep_search_pro/
 | 3️⃣8️⃣ | `tools/openapi_import.py` + `tools/_runtime/api_driver.py` + `tools/capability_invoke.py` + `api/tools_sources.py` + `front/tutorial/api_tools_tutorial.md` | **M1 · API 工具接入**（两个「配置导向」来源适配器之一，v3.0）：建议按「怎么接进来 → 怎么发出去 → 怎么管住」的顺序读 —— ① `openapi_import.py`：把**用户粘贴的 OpenAPI 文档**变成候选能力（`$ref` 递归内联、`operationId` 兜底命名、路径固定 query 拆成 `static_query`、写方法标记）；② `_runtime/api_driver.py`：真发请求（bindings 四位置分发 path/query/header/body + 鉴权注入 + 超时/1MB 真截断 + SSRF 三项口径 + 直连→代理两臂兜底）；③ `capability_invoke.py`：**Agent 侧唯一的执行网关**（工具名就叫 `invoke_tool`），五道闸依次是「能力存在 → 已人工确认 → 已启用 → 参数合 schema → 只读放行」；④ `api/tools_sources.py`：配置面（来源 CRUD / 体检 / 发现候选 / 人工确认）；⑤ 前端 `front/index.html` 的「🔗 API 工具」页 + 自带教程 `front/tutorial/api_tools_tutorial.md`（含 4 张示意图）。思考：① 为什么「未确认」必须挡在**入池**这一层，而不是只在界面上不显示该工具？② 为什么「是不是写操作」必须由**服务端**从 `invoke_spec` 推导，而不能信前端传来的 `read_only`？③ 卡片上那句「调用示例」看着只是省事，它实际省掉的是模型哪一步推理？④ 为什么供应商文档里标「可选」的参数**不一定能省**（Steam `cc`/`l` 的教训），以及为什么修法是「把它固化进能力定义」而不是「在提示词里提醒模型别忘了填」？ |
 | 3️⃣9️⃣ | `tools/_runtime/mcp_driver.py` + `tools/mcp_probe.py` + `tools/capability_pool.py`(mcp 分支) + `api/tools_sources.py`(mcp 分支) | **M2 · MCP 工具接入**（另一个来源适配器，v3.0；**与 M1 共用同一套候选/确认/入池/审计/放行链路**）：① `mcp_driver.py`：三种连接（`stdio` 起子进程 / `http` 端点 / `inproc` 仅测试）+ **惰性导入 SDK** + `async→sync` 桥接 + 命令白名单 + 超时与结果上限；② `mcp_probe.py`：**七步体检**（配置解析 → 环境检测 → 协议握手 → `tools/list` → **异常容错** → 性能 → 汇总），一次连接分阶段计时，顺带把工具表交给「发现」复用；③ `capability_pool.py`：`mcp_entry` 与 `api_entry` 抽自同一个 `_entry_from_row`（同池共存、同样进路由注入）；④ 前端「🔌 MCP 工具」页（与 CLI/API 同一范式：常态只读卡 + 弹窗表单/发现结果）。思考：① 为什么 `import mcp` 绝不能写在模块顶层？（实测 5s，且 `tests/live/test_mcp_driver.py` 有两条不变量用例专门钉住它）② MCP 的 `annotations.readOnlyHint` 规范原文说它是什么？为什么它只能用来「预勾选」，不能当安全保证（那"未声明"该按只读还是按写处理）？③ 体检第 ⑤ 步为什么要**故意调一个不存在的工具**？④ 为什么 `stdio` 来源需要命令白名单，而 `http` 来源不需要（两者的风险面差在哪）？⑤ 两种来源的 ref 形状为什么不一样（`api:<短名>#<操作>` vs `mcp:<短名>/<工具>`），这对 SQL 里的 `LIKE` 查询意味着什么？ |
 | 4️⃣0️⃣ | `tools/memory_profile.py` + `tools/profile_update.py` + `tools/profile_evidence.py` + `tools/memory_snapshots.py` + `api/customize.py`(画像段) + `agent/build_context.py`(记忆注入) + `front/index.html`(🧠 记忆画像) | **M3 · 用户画像沉淀**（v3.0，**改造既有 `MEMORY.md`，不新建文件**）：读这条线建议按「契约 → 写 → 读证据 → 建议 → 落地」的顺序 —— ① `memory_profile.py`：**格式契约**（`- 维度：事实（来源：X · 日期）`、维度白名单、`FIELD_ALIASES`、`memory_meta` 元数据）——解析/渲染/去重/占位判定**只有这一份**，四条写路径都调它；② `profile_update.py`：给 Agent 的结构化写入工具 `update_user_profile`（模型只说「哪个维度、新值、来源」，**读改写/去重/加来源全交给框架**）；③ `profile_evidence.py`：证据收集（7 张表**带 `表名#行id` 引用**、最近 3 篇周报要点、最近 N 条对话）+ **计数水位**与【画像待更新】信号；④ `api/customize.py`：建议器（`/api/memory/suggest`，**只出建议绝不落盘**）→ 勾选应用（`/apply`）/ 一键导入（`/import`）→ `memory_snapshots.py` 改前必留 3 份快照与一键还原；⑤ `agent/build_context.py`：注入**两段预算**（画像 ≤500 字优先保留情报相关维度 / 笔记 ≤300 字按相关度取前 N、最近 3 条无条件保留）；⑥ 前端「🧠 记忆画像」页：建议差异行（＋/～/−）、逐条勾选（**人工行与白名单外新维度默认不勾**）、一键导入确认、历史版本与还原。思考：① 为什么「同一维度只有一行」必须靠**代码的 upsert** 保证，而不是在提示词里叮嘱模型「别重复写」？（R2 根因：原来只能"读全文→整份重写"，成本高又怕覆盖丢内容，模型于是理性地选择追加）② 为什么「建议」与「应用」必须是两个动作，中间还要人工勾选？③ 待更新信号为什么必须是**服务端算好数字**（"新增了 2 条兴趣"）而不是让模型自己判断该不该更新？④ 为什么人工手写的那一行（来源=人工）任何自动路径都不能覆盖？⑤ 老文件里那些「暂无」占位行为什么要清掉 —— 如果留着，注入给模型之后会发生什么？ |
-| 4️⃣1️⃣ | **`docs/v3.1/agent工作与工具调用体系设计图.html`**（单文件交互版，鼠标悬停/点击节点即看该节点的技术栈落点） | **一张图收口整个 Agent 工具体系**（读完全部模块后用它把线索串起来）：左侧「能力池与路由 → 系统提示词装配 → `messages[0]` 注入」＝主 Agent 的**调用依据**；中间虚线框＝**账号内工具面（按账号隔离）**，装着三族工具（内置 `@tool` 开箱即用 / 4 个子 Agent 由主 Agent 用 **task** 调度 / 自配 CLI 与 API·MCP 走**统一执行网关**按 `cli:`·`api:`·`mcp:` ref 分派）＋网关本身（ref 解析 / 参数类型宽容 / 超限载荷整条裁剪并附分页提示）；底部「真实数据源」「审计与度量」与三张浓缩卡（调用依据 / 纳入路径 / 执行护栏）。图由 archify 生成，过 **9 项几何校验（0 交叉 · 0 走廊合并 · 微段 0）**，浏览器实测 4 种视口 × 明暗两套不溢出。**思考题**：① 为什么「内置工具」**不经过**执行网关，而自配工具必须经过？（提示：权限面来源不同——框架内注册 vs 用户配置，后者要面对未声明的写操作与不存在的命令）② 要把一个新 MCP 服务接进来，图里会依次亮起哪几个节点？③ 为什么「能不能跑」和「想不想得起跑」要分两条线治理？ |
+| 4️⃣1️⃣ | **`docs/agent工作与工具调用体系设计图.html`**（单文件交互版，鼠标悬停/点击节点即看该节点的技术栈落点） | **一张图收口整个 Agent 工具体系**（读完全部模块后用它把线索串起来）：左侧「能力池与路由 → **决策模型精排** → 系统提示词装配 → `messages[0]` 注入」＝主 Agent 的**调用依据**（其中决策模型精排是 v4.0 大点 02 新加的一层：候选近并列时复核顺序，灰区题不参与）；中间虚线框＝**账号内工具面（按账号隔离）**，装着三族工具（内置 `@tool` 开箱即用 / 4 个子 Agent 由主 Agent 用 **task** 调度 / 自配 CLI 与 API·MCP 走**统一执行网关**按 `cli:`·`api:`·`mcp:` ref 分派）＋网关本身（ref 解析 / 参数类型宽容 / 超限载荷整条裁剪并附分页提示）；底部「真实数据源」「审计与度量」与四张浓缩卡（决策模型精排 / 子 Agent 职责 / 执行护栏 / 自配来源进池）。图由 archify 生成，过 **9 项几何校验（0 交叉 · 0 走廊合并 · 微段 0）**，浏览器实测 4 种视口 × 明暗两套不溢出（1440×900 起）。**思考题**：① 为什么「内置工具」**不经过**执行网关，而自配工具必须经过？（提示：权限面来源不同——框架内注册 vs 用户配置，后者要面对未声明的写操作与不存在的命令）② 要把一个新 MCP 服务接进来，图里会依次亮起哪几个节点？③ 为什么「能不能跑」和「想不想得起跑」要分两条线治理？④ 大点 02 的决策模型层为什么**只改顺序、不改候选集**，而且**灰区题不参与**？（提示：灰区题本来就回退全量简报、所有工具都已给模型，精排没有增量；而按账号裁剪注入面会让 Agent 在长链路问题里看不到完整工具池） |
+
+| 4️⃣3️⃣ | `api/account_sec.py` · `utils/mailer.py` · `front/index.html`（⚙️ 设置 → 🔐 账号安全 / 🗑 注销账号） | **「一键注销」为什么敢做**：三重校验（密码 + 邮箱验证码 + 确认词）+ **先快照再清除** + 复用 `purge_account`（库行 / 文件侧 / 会话一次清干净），旧 token 立刻失效。**思考题**：为什么不可逆操作的防线要放在**服务端**，而不是前端多弹一个确认框就够？验证码只存哈希、60 秒重发限制、5 次试错上限各防的是什么。另外，**邮件通道（2026-10-13 裁定 5）**：项目级单发件箱只放 `.env`（`QQMAIL` + `QQMSTP`），收件方是账号级；24 小时发信配额 + 报错归一化（且绝不回显授权码） |
+| 4️⃣4️⃣ | `utils/settings.py` · `api/settings_api.py` · `tools/decision_router.py`（`_env` 一处收口） · `utils/paths.py` · `scripts/migrate_user_data.py` | **「配置放哪」这条线怎么收**：开关/参数落库 `app_settings`（保存即生效）· **密钥一律只在 `.env`**（2026-10-13 起：界面不展示、不回显，原先的「密钥（只读）」掩码展示组已整组撤下）· 路径全问 `utils/paths.py`（7 个账号级根的唯一事实源）。三者的分界线是「谁能改、改完谁生效、错了会不会外泄」。**思考题**：同一个开关放 `.env` 与放库，在「多账号 / 免重启 / 可审计」上各差在哪？为什么密钥即使能进库也必须留在 `.env`？ |
+| 4️⃣5️⃣ | `front/index.html`（⚙️ 设置页样式块）+ `tests/unit/test_mailer_config.py` + `tests/test_out/_preview_settings.py` | **配置页怎么做到「一眼看得清」**：条目化描边盒 + 黑标贴纸标题 + 像素开关（018）+ 滑动单选（020）+ 危险区深红收纳到底部；含两条硬教训——**样式块写在应用根节点里会被挂载时连根替换掉**（要放 `<head>`，验法是 `getComputedStyle('.set-item').borderTopWidth` 非 `0px`）、**后端不能重启时用打桩接口渲染真实页面截图**。**思考题**：为什么「注销」按钮的位置本身也是安全设计的一部分？ |
 
 ## 五、阅读指南（CLI）（建议顺序）
 
@@ -377,7 +384,7 @@ front/desktop/desktop.exe # 有自己的图标、且不弹控制台黑窗
  - **记忆白盒化**：账号级 `MEMORY.md`（注册自动生成 + Agent 对话中自行读写维护 + 前端可视化编辑 + 一次性 AI 初始化画像 + digest 画像驱动情报权重 + 回复末尾画像变更提示）；
  - **批量导入**：竞品/收藏剪贴板粘贴（一行一个，去空去重 ≤50 条）；
  - **语音朗读与自定义音色**：联动 voice_test（Qwen3-TTS）——定制页上传参考音频+台词克隆音色 pkl（按账号前缀隔离），AI 回复框「🔊 朗读」合成播放；模型用时启、用完关（显存约束），subprocess 环境隔离；
- - **背景图持久化**：`pic/{username}/` 目录 + 上传/列表/删除 API + 前端图库选择与透明度调节；
+- **背景图持久化**：`user_data/pic/{username}/` 目录 + 上传/列表/删除 API + 前端图库选择与透明度调节；
 
  - ✅ **周报时效性修复**：查询词泛用化（弃用修饰词拼接）+ `strict_days` 代码层按 published_date 剔旧闻 + `bilingual` 中英双语检索合并 + 订阅级检索语言可选。
  - ✅ **v3.0（M1~M6c）→ v3.1（M6b 度量收尾）**：API/MCP 适配器与混合来源能力池（`CapabilityEntry` 契约 + 配置导向的来源管理）· 用户画像沉淀（白盒 `MEMORY.md` + 证据溯源 + 快照还原）· 用量计数与成本表（只统计 token + 可选单价）· 价格监控 · **测试基线体系**（离线路由基准一键复跑、零额度 + 探针制度 v3：43 条真实工具题集、只记录序列、人工打分 + 主基线 `tests/fixtures/m5b_probe_baseline.json`）均已落地并实测。**v3.0 未完的 M6b 已在 v3.1 做完**；进度表与用户裁决见 `docs/v3.0/README.md` 与 `docs/v3.1/`。**下一件事已立项并已落地主体**：`docs/v3.1/路由质量修复任务书.md`（7 个「选错工具」用例；已批注，工具侧 6 项 + 素材层入库完成，剩一轮 live △ 复跑）。
@@ -387,7 +394,7 @@ front/desktop/desktop.exe # 有自己的图标、且不弹控制台黑窗
 - ✅ **v2.0 M2 请求装配管线化（已落地）**：agent 静态化（缓存只按自定义模型配置，改人格/记忆零重建）+ SOUL/MEMORY 每次 invoke 前经 `build_request_context` 拼成 SystemMessage 注入（Spike 验证 deepagents 支持动态覆盖）+ 消除「定制助手 × 全局 AGENT」双逻辑——规划与验证见 `docs/v2.0/M2请求装配管线化.md`；
 - ✅ **v2.0 M3 RAG 知识库（已落地）**：自建 Chroma（弃 RAGFlow）每用户一库（`rag_knowledge/db/{user}/`，默认无库首建）+ 导出报告弹窗确认入库/上传 .md + **入库前评估（evaluator 独立小 agent）+ 清洗（cleaner 去 emoji/口吻/表格）** + BM25+向量 RRF 检索（对话 query_kb 快模式 ~0.1s / 周报全模式 rerank）+ **消息级防重复入库**（messages 表 `kb_ingested` 标志 + 强制再入）+ 📚 来源激活——规划与验证见 `docs/v2.0/M3RAG知识库搭建与使用.md`；2026-09-08 修复：弹窗亮色文字 + teleport 到 body（任何 view 可弹）+ 防重复入库落地 |
 - ✅ **v2.0 M4a 技能（已落地）**：用户自定义 SKILL.md 任务说明书（`agents_docs/{user}/skills/`）——输入框 `/` 唤出技能目录（筛选 / ↑↓ 回绕 / Enter 选中 / Esc 关闭，单轮最多叠加 5 个）→ `POST /api/chat?skills=a,b` → server 层读正文经 `build_request_context` 拼成 **user message 前缀**注入（本轮一次性；**落库仍是原始提问**，故下一轮自然不带技能）+ 技能与工具视图（技能 / CLI 面板 / 第三方 CLI / MCP / API 多 Tab，CLI 视觉取自 uiverse 011 终端窗口卡）——规划与验证见 `docs/v2.0/M4技能与工具.md`；
-- ✅ **v2.0 M4b CLI 沙箱面板（已落地）**：白名单命令执行器（`tools/_runtime/shell_runtime.py` 能力层 + `tools/shell_executor.py` 工具层）——**六道闸**（白名单 / 参数级路径校验 / 沙箱 cwd / 超时 / 输出 1MB 上限 / 审计日志）+ **CLI 面板与 Agent 共用同一执行器**；面板是「技能与工具」页的「🖥️ CLI 面板」tab（`#/shell` 直达，视觉取自 uiverse 011 终端窗口卡），沙箱按账号隔离 `data/sandbox/{username}/`；口径为**只读**（看文件 / 抓网页回显 / 建目录，不写文件）；端到端 51/51（含真机 Agent 调 `run_shell_command` 建目录）——见 `docs/v2.0/M4技能与工具.md` 附录 A.9；
+- ✅ **v2.0 M4b CLI 沙箱面板（已落地）**：白名单命令执行器（`tools/_runtime/shell_runtime.py` 能力层 + `tools/shell_executor.py` 工具层）——**六道闸**（白名单 / 参数级路径校验 / 沙箱 cwd / 超时 / 输出 1MB 上限 / 审计日志）+ **CLI 面板与 Agent 共用同一执行器**；面板是「技能与工具」页的「🖥️ CLI 面板」tab（`#/shell` 直达，视觉取自 uiverse 011 终端窗口卡），沙箱按账号隔离 `user_data/sandbox/{username}/`；口径为**只读**（看文件 / 抓网页回显 / 建目录，不写文件）；端到端 51/51（含真机 Agent 调 `run_shell_command` 建目录）——见 `docs/v2.0/M4技能与工具.md` 附录 A.9；
 - ✅ **v2.0 M4c 自定义 CLI 接入（已落地，配置导向）**：`tools/cli_registry.py` —— **不预设厂商**，字段由用户填：名称 / 可执行名 / 安装命令 / 认证命令 / 文档链接 / **只读命令清单**（与「模型配置填 base_url+model+key」同构）；内置 4 家（飞书/企微/钉钉/Google）降级为 `templates` 预填示例（点一下只填表单，不进白名单）；配置落 SQLite `user_clis`（按 account_id 隔离，UNIQUE(account_id,bin)）；API：`GET /api/cli/list` + `POST /api/cli/save|status|delete`；**与 Agent 的关系走折中方案 C**：登记后只把用户填的只读命令放进 `run_shell_command` 动态白名单，写操作与落盘参数一律拒绝，清单留空＝不放行；安全边界：可执行名只允许纯名字（含路径即拒）、清单含 shell 元字符即拒、fail closed；前端「🧩 自定义 CLI」页（我的 CLI 列表 + 空白新建表单 + 模板预填 + 编辑/删除 + 逐条试跑）；**CLI 简报注入 Agent 上下文**（`agent_brief` → 动态 SystemMessage，消除「配好了却说没有」的幻觉）+ 主提示词命令行纪律；端到端 105+/105+（含真机 Agent：先问它有哪些 CLI、再让它真跑一条）+ 前端逻辑 50/50 —— 见 `docs/v2.0/M4技能与工具.md` 附录 B.11；
 - ✅ **v2.0 CLI 版 dspro（已落地）**：`dspro login / logout / whoami / list [-db|-digest] [--json] / digest [领域名|#id] [--list] [-o] [--json] / chat [问题] [--new|--session|--sessions] [--skill]`；**独立进程运行**（不需 uvicorn），与 web **同库同引擎**（`run_digest` / `_run_agent` / `conversations` 表）；登录态 `data/dspro_session.json`（密码指纹，不存明文）；终端表格按东亚宽度对齐、零新依赖；端到端 31 项（`SKIP_LLM=1`）+ 真跑 digest/chat —— 见 `docs/v2.0/CLI命令行工具dspro.md`；
 - ✅ **v2.0 M4 收尾·时钟 + 天气卡（已落地）**：工作台欢迎语右侧「收起=药丸（图标+温度+城市+**秒级时钟**）/ 悬浮或点击=展开成 012 号渐变天气卡（渐变+探出云+大号读数+体感·湿度·风速·降水概率+**3 天预报**+数据源）」；后端 `GET /api/weather` 走 **Open-Meteo（免 Key）**，城市级地理编码 + **三层缓存（坐标永久 / 天气 10 分钟 / 磁盘 + 启动预热）** + 代理降级 + stale 兜底；换城市走卡片内联输入并记 `localStorage`；**配色默认松绿对齐项目主色系**（012 原片段是紫罗兰，色值全抽成 CSS 变量、4 套可选、右下角圆点切换）；端到端 40/40 + 前端 31/31 —— 见 `docs/v2.0/M4技能与工具.md` 附录 D；

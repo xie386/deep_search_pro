@@ -19,7 +19,9 @@ import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROMPTS = os.path.join(ROOT, "prompt", "prompts.yml")
-SET_DIR = os.path.join(ROOT, "data", "probe_sets")          # 生成的题集（产品数据，见裁定 13）
+# ★ 2026-10-13（议题一）：题集落盘归口 user_data/probe_sets/
+from utils.paths import PROBE_SETS_DIR as _PROBE_SETS_DIR                        # noqa: E402
+SET_DIR = str(_PROBE_SETS_DIR)                              # 生成的题集（产品数据，见裁定 13）
 
 SECTIONS = ("probe_writer", "probe_judge", "probe_advisor")
 
@@ -920,7 +922,7 @@ def gen_cases(account_id: int, username: str, *, prev_questions=None, model=None
 
 
 def save_cases(username: str, doc: dict) -> str:
-    """把题集存成 `data/probe_sets/<用户名>.json`（产品数据，**不写进仓库** ✓ 裁定 13）。"""
+    """把题集存成 `user_data/probe_sets/<用户名>.json`（产品数据，**不写进仓库** ✓ 裁定 13；2026-10-13 归口）。"""
     os.makedirs(SET_DIR, exist_ok=True)
     path = os.path.join(SET_DIR, "%s.json" % username)
     with open(path, "w", encoding="utf-8", newline="\n") as f:

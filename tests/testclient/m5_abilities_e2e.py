@@ -81,7 +81,7 @@ def _drop_account(username: str) -> bool:
     finally:
         conn.close()
     purge_account(aid)
-    shutil.rmtree(os.path.join(ROOT, "agents_docs", username), ignore_errors=True)
+    shutil.rmtree(os.path.join(ROOT, "user_data", "agents_docs", username), ignore_errors=True)
     return True
 
 

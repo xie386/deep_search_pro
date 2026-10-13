@@ -19,9 +19,27 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from tools.schema_personal import ensure_tables, get_personal_conn   # noqa: E402
+from tools.schema_personal import ensure_tables, get_personal_conn, purge_account   # noqa: E402
 
 ensure_tables()
+
+# ── 2026-10-13 修（前置清理）：本用例直连真实库建临时账号，必须退出时统一回收。
+#    此前只建不删 —— 79 次单测累积出 237 个 `v3v*` 账号 + 474 行 llm_providers。
+import atexit as _atexit                                          # noqa: E402
+
+_CREATED_ACCOUNTS: list = []
+
+
+def _purge_created_accounts():
+    for _aid in _CREATED_ACCOUNTS:
+        try:
+            purge_account(_aid)
+        except Exception as _e:                                   # noqa: BLE001
+            print("[cleanup] 回收失败 id=%s: %s" % (_aid, _e))
+
+
+_atexit.register(_purge_created_accounts)
+
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
@@ -34,6 +52,7 @@ def mk_account(tag="v"):
         conn.commit()
     finally:
         conn.close()
+    _CREATED_ACCOUNTS.append(aid)
     return aid
 
 

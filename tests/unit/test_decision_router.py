@@ -21,6 +21,22 @@ if str(ROOT) not in sys.path:
 from tools import decision_router as dr  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _hide_db_settings(monkeypatch):
+    """把「应用设置库(app_settings)」对本模块隐藏。
+
+    ★ 2026-10-13：本模块声明「不碰库」，但设置项的取值顺序是 **库 → .env → 默认** ——
+      真机库里一旦有用户在设置页保存过的 `DECISION_*` 值（点一次保存就会整表落库），
+      这些用环境变量验钳位 / 触发 / 预算 / 缓存的用例就会全线假失败（实测 9 项）。
+      隐藏库值后本模块只验语义，与用户真实数据无关。
+    """
+    from utils import settings as _s
+    monkeypatch.setattr(_s, "_load_all", lambda: {})
+    _s.reload()
+    yield
+    _s.reload()
+
+
 class FakeEntry:
     def __init__(self, source, ref, name, keywords, abilities, abilities_user=""):
         self.source, self.ref, self.name = source, ref, name

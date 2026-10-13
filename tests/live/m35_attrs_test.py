@@ -22,7 +22,30 @@ def http(method, path, data=None):
         except Exception: return e.code, {}
 
 
-st, login = http("POST", "/api/login", {"username": "m2tester", "password": "m2pass123"})
+# ── 2026-10-13 修（前置清理）：不再使用已删除的共享测试号 m2tester，
+#    改为**自建临时账号 + 退出时自动回收**（照 tests/live/asr_endpoint_probe.py 的做法）。
+import atexit as _atexit, sys as _sys, time as _time
+_sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from tools.schema_personal import get_personal_conn as _pc, purge_account as _purge
+
+USER = os.getenv("PROBE_ACCOUNT") or "t_m35_%d" % int(_time.time())
+PWD = os.getenv("PROBE_PASSWORD") or "t_pwd_%d" % int(_time.time())
+
+
+def _cleanup():
+    try:
+        _c = _pc()
+        _row = _c.execute("SELECT id FROM accounts WHERE username=?", (USER,)).fetchone()
+        _c.close()
+        if _row:
+            _purge(_row[0]); print("[cleanup] 临时账号 %s 已回收" % USER)
+    except Exception as _e:                                          # noqa: BLE001
+        print("[cleanup] 回收失败（可手动清理 %s）: %s" % (USER, _e))
+
+
+_atexit.register(_cleanup)
+http("POST", "/api/register", {"username": USER, "password": PWD, "role": "company"})
+st, login = http("POST", "/api/login", {"username": USER, "password": PWD})
 token = login["token"]
 print("[1] 登录:", st)
 

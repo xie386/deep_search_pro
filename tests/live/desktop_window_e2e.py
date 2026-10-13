@@ -133,7 +133,7 @@ def pick_probe_report(username):
 
     返回 (文件名, 内容, 是否临时创建)。
     """
-    d = ROOT / "output" / username
+    d = ROOT / "user_data" / "output" / username
     try:
         if d.is_dir():
             cands = sorted((p for p in d.glob("*.md") if p.is_file()),
@@ -167,7 +167,7 @@ def main():
     if not probe_name:
         print("找不到可下载的周报，终止")
         return 1
-    probe_file = ROOT / "output" / TEST_USER / probe_name
+    probe_file = ROOT / "user_data" / "output" / TEST_USER / probe_name
     save_dir = Path(tempfile.mkdtemp(prefix="zx_dl_"))
     # ★ 测试专用的 WebView 数据目录：绝不能用用户真实桌面版那个，
     #   否则 --selftest-wipe 会把用户自己「记住登录」的状态清掉（还会被残留 token 干扰测试）。

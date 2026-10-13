@@ -177,6 +177,9 @@ class ToolMonitor:
         """报告工具开始执行（★ 同时落**耐久**日志，见 `TOOL_CALL_LOG` 的说明）"""
         self._emit("tool_start", f"开始执行工具: {tool_name}", {"tool_name": tool_name, "args": args})
         try:                                              # 落盘失败绝不影响对话 ✓
+            from utils import settings as _settings       # ★ 议题三：开关可由设置页改
+            if not _settings.get_bool("TOOL_CALL_LOG_ENABLED", True):
+                return
             tid = self._current_tid()
             if tid:
                 os.makedirs(os.path.dirname(TOOL_CALL_LOG), exist_ok=True)

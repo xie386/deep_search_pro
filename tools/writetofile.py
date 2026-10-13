@@ -13,8 +13,11 @@ from api.monitor import monitor
 # ======================== 路径约束 ========================
 # 与 readtofile 保持一致：只能编辑 agents_docs 目录下的 .md / .txt 文件。
 _AGENTS_DOCS_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), '..', 'agents_docs')
+    os.path.join(os.path.dirname(__file__), '..', 'user_data', 'agents_docs')   # 已失效的兜底
 )
+# ★ 2026-10-13（议题一）：越权校验根改由 `utils/paths.py` 提供（用户数据归口 user_data/）
+from utils.paths import AGENTS_DOCS as _AGENTS_DOCS_PATH    # noqa: E402
+_AGENTS_DOCS_DIR = str(_AGENTS_DOCS_PATH)
 _ALLOWED_EXT = ('.md', '.txt')
 
 

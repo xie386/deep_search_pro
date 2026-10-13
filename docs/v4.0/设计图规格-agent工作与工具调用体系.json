@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Agent 工作与工具调用体系设计图",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": "agent工作与工具调用体系设计图.html",
+    "viewBox": [1100, 470],
+    "views": [
+      {
+        "id": "main-path",
+        "label": "主链路：提问到取数",
+        "focus": ["user", "prompts", "main", "gateway", "cli", "apimcp", "external"],
+        "note": "用户提问经提示词装配进入主 Agent，主 Agent 选定工具后由统一网关分派、取数落地。"
+      },
+      {
+        "id": "decision-layer",
+        "label": "决策模型精排（大点 02）",
+        "focus": ["pool", "decision", "prompts"],
+        "note": "能力池路由给出候选，近并列时请决策模型复核一次顺序，再进提示词注入；灰区题不精排。"
+      },
+      {
+        "id": "governance",
+        "label": "护栏与审计",
+        "focus": ["gateway", "audit", "builtin"],
+        "note": "只读闸与审计两套并行；内置工具不经网关、地址按账号隔离。"
+      }
+    ]
+  },
+  "components": [
+    { "id": "accountdata", "type": "database", "label": "账号内数据", "sublabel": "画像 · 助手笔记 · 对话 · 知识库", "pos": [30, 60], "size": [168, 56], "tag": "作用地址按账号隔离" },
+    { "id": "pool", "type": "messagebus", "label": "能力池与路由", "sublabel": "capability_pool → tool_router", "pos": [250, 30], "size": [168, 56], "tag": "每账号一份" },
+    { "id": "builtin", "type": "messagebus", "label": "内置工具（6 类）", "sublabel": "文档读写 · 知识库 · 画像", "pos": [500, 30], "size": [145, 56], "tag": "不经网关 · 地址按账号隔离" },
+    { "id": "cli", "type": "messagebus", "label": "自配 CLI", "sublabel": "cli_registry · 只读清单", "pos": [880, 50], "size": [150, 56], "tag": "每账号不同" },
+
+    { "id": "user", "type": "external", "label": "用户提问", "sublabel": "自然语言 · 人话", "pos": [30, 235], "size": [168, 56] },
+    { "id": "prompts", "type": "backend", "label": "系统提示词装配", "sublabel": "prompts.yml + build_context", "pos": [250, 235], "size": [168, 56], "tag": "messages[0]" },
+    { "id": "main", "type": "backend", "label": "主 Agent", "sublabel": "deepagents 主图 · 选工具", "pos": [500, 235], "size": [145, 56] },
+    { "id": "gateway", "type": "security", "label": "统一执行网关", "sublabel": "capability_invoke", "pos": [710, 235], "size": [145, 56], "tag": "ref 解析 → 类型宽容 → 裁剪" },
+    { "id": "apimcp", "type": "messagebus", "label": "API / MCP 工具", "sublabel": "tools_sources · 只读声明", "pos": [880, 170], "size": [150, 56], "tag": "每账号不同" },
+
+    { "id": "decision", "type": "cloud", "label": "决策模型精排", "sublabel": "decision_router.maybe_refine", "pos": [250, 375], "size": [168, 56], "tag": "复核候选顺序 · 近并列才触发 · 缓存 24h" },
+    { "id": "subagents", "type": "backend", "label": "子 Agent（4 个）", "sublabel": "网搜 · 数据库 · 情报 · 周报", "pos": [500, 375], "size": [145, 56], "tag": "task 调用 · 不递归 · 各自计费" },
+    { "id": "audit", "type": "database", "label": "审计与度量", "sublabel": "commands.jsonl · 成本表", "pos": [710, 375], "size": [145, 56], "tag": "含被拒 · 决策另存 decision.jsonl" },
+    { "id": "external", "type": "external", "label": "真实数据源", "sublabel": "第三方 API · MCP · 本机", "pos": [880, 300], "size": [150, 56] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "自配来源（每账号不同）", "wraps": ["cli", "apimcp"] }
+  ],
+  "connections": [
+    { "id": "ask", "from": "user", "to": "prompts", "label": "提问", "variant": "emphasis", "labelAt": [224, 311] },
+    { "id": "memory", "from": "accountdata", "to": "prompts", "label": "画像 · 笔记", "labelAt": [224, 160] },
+    { "id": "recall", "from": "pool", "to": "prompts", "label": "召回", "labelAt": [392, 150] },
+    { "id": "refine", "from": "decision", "to": "prompts", "label": "精排后注入", "labelAt": [392, 330] },
+    { "id": "inject", "from": "prompts", "to": "main", "label": "注入提示词", "labelAt": [457, 306] },
+    { "id": "to-builtin", "from": "main", "to": "builtin" },
+    { "id": "to-subagents", "from": "main", "to": "subagents" },
+    { "id": "to-gateway", "from": "main", "to": "gateway", "label": "选定工具 · cli: ref", "labelAt": [677, 306] },
+    { "id": "gw-audit", "from": "gateway", "to": "audit", "label": "落审计", "labelAt": [782, 335] },
+    { "id": "gw-cli", "from": "gateway", "to": "cli" },
+    { "id": "gw-apimcp", "from": "gateway", "to": "apimcp" },
+    { "id": "apimcp-data", "from": "apimcp", "to": "external", "label": "取数", "labelAt": [955, 270] },
+    { "id": "cli-data", "from": "cli", "to": "external", "fromSide": "right", "toSide": "right" }
+  ],
+  "cards": [
+    {
+      "dot": "violet",
+      "title": "决策模型精排（大点 02）",
+      "items": [
+        "近并列才复核顺序；灰区题不精排",
+        "缓存 24h 过期即删，键含池版本与素材指纹",
+        "账号级开关；03 测评期间强制关",
+        "异常回退现状；p@1 19/23 到 22/23"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "子 Agent：职责与自带工具",
+      "items": [
+        "网搜 tavily_tool（不过本地网关）",
+        "数据库 db_tools；情报 personal_tools",
+        "周报 digest_engine 订阅驱动",
+        "不可递归 · 各自注册计费"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "执行护栏 · 审计 · 账号隔离",
+      "items": [
+        "只读闸拒清单外子命令与落盘参数",
+        "命令落 commands.jsonl，成本落成本表",
+        "决策另存 decision.jsonl"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "自配来源如何进池",
+      "items": [
+        "CLI：只读清单 + 依据三选一",
+        "API/MCP：导入后逐条确认只读",
+        "派生 CapabilityEntry 才可被召回"
+      ]
+    }
+  ]
+}

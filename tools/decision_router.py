@@ -37,6 +37,19 @@ _SESSION = {"calls": 0, "hits": 0, "skips": 0}
 
 # ---------------------------------------------------------------- 配置（默认全关）
 def _env(name: str, default: str = "") -> str:
+    """★ 2026-10-13（大点 04 · 议题三）：先问 `utils.settings`（设置页可改、落库即生效），再回落 .env。
+
+    这一处是本模块**所有**开关与参数的唯一读取口（trigger / tie / top_k / 超时 / 重试 / 额度 /
+    缓存开关与时效 / allow_none / audit_seen 全走它）——所以设置页能一次性覆盖它们，
+    不必逐个改读取点。
+    """
+    try:
+        from utils import settings as _settings
+        if name in _settings.SPEC_BY_KEY:
+            v = _settings.get(name, default)
+            return (str(v) if v is not None else default).strip()
+    except Exception:                                              # noqa: BLE001
+        pass
     return (os.getenv(name, default) or default).strip()
 
 

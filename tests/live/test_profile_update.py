@@ -47,7 +47,7 @@ def acct():
         conn.commit()
     finally:
         conn.close()
-    path = os.path.join(ROOT, "agents_docs", uname, "MEMORY.md")
+    path = os.path.join(ROOT, "user_data", "agents_docs", uname, "MEMORY.md")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(BASE)

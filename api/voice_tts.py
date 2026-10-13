@@ -32,11 +32,12 @@ SYNTH_SCRIPT = VOICE_TEST_DIR / "synth.py"
 VOICE_PACKS_DIR = VOICE_TEST_DIR / "voice_packs"
 
 # 参考音频与合成产物目录（主项目内，按账号隔离）
-TTS_REF_DIR = _PROJECT_ROOT / "data" / "tts_ref"   # data/tts_ref/{username}/
+from utils import paths as _upaths                                              # noqa: E402
+TTS_REF_DIR = _upaths.TTS_REF_DIR       # user_data/tts_ref/{username}/（议题一）
 
 
 def _user_tts_out_dir(user: str) -> Path:
-    d = _PROJECT_ROOT / "output" / user / "tts"     # output/{username}/tts/
+    d = _upaths.tts_audio_dir(user)                  # user_data/output/{username}/tts/
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -108,7 +109,7 @@ def _user_packs(username: str) -> list[dict]:
 
 
 def _active_pack_file(username: str) -> Path:
-    d = _PROJECT_ROOT / "agents_docs" / username
+    d = _upaths.user_dir(username)                   # user_data/agents_docs/{username}/
     d.mkdir(parents=True, exist_ok=True)
     return d / "ACTIVE_VOICE"
 

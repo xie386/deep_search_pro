@@ -59,7 +59,8 @@ MAX_BATCHES = 8          # 单次 digest 检索批次硬上限
 DAYS_WINDOW = 7          # 时间窗：近 N 天
 MIN_CANDIDATES = 15      # 候选少于该值时报告头注明覆盖有限
 
-OUTPUT_DIR = _PROJECT_ROOT / "output"
+from utils.paths import OUTPUT_DIR                                              # noqa: E402
+# ★ 2026-10-13（议题一）：周报落 user_data/output/{账号}/
 
 
 # ---------------------------------------------------------------------------

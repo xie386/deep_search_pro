@@ -52,8 +52,8 @@ def chat(s, base, tok, tid, question, wait=3):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--account", default="m2tester")
-    ap.add_argument("--password", default="m2pass123")
+    ap.add_argument("--account", default=None, help="留空 = 自建临时账号（退出时自动回收）")
+    ap.add_argument("--password", default=None)
     ap.add_argument("--role", default="company")
     ap.add_argument("--base", default="http://127.0.0.1:8123")
     args = ap.parse_args()
@@ -62,12 +62,33 @@ def main():
     s.trust_env = False
     BASE = args.base
 
+    # ── 2026-10-13 修（前置清理）：默认不再指向共享测试号；未显式指定时**自建临时账号 + 退出时回收**
+    if not args.account:
+        import atexit as _atexit, time as _time
+        from tools.schema_personal import get_personal_conn as _pc, purge_account as _purge
+        args.account = "t_m2asm_%d" % int(_time.time())
+        args.password = "t_pwd_%d" % int(_time.time())
+        s.post(BASE + "/api/register", json={"username": args.account, "password": args.password,
+                                             "role": args.role}, timeout=30)
+        _u = args.account
+
+        @_atexit.register
+        def _cleanup_tmp_account():
+            try:
+                _c = _pc()
+                _row = _c.execute("SELECT id FROM accounts WHERE username=?", (_u,)).fetchone()
+                _c.close()
+                if _row:
+                    _purge(_row[0]); print("[cleanup] 临时账号 %s 已回收" % _u)
+            except Exception as _e:                                  # noqa: BLE001
+                print("[cleanup] 回收失败: %s" % _e)
+
     r = s.post(BASE + "/api/login", json={"username": args.account, "password": args.password, "role": args.role}, timeout=30)
     assert r.status_code == 200, f"登录失败: {r.text[:200]}"
     tok = r.json()["token"]
     print(f"== 登录: {args.account} ==")
 
-    docs_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "agents_docs", args.account))
+    docs_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "user_data", "agents_docs", args.account))
     backup = {}
     for f in ("SOUL.md", "MEMORY.md", "ACTIVE_SOUL"):
         p = os.path.join(docs_dir, f)

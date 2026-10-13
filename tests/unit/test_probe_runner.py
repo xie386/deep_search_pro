@@ -576,3 +576,29 @@ def test_probe_runner_offline():
     for n in bad:
         print("  -", n)
     assert not bad, "离线自测失败 %d 项：%s" % (len(bad), "；".join(bad))
+
+
+
+# ── 2026-10-13 修（前置清理）：本用例会在真实的 agents_docs/ 与 data/sandbox/ 下建临时用户目录，
+#    跑完必须自清 —— 此前只建不删，前置清理后被单测反复重建（"清理被重新污染"的根因之一）。
+import atexit as _atexit
+
+_SCRATCH_USERS = ("_probe_selftest_user",)
+
+
+def _cleanup_scratch_dirs():
+    import shutil
+    from pathlib import Path
+    _root = Path(__file__).resolve().parents[2]
+    for _u in _SCRATCH_USERS:
+        from utils import paths as _upaths            # 账号目录清单的唯一事实源
+        for _p in _upaths.account_dirs_of(_u):
+            try:
+                if _p.exists():
+                    shutil.rmtree(_p)
+                    print("[cleanup] 已删除临时目录 " + str(_p.relative_to(_root)))
+            except Exception as _e:                                     # noqa: BLE001
+                print("[cleanup] 删除失败 " + str(_p) + ": " + str(_e))
+
+
+_atexit.register(_cleanup_scratch_dirs)

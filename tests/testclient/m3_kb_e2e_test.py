@@ -49,8 +49,8 @@ AI 芯片需求高增，HBM 内存供不应求，先进封装产能紧张。
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--account", default="m2tester")
-    ap.add_argument("--password", default="m2pass123")
+    ap.add_argument("--account", default=None, help="留空 = 自建临时账号（退出时自动回收）")
+    ap.add_argument("--password", default=None)
     ap.add_argument("--role", default="company")
     ap.add_argument("--base", default="http://127.0.0.1:8123")
     ap.add_argument("--with-digest", action="store_true", help="额外跑周报知识库必查（慢）")
@@ -59,6 +59,27 @@ def main():
     s = requests.Session()
     s.trust_env = False
     BASE = args.base
+
+    # ── 2026-10-13 修（前置清理）：默认不再指向共享测试号；未显式指定时自建临时账号 + 退出回收
+    if not args.account:
+        import atexit as _atexit, time as _time
+        from tools.schema_personal import get_personal_conn as _pc, purge_account as _purge
+        args.account = "t_m3kb_%d" % int(_time.time())
+        args.password = "t_pwd_%d" % int(_time.time())
+        s.post(BASE + "/api/register", json={"username": args.account, "password": args.password,
+                                             "role": args.role}, timeout=30)
+        _u = args.account
+
+        @_atexit.register
+        def _cleanup_tmp_account():
+            try:
+                _c = _pc()
+                _row = _c.execute("SELECT id FROM accounts WHERE username=?", (_u,)).fetchone()
+                _c.close()
+                if _row:
+                    _purge(_row[0]); print("[cleanup] 临时账号 %s 已回收" % _u)
+            except Exception as _e:                                  # noqa: BLE001
+                print("[cleanup] 回收失败: %s" % _e)
 
     r = s.post(BASE + "/api/login", json={"username": args.account, "password": args.password, "role": args.role}, timeout=30)
     assert r.status_code == 200, f"登录失败: {r.text[:200]}"

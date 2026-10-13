@@ -26,7 +26,7 @@ from langchain_core.messages import HumanMessage
 # 导入项目全局主智能体实例（已挂载 read_agent_doc / write_agent_doc / list_agent_docs）
 from api.server import AGENT
 
-DOCS_DIR = os.path.join(_ROOT, "agents_docs")
+DOCS_DIR = os.path.join(_ROOT, "user_data", "agents_docs")
 TEST_FILE = "_e2e_hello.md"
 TEST_CONTENT = "智选情报官端到端验证：工具读写链路正常。"
 TEST_PATH = os.path.join(DOCS_DIR, TEST_FILE)

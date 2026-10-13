@@ -6,10 +6,28 @@ os.environ.pop('HTTP_PROXY', None)
 os.environ.pop('HTTPS_PROXY', None)
 
 BASE = 'http://127.0.0.1:8123'
-USER = 'm2tester'
+# ── 2026-10-13 修（前置清理）：改为自建临时账号 + 退出时回收（不再占用共享测试号）
+import atexit as _atexit, time as _time
+USER = os.getenv('PROBE_ACCOUNT') or 't_kb_%d' % int(_time.time())
+PWD = os.getenv('PROBE_PASSWORD') or 't_pwd_%d' % int(_time.time())
+
+
+@_atexit.register
+def _cleanup_tmp_account():
+    try:
+        import sys as _s; _s.path.insert(0, '.')
+        from tools.schema_personal import get_personal_conn as _pc, purge_account as _purge
+        _c = _pc()
+        _row = _c.execute('SELECT id FROM accounts WHERE username=?', (USER,)).fetchone()
+        _c.close()
+        if _row:
+            _purge(_row[0]); print('[cleanup] 临时账号 %s 已回收' % USER)
+    except Exception as _e:                                          # noqa: BLE001
+        print('[cleanup] 回收失败: %s' % _e)
 
 def login():
-    r = requests.post(BASE + '/api/login', json={'username': USER, 'password': '123456', 'role': 'personal'}, timeout=60)
+    requests.post(BASE + '/api/register', json={'username': USER, 'password': PWD, 'role': 'personal'}, timeout=60)
+    r = requests.post(BASE + '/api/login', json={'username': USER, 'password': PWD, 'role': 'personal'}, timeout=60)
     print('login', r.status_code, r.text[:120])
     r.raise_for_status()
     return {'token': r.json()['token']}

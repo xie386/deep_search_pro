@@ -273,7 +273,7 @@ finally:
     except Exception:  # noqa: BLE001
         pass
     try:                                                       # 临时账号的题集文件也要删（purge_account 不管它 ✗）
-        _tmp_set = os.path.join(ROOT, "data", "probe_sets", "%s.json" % TMP_USER)
+        _tmp_set = os.path.join(ROOT, "user_data", "probe_sets", "%s.json" % TMP_USER)
         if os.path.isfile(_tmp_set):
             os.remove(_tmp_set)
     except Exception:  # noqa: BLE001

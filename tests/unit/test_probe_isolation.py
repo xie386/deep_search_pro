@@ -118,7 +118,7 @@ def test_probe_isolation():
               snap["count"] == 2 and os.path.isfile(os.path.join(ROOT, *snap["dir"].split("/"), "MEMORY.md")),
               snap["count"])
         check("快照：进了沙箱的备份目录（相对路径落在 data/sandbox/）",
-              snap["dir"].replace("\\", "/").startswith("data/sandbox/%s/profile_backup_" % scratch), snap["dir"])
+              snap["dir"].replace("\\", "/").startswith("user_data/sandbox/%s/profile_backup_" % scratch), snap["dir"])
         check("快照目录**不参与**水位线清理（否则还原源被删就还原不了）",
               not any("profile_backup_" in f for f in pr.snapshot_files(scratch)))
 
@@ -163,3 +163,29 @@ def test_probe_isolation():
     for n in bad:
         print("  -", n)
     assert not bad, "测评隔离自测失败 %d 项：%s" % (len(bad), "；".join(bad))
+
+
+
+# ── 2026-10-13 修（前置清理）：本用例会在真实的 agents_docs/ 与 data/sandbox/ 下建临时用户目录，
+#    跑完必须自清 —— 此前只建不删，前置清理后被单测反复重建（"清理被重新污染"的根因之一）。
+import atexit as _atexit
+
+_SCRATCH_USERS = ("_probe_selftest_profile",)
+
+
+def _cleanup_scratch_dirs():
+    import shutil
+    from pathlib import Path
+    _root = Path(__file__).resolve().parents[2]
+    for _u in _SCRATCH_USERS:
+        from utils import paths as _upaths            # 账号目录清单的唯一事实源
+        for _p in _upaths.account_dirs_of(_u):
+            try:
+                if _p.exists():
+                    shutil.rmtree(_p)
+                    print("[cleanup] 已删除临时目录 " + str(_p.relative_to(_root)))
+            except Exception as _e:                                     # noqa: BLE001
+                print("[cleanup] 删除失败 " + str(_p) + ": " + str(_e))
+
+
+_atexit.register(_cleanup_scratch_dirs)

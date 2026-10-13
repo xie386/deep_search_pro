@@ -33,8 +33,10 @@ import threading
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUTPUT_DIR = os.path.join(ROOT, "output")
-SANDBOX_DIR = os.path.join(ROOT, "data", "sandbox")
+# ★ 2026-10-13（大点 04 · 议题一）：用户数据路径全部改问 `utils/paths.py`（唯一事实源）
+from utils import paths as _upaths                                              # noqa: E402
+OUTPUT_DIR = str(_upaths.OUTPUT_DIR)
+SANDBOX_DIR = str(_upaths.SANDBOX_ROOT)
 SET_DIR = os.path.join(ROOT, "tests", "fixtures", "probe_sets")
 
 # ---- 快照文件（用户 2026-10-10 定的命名与过滤口径）---------------------------------
@@ -71,7 +73,9 @@ def ask_timeout() -> float:
         return float(ASK_TIMEOUT_DEFAULT)
 
 # ---- 清理目标（同探针；`output/%s` 下**只删非打分表**的文件，见裁定 6-⑤）-----------
-ARTIFACT_DIRS = ("agents_docs/%s", "output/%s", "pic/%s", "data/sandbox/%s")
+# ★ 由唯一事实源生成（此前写死 4 项、与探针/清理各存一份副本，见 research/04 §6.1(b)）
+ARTIFACT_DIRS = tuple(str((_p / "%s").relative_to(ROOT)).replace(os.sep, "/")
+                      for _p in _upaths.PROBE_ARTIFACT_DIRS)
 
 # ---- 额度：只有 retrieval_external 有额度成本（见 usage_events 的 kind 分类）--------
 KIND_RETRIEVAL_EXTERNAL = "retrieval_external"
@@ -84,13 +88,13 @@ def load_case_set(path_or_name: str) -> dict:
     """读一份题集 JSON（可传完整路径，或只传文件名 / 名字）。
 
     查找顺序：① 原样路径 → ② `tests/fixtures/probe_sets/`（开发题集，随仓库走）
-              → ③ `data/probe_sets/`（**按账号生成**的题集，产品数据、不随仓库走 ✓ 裁定 13）。
+              → ③ `user_data/probe_sets/`（**按账号生成**的题集，产品数据、不随仓库走 ✓ 裁定 13；
+                2026-10-13 议题一：由 `data/probe_sets/` 归口到此，路径一律问 `utils/paths.py`）。
     """
     path = path_or_name
     if not os.path.isfile(path):
         cands = [os.path.join(SET_DIR, path_or_name),
-                 os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                              "data", "probe_sets", path_or_name)]
+                 str(_upaths.PROBE_SETS_DIR / path_or_name)]
         cands = [c if c.endswith(".json") else c + ".json" for c in cands]
         path = next((c for c in cands if os.path.isfile(c)), cands[0])
     with open(path, "r", encoding="utf-8") as f:
@@ -440,7 +444,7 @@ def _prune_raw(sandbox: str, keep: int = 1) -> list:
 
 def profile_dir(username: str) -> str:
     """账号的 `agents_docs/{用户名}/`（人格/记忆画像/笔记都在这里）。"""
-    return os.path.join(ROOT, "agents_docs", username)
+    return str(_upaths.user_dir(username))
 
 
 def snapshot_profile(username: str) -> dict:
@@ -454,7 +458,8 @@ def snapshot_profile(username: str) -> dict:
     src = profile_dir(username)
     # ★ 目录名带**毫秒**：同一秒内连跑两次（评测里很可能）不至于把上一份快照静默覆盖掉
     stamp = "%s_%03d" % (time.strftime("%Y%m%d_%H%M%S"), int((time.time() % 1) * 1000))
-    rel_dir = os.path.join("data", "sandbox", username, "profile_backup_%s" % stamp)
+    rel_dir = os.path.join(str(_upaths.SANDBOX_ROOT.relative_to(ROOT)), username,
+                           "profile_backup_%s" % stamp)
     dst = os.path.join(ROOT, rel_dir)
     files: dict = {}
     if os.path.isdir(src):

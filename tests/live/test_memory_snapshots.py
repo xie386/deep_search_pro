@@ -50,7 +50,7 @@ def acct():
     aid, token, uname = mk_account("a")
     yield {"aid": aid, "token": token, "uname": uname}
     purge_account(aid)
-    shutil.rmtree(os.path.join(ROOT, "agents_docs", uname), ignore_errors=True)
+    shutil.rmtree(os.path.join(ROOT, "user_data", "agents_docs", uname), ignore_errors=True)
 
 
 # ---------------------------------------------------------------- ① 存什么 / 不存什么

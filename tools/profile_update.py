@@ -25,7 +25,8 @@ from tools import memory_profile as mprof
 from tools import memory_snapshots as ms
 from tools.schema_personal import get_personal_conn
 
-_AGENTS_DOCS = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "agents_docs"))
+from utils.paths import AGENTS_DOCS as _AGENTS_DOCS_PATH                        # noqa: E402
+_AGENTS_DOCS = str(_AGENTS_DOCS_PATH)   # ★ 2026-10-13 议题一：归口 user_data/
 
 
 def _memory_path_of_account(aid: int):

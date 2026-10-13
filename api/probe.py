@@ -177,7 +177,7 @@ def gen_cases(token: str, *, model=None) -> dict:
 
 
 def save_cases(doc: dict, token: str) -> dict:
-    """保存（用户过目/改过的）题集 → `data/probe_sets/<用户名>.json`（产品数据 ✓ 裁定 13）。
+    """保存（用户过目/改过的）题集 → `user_data/probe_sets/<用户名>.json`（产品数据 ✓ 裁定 13；2026-10-13 归口）。
 
     ★ 2026-10-11 用户实测（保存被拒、且错误提示飘在视口外）：
       `expect = {"kind":"tool","ref":"bili search"}` 这类「CLI 名 + 子命令」写法会被校验器拦死

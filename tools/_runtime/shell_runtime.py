@@ -39,7 +39,8 @@ from pathlib import Path
 from tools import cli_registry
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SANDBOX_ROOT = PROJECT_ROOT / "data" / "sandbox"
+# ★ 2026-10-13（议题一）：沙箱根归口 user_data/sandbox/
+from utils.paths import SANDBOX_ROOT                                             # noqa: E402
 AUDIT_FILE = PROJECT_ROOT / "data" / "audit" / "commands.jsonl"
 
 MAX_OUTPUT = 1_000_000          # 单流输出上限（字节），超出截断

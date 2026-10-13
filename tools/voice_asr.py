@@ -40,7 +40,12 @@ class VoiceAsrError(Exception):
 
 # ───────────────────────────── 配置 ─────────────────────────────
 def _enabled() -> bool:
-    return (os.getenv("ASR_ENABLED", "1") or "1").strip().lower() not in ("0", "false", "off", "no", "")
+    """★ 2026-10-13（议题三）：开关可由设置页改（落库即生效），未设时回落 .env。"""
+    try:
+        from utils import settings as _settings
+        return bool(_settings.get_bool("ASR_ENABLED", True))
+    except Exception:                                              # noqa: BLE001
+        return (os.getenv("ASR_ENABLED", "1") or "1").strip().lower() not in ("0", "false", "off", "no", "")
 
 
 def _port() -> int:

@@ -31,7 +31,46 @@ def get_personal_conn() -> sqlite3.Connection:
     return conn
 
 
-def purge_account(account_id: int | None) -> dict:
+_TEST_ACCOUNT_PREFIXES = ("t_", "bk_", "m2tester", "m5", "m4u_", "m4a", "m4b", "m4c",
+                          "v3v", "q2_", "probe_", "pre_", "_", "中文测试公司")
+
+
+def is_test_account(username: str | None) -> bool:
+    """测试账号名判定 —— 清理时"要不要连文件一起删"的安全阀（真实账号名一律不碰）。"""
+    u = (username or "").strip()
+    return bool(u) and any(u.startswith(pre) for pre in _TEST_ACCOUNT_PREFIXES)
+
+
+def _purge_account_files(username: str) -> list:
+    """删除某测试账号在各存放点的目录 / 题集文件，返回已删除的相对路径列表。
+
+    ★ 2026-10-13（前置清理）：此前 purge_account 只清**库行**，账号的目录会留下
+      （实测：单测与探针每跑一次就留一堆空目录 —— `agents_docs/<名>/`、`data/sandbox/<名>/` 等）。
+      调用方全在测试里，故这里补上文件侧；**只对测试账号名生效**。
+    """
+    import shutil
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    gone = []
+    from utils.paths import account_dirs_of, probe_set_path
+    for _p in account_dirs_of(username):     # ★ 唯一事实源（含 data/tts_ref，2026-10-13 补）
+        if _p.exists():
+            try:
+                shutil.rmtree(_p)
+                gone.append(str(_p.relative_to(root)).replace("\\", "/"))
+            except Exception:                                       # noqa: BLE001
+                pass
+    _f = probe_set_path(username)
+    if _f.is_file():
+        try:
+            _f.unlink()
+            gone.append(str(_f.relative_to(root)).replace("\\", "/"))
+        except Exception:                                           # noqa: BLE001
+            pass
+    return gone
+
+
+def purge_account(account_id: int | None, *, files: bool = True) -> dict:
     """删除账号及其**全部账号域数据**，返回 {表名: 删除行数}。
 
     为什么需要它：连接启用了 `PRAGMA foreign_keys = ON`，而各账号域表都带
@@ -39,13 +78,17 @@ def purge_account(account_id: int | None) -> dict:
     这里**自省 sqlite_master**（凡带 `account_id` / `owner_id` 列的表都清），
     所以以后加表（tool_api / tool_mcp / …）无需再改这个函数，也不会再有测试清理漏表。
 
-    顺序：messages（经 conversations 关联）→ 其余账号域表 → accounts 本身。
+    顺序：messages（经 conversations 关联）→ 其余账号域表 → accounts 本身（先取用户名）。
+    **文件侧**：`files=True`（默认）时，若账号名命中测试账号前缀白名单，连同
+    `agents_docs/<名>/`、`output/<名>/`、`pic/<名>/`、`rag_knowledge/db/<名>/`、
+    `user_data/` 下 6 个账号目录 + 题集 JSON 一起删（真实账号名一律不碰）。
     全程容错：单表失败只记录，不中断（便于残留数据兜底清理）。
     """
     if not account_id:
         return {}
     aid = int(account_id)
-    removed: dict[str, int] = {}
+    removed: dict = {}
+    username = None
     conn = get_personal_conn()
     try:
         tables = [r["name"] for r in conn.execute(
@@ -79,12 +122,18 @@ def purge_account(account_id: int | None) -> dict:
                 if isinstance(removed["_errors"], list):
                     removed["_errors"].append("%s: %s" % (t, type(e).__name__))
 
-        # 3) 账号本身
+        # 3) 账号本身（先取用户名 —— 文件侧清理要用；行删了就拿不到了）
+        _row = conn.execute("SELECT username FROM accounts WHERE id=?", (aid,)).fetchone()
+        username = _row["username"] if _row else None
         cur = conn.execute("DELETE FROM accounts WHERE id=?", (aid,))
         removed["accounts"] = cur.rowcount
         conn.commit()
     finally:
         conn.close()
+    if files and is_test_account(username):          # 安全阀：只清测试账号的文件
+        _gone = _purge_account_files(username)
+        if _gone:
+            removed["_files"] = _gone
     return removed
 
 
@@ -138,6 +187,17 @@ def ensure_tables() -> None:
             conn.commit()
         except Exception as _e:
             print("[schema] accounts 补 decision_router 跳过:", _e)
+
+        # v4.0 大点 04 议题二追加（用户 2026-10-13 裁定进入实现期）：账号加 `email` / `email_bound_at` ——
+        #   绑定邮箱用于「注销账号」的验证码（也便于日后找回）。**默认未绑定**（NULL=空）✓
+        try:
+            _have = {r[1] for r in conn.execute("PRAGMA table_info(accounts)")}
+            for _col, _type in (("email", "TEXT"), ("email_bound_at", "INTEGER")):
+                if _have and _col not in _have:
+                    conn.execute("ALTER TABLE accounts ADD COLUMN %s %s" % (_col, _type))
+            conn.commit()
+        except Exception as _e:
+            print("[schema] accounts 补 email 跳过:", _e)
 
         # M5-1：products / company_products 加列（方案 §5.1）。同一套幂等写法。
         #   教训：这两段都必须待在**函数体顶层**（与外层 try 同级），一旦嵌进别人的 if/except 里就永不执行，
@@ -235,7 +295,28 @@ def ensure_tables() -> None:
             -- 「界面已登录、工作台数据全是 0、天气卡报未登录或登录已失效」（用户实测报障）。
             -- 落库后 token 跨后端重启仍然有效；表里只存 token→账号 的映射，
             -- 用户名/角色/昵称等**运行时从 accounts 联查**，避免资料改了会话里还是旧值。
-            CREATE TABLE IF NOT EXISTS sessions (
+            CREATE TABLE IF NOT EXISTS app_settings (
+    key         TEXT PRIMARY KEY,
+    value       TEXT NOT NULL DEFAULT '',
+    updated_at  INTEGER NOT NULL DEFAULT 0,
+    updated_by  TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS verify_codes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id  INTEGER NOT NULL REFERENCES accounts(id),
+    email       TEXT NOT NULL,
+    code_hash   TEXT NOT NULL,
+    purpose     TEXT NOT NULL DEFAULT 'bind',
+    created_at  INTEGER NOT NULL,
+    expires_at  INTEGER NOT NULL,
+    used        INTEGER NOT NULL DEFAULT 0,
+    attempts    INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_verify_codes_acct ON verify_codes(account_id, purpose);
+
+CREATE TABLE IF NOT EXISTS sessions (
                 token      TEXT PRIMARY KEY,
                 account_id INTEGER NOT NULL REFERENCES accounts(id),
                 login_at   REAL NOT NULL

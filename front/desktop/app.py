@@ -75,7 +75,8 @@ _tray_status = ""                          # 托盘提示里的附加状态（�
 
 def _default_save_dir() -> str:
     """原生「另存为」对话框的默认目录：用户的「下载」目录优先，退到项目 output/。"""
-    for cand in (Path.home() / "Downloads", ROOT / "output"):
+    # ★ 2026-10-13（议题一）：用户数据归口 user_data/；此文件可能被双击启动、sys.path 不确定，故用字面拼接
+    for cand in (Path.home() / "Downloads", ROOT / "user_data" / "output"):
         try:
             if cand.is_dir():
                 return str(cand)
@@ -661,7 +662,7 @@ class DesktopApi:
     def open_output_dir(self, username: str = "") -> dict:
         """在资源管理器里打开导出目录（`output/<账号>/`），打开不了就退到 `output/`。"""
         try:
-            base = ROOT / "output"
+            base = ROOT / "user_data" / "output"       # ★ 2026-10-13 归口
             target = base
             if username:
                 cand = base / username
