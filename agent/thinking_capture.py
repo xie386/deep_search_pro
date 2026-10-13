@@ -23,15 +23,20 @@
   - 覆盖所有轮次（旁路只覆盖首轮，工具调用后的思考拿不到）。
   代价：thinking 从「逐 token 实时流」降级为「回答完成后一次性全量」。
 """
+from typing import Callable
+
 from langchain_core.messages import AIMessage
 
-from api.monitor import monitor
 
-
-def report_thinking_from_messages(messages: list) -> list[str]:
+def report_thinking_from_messages(messages: list, emit: Callable[[str], None] | None = None) -> list[str]:
     """从 agent 结果消息列表提取各轮 AIMessage 的 reasoning_content 并推送。
 
+    2026-10-14（D7①）：**去掉对 `api.monitor` 的模块级 import**（agent 不反向依赖 api）——
+    `emit` 由调用方注入（api 侧传 `monitor.report_thinking`；测试传收集函数）。
+    不传 emit 时只收集、不推送（纯函数用法 ✓）。
+
     :param messages: agent.invoke 返回的 result["messages"]（含所有轮次消息）
+    :param emit: 推送回调，签名 `emit(text: str) -> None`
     :return: 捕获到的思考片段列表（供调用方记录/调试）
     """
     captured: list[str] = []
@@ -40,5 +45,6 @@ def report_thinking_from_messages(messages: list) -> list[str]:
             rc = m.additional_kwargs.get("reasoning_content")
             if rc:
                 captured.append(rc)
-                monitor.report_thinking(rc)
+                if emit is not None:
+                    emit(rc)
     return captured

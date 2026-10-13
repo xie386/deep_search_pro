@@ -34,9 +34,22 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 KB_ROOT = PROJECT_ROOT / "rag_knowledge"
 # ★ 2026-10-13（议题一）：向量库归口 user_data/rag_knowledge/db/{username}/（用户拍板保持旧层级）
 from utils.paths import RAG_DB as DB_ROOT                                        # noqa: E402
-EMBEDDING_MODEL_PATH = os.getenv("EMBEDDING_MODEL_PATH") or r"D:\LLM\model\bge-large-zh"
-RERANKER_MODEL_PATH = os.getenv("RERANKER_MODEL_PATH") or r"D:\LLM\model\bge-reranker-base"
-DEVICE = os.getenv("EMBEDDING_DEVICE") or "cuda"   # 批注 9：一律 GPU
+# 2026-10-14（E4 去本机化）：不再兜底本机绝对路径 —— 未配置时在**加载模型那一刻**给明确中文提示，
+# 而不是等到 SentenceTransformer 抛栈。（原兜底 `D:\LLM\model\bge-large-zh` 换台机器必崩。）
+EMBEDDING_MODEL_PATH = os.getenv("EMBEDDING_MODEL_PATH") or ""
+RERANKER_MODEL_PATH = os.getenv("RERANKER_MODEL_PATH") or ""
+DEVICE = os.getenv("EMBEDDING_DEVICE") or "cpu"    # 2026-10-14（E4）：默认 CPU 兜底（无 GPU 也能起）；有 GPU 在 .env 显式写 cuda
+
+
+def _require_model_dir(env_key: str, value: str) -> str:
+    """校验模型目录配置：空 = 未配置，非空但不存在 = 配错（两种都给中文提示 ✓）。"""
+    if not value:
+        raise RuntimeError(
+            "缺少 %s：请在 .env 里指向本机的模型目录（照 .env.example 的「向量模型、重排模型路径配置」一节填）" % env_key
+        )
+    if not Path(value).exists():
+        raise RuntimeError("%s 指向的目录不存在：%s（请改 .env 里的路径）" % (env_key, value))
+    return value
 BGE_QUERY_PREFIX = "为这个句子生成表示以用于检索相关文章："
 
 # 分块参数（蜀道 AI_SOLUTION §4.1 对齐，报告类文档）
@@ -67,7 +80,7 @@ class _EmbeddingModel:
         if self._model is None:
             from sentence_transformers import SentenceTransformer  # lazy
 
-            self._model = SentenceTransformer(EMBEDDING_MODEL_PATH, device=DEVICE)
+            self._model = SentenceTransformer(_require_model_dir("EMBEDDING_MODEL_PATH", EMBEDDING_MODEL_PATH), device=DEVICE)
             logger.info("bge-large-zh 已加载: %s (device=%s)", EMBEDDING_MODEL_PATH, DEVICE)
         return self._model
 
@@ -95,7 +108,7 @@ def reranker_model():
     from sentence_transformers import CrossEncoder  # lazy
 
     logger.info("bge-reranker 加载: %s (device=%s)", RERANKER_MODEL_PATH, DEVICE)
-    return CrossEncoder(RERANKER_MODEL_PATH, device=DEVICE)
+    return CrossEncoder(_require_model_dir("RERANKER_MODEL_PATH", RERANKER_MODEL_PATH), device=DEVICE)
 
 
 # ---------------------------------------------------------------------------

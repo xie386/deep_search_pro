@@ -87,19 +87,42 @@ def test_list_masks_secret_and_hides_raw_json(acct):
 
 
 def test_save_is_idempotent_and_keeps_secret_when_blank(acct):
+    """★ 04 补 E5：密钥只进 .env（库内只留键名）；留空再存 = 键名沿用、值不丢。
+
+    注意：断言**不硬编码密钥字面量** —— 与 `utils.secrets.get()` 解析出的真值比对，
+    这样既覆盖「值确实落在 .env」，也不受测试夹具里那份密钥长什么样影响。
+    """
+    from utils import secrets as _sec
+
+    def _kv() -> dict:
+        import utils.settings as _st
+        return dict(l.split("=", 1) for l in _st.ENV_PATH.read_text(encoding="utf-8").splitlines()
+                    if "=" in l and not l.lstrip().startswith("#"))
+
     _save(acct["token"])
-    _save(acct["token"], name="改个名", auth_secret="")   # 密钥留空 = 不修改
-    items = tsp.sources_list(acct["token"])["items"]
-    assert len(items) == 1 and items[0]["name"] == "改个名"
     conn = get_personal_conn()
     try:
         cfg = json.loads(conn.execute("SELECT config_json FROM tool_sources WHERE account_id=?",
                                       (acct["aid"],)).fetchone()["config_json"])
     finally:
         conn.close()
-    assert cfg["auth"]["secret"] == "sk-secret-123456"
+    assert cfg["auth"]["secret_env"].startswith("TOOL_KEY_"), "应只存键名 ✗"
+    assert not (cfg["auth"].get("secret") or ""), "明文不该入库 ✗"
+    name = cfg["auth"]["secret_env"]
+    val = _kv().get(name, "")
+    assert val and val == _sec.get(name), ".env 里应有该键、且解析出来的就是它 ✗"
 
-
+    _save(acct["token"], name="改个名", auth_secret="")   # 密钥留空 = 不修改
+    items = tsp.sources_list(acct["token"])["items"]
+    assert len(items) == 1 and items[0]["name"] == "改个名"
+    conn = get_personal_conn()
+    try:
+        cfg2 = json.loads(conn.execute("SELECT config_json FROM tool_sources WHERE account_id=?",
+                                       (acct["aid"],)).fetchone()["config_json"])
+    finally:
+        conn.close()
+    assert cfg2["auth"]["secret_env"] == name, "留空保存把键名丢了 ✗"
+    assert _kv().get(name, "") == val, "留空保存把值抹了 ✗"
 @pytest.mark.parametrize("bad,why", [
     ({"slug": "有中文"}, "短名"),
     ({"base_url": "ftp://x"}, "base_url"),

@@ -190,6 +190,19 @@ def _norm_prices(req) -> tuple:
     return tuple(vals)
 
 
+def _resolve_key(p) -> str:
+    """取真实密钥（04 补 E5）：`secret_env` 有名 → 读 .env；无名 → 老库明文列。
+
+    列表回显走 `_mask_key(_resolve_key(p))`；造模型时必须 mask=False 拿真值。
+    """
+    from utils import secrets as _secrets
+    try:
+        name = p["secret_env"] if "secret_env" in p.keys() else None
+    except Exception:
+        name = None
+    return _secrets.get(name, (p["api_key"] if "api_key" in p.keys() else "") or "")
+
+
 def _mask_key(key: str) -> str:
     """api_key 掩码：只显后 4 位（信息安全；业务信息不打码）"""
     key = (key or "").strip()
@@ -209,7 +222,10 @@ def _normalize_provider(p: dict, mask: bool = True) -> dict:
         "provider_name": p["provider_name"],
         "model_name": p["model_name"],
         "base_url": p["base_url"],
-        "api_key": _mask_key(p["api_key"]) if mask else p["api_key"],
+        # ★ 04 补 E5：密钥真值从 .env 取（secret_env）；本列明文只作老库兜底
+        "api_key": _mask_key(_resolve_key(p)) if mask else _resolve_key(p),
+        "secret_env": (p["secret_env"] if ("secret_env" in p.keys() and p["secret_env"]) else ""),
+        "key_configured": bool(_resolve_key(p)),
         "is_active": bool(p["is_active"]),
         "price_in_cached": p.get("price_in_cached"),
         "price_in_uncached": p.get("price_in_uncached"),
@@ -244,7 +260,13 @@ def llm_provider_add(req: LlmProviderReq, token: str) -> dict:
             "INSERT INTO llm_providers (owner_id, provider_name, model_name, base_url, api_key, is_active,"
             " price_in_cached, price_in_uncached, price_out, supports_vision) VALUES (?,?,?,?,?,?,?,?,?,?)",
             (aid, req.provider_name.strip(), req.model_name.strip(),
-             req.base_url.strip(), req.api_key.strip(), int(req.is_active), p_c, p_u, p_o, int(bool(req.supports_vision))))
+             req.base_url.strip(), "", int(req.is_active), p_c, p_u, p_o, int(bool(req.supports_vision))))
+        # ★ 04 补 E5：密钥只写 .env（备份在 _write_env 里做），库里只留键名 —— 明文永不落库
+        _new_key = (req.api_key or "").strip()
+        if _new_key and not _new_key.startswith("****"):
+            from utils import secrets as _secrets
+            _env_name = _secrets.put("llm", cur.lastrowid, _new_key, req.provider_name)
+            conn.execute("UPDATE llm_providers SET secret_env=? WHERE id=?", (_env_name, cur.lastrowid))
         conn.commit()
         row = conn.execute("SELECT * FROM llm_providers WHERE id=?", (cur.lastrowid,)).fetchone()
         return {"provider": _normalize_provider({k: row[k] for k in row.keys()})}
@@ -272,11 +294,14 @@ def llm_provider_update(pid: int, req: LlmProviderReq, token: str) -> dict:
                 (req.provider_name.strip(), req.model_name.strip(), req.base_url.strip(),
                  int(req.is_active), p_c, p_u, p_o, int(bool(req.supports_vision)), pid, aid))
         else:
+            # ★ 04 补 E5：新密钥写 .env（备份自动做），库里只留键名；明文列一并清空
+            from utils import secrets as _secrets
+            _env_name = _secrets.put("llm", pid, new_key, req.provider_name)
             conn.execute(
-                "UPDATE llm_providers SET provider_name=?, model_name=?, base_url=?, api_key=?, is_active=?,"
+                "UPDATE llm_providers SET provider_name=?, model_name=?, base_url=?, api_key='', secret_env=?, is_active=?,"
                 " price_in_cached=?, price_in_uncached=?, price_out=?, supports_vision=? WHERE id=? AND owner_id=?",
                 (req.provider_name.strip(), req.model_name.strip(), req.base_url.strip(),
-                 new_key, int(req.is_active), p_c, p_u, p_o, int(bool(req.supports_vision)), pid, aid))
+                 _env_name, int(req.is_active), p_c, p_u, p_o, int(bool(req.supports_vision)), pid, aid))
         conn.commit()
         row = conn.execute("SELECT * FROM llm_providers WHERE id=?", (pid,)).fetchone()
         return {"provider": _normalize_provider({k: row[k] for k in row.keys()})}

@@ -71,24 +71,29 @@ def test_list_endpoint_still_masks_key():
         purge_account(aid)
 
 
-def test_add_update_response_is_masked_but_db_keeps_raw():
-    """新增/更新的**出参**是掩码（回显），但**库里存的**必须是原文。"""
+def test_add_update_response_is_masked_and_db_only_keeps_env_name():
+    """★ 04 补 E5（2026-10-14 用户选 A 案）：出参是掩码；库里**不再**存明文 ——
+    只存 `.env` 键名（`secret_env`），真值只活在 `.env`（写前自动备份）。"""
     aid, tok = mk_account()
     try:
         out = add_provider(tok)
-        assert "*" in out["api_key"]                     # 出参掩码
+        assert "*" in out["api_key"]                      # 出参掩码
+        assert out["secret_env"].startswith("LLM_KEY_")   # 键名可回传（不含值）
         conn = get_personal_conn()
         try:
-            stored = conn.execute("SELECT api_key FROM llm_providers WHERE owner_id=?", (aid,)).fetchone()[0]
+            row = conn.execute("SELECT api_key, secret_env FROM llm_providers WHERE owner_id=?",
+                               (aid,)).fetchone()
         finally:
             conn.close()
-        assert stored == RAW_KEY                         # 库里原文
+        assert row["api_key"] == "", "明文被写进库了 ✗"
+        assert row["secret_env"] == out["secret_env"]
+        assert os.environ.get(row["secret_env"]) == RAW_KEY, "值应写进 .env（且本进程可见）✗"
     finally:
         purge_account(aid)
 
 
-def test_masked_key_is_not_re_saved_and_wipes_real_key():
-    """前端回显掩码后再保存（不带新 key）→ **不许把掩码串写进库**（否则真 key 被毁，用户要重新申请）。"""
+def test_masked_key_is_not_re_saved_and_does_not_destroy_real_key():
+    """前端回显掩码后再保存 → 掩码串绝不被当真 key，真 key 也不被毁（键名沿用、值还在 .env）。"""
     aid, tok = mk_account()
     try:
         p = add_provider(tok)
@@ -100,9 +105,14 @@ def test_masked_key_is_not_re_saved_and_wipes_real_key():
         customize.llm_provider_update(p["id"], req, tok)
         conn = get_personal_conn()
         try:
-            stored = conn.execute("SELECT api_key FROM llm_providers WHERE id=?", (p["id"],)).fetchone()[0]
+            row = conn.execute("SELECT * FROM llm_providers WHERE id=?", (p["id"],)).fetchone()
+            d = {k: row[k] for k in row.keys()}
         finally:
             conn.close()
-        assert stored == RAW_KEY, "掩码串被写进了库（真 key 被毁）✗"
+        assert d["api_key"] == "", "掩码串被写进了库 ✗"
+        assert d["secret_env"] == p["secret_env"], "键名被改掉了 ✗"
+        assert os.environ.get(d["secret_env"]) == RAW_KEY, "真 key 被毁 ✗"
+        # ★ 原始事故的保证仍在：拿去联网的路径必须拿真值（不是掩码）
+        assert customize._normalize_provider(d, mask=False)["api_key"] == RAW_KEY
     finally:
         purge_account(aid)

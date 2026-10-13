@@ -375,7 +375,7 @@ def _invoke_or_stream(agent, payload, cfg, thread_id):
         return agent.invoke(payload, cfg), False
     from agent.stream_sink import DeltaSink, is_main_graph, iter_deltas
 
-    sink = DeltaSink(thread_id)
+    sink = DeltaSink(thread_id, emit=monitor.report_delta)   # D7①：emit 显式注入（agent 不 import api）
     final_state = None
     try:
         for mode, item in agent.stream(payload, cfg, stream_mode=["messages", "values"]):
@@ -516,7 +516,7 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
     # ★ v3.1：流式路径已经把思考**实时**推过一遍 ✗ 这里不能再推（否则思考区出现两份 ✗）
     if not _streamed:
         from agent.thinking_capture import report_thinking_from_messages
-        report_thinking_from_messages(result["messages"])
+        report_thinking_from_messages(result["messages"], monitor.report_thinking)   # D7①：emit 注入
 
     # ★ 最终答案提取（2026-09-24 用户报障修复）：推理模型偶尔把**可见正文**写进
     #   reasoning_content 而 content 为空（实测约 1/5）——原来直接取 messages[-1].content
@@ -587,6 +587,9 @@ async def _startup():
     # 这样 monitor._emit 里的 run_coroutine_threadsafe 才有合法的 loop 可投送。
     manager.set_loop(asyncio.get_event_loop())
     print("[M2] FastAPI 启动，monitor loop 已绑定。")
+    # 04 补 · E6：配置自检（区分「未配置（功能降级）」与「配错（要改）」；不阻止启动 ✓）
+    from utils.config_check import log_config_check
+    log_config_check(logging.getLogger("uvicorn.error"))
     _wx_load_disk()   # 工作台天气：先吃磁盘缓存，首屏秒出
     threading.Thread(target=_wx_warm, daemon=True).start()   # 后台预热默认城市（外网首次实测 ~16s）
     # v3.1 语音转文字：后台把模型加载进内存**常驻** ✓

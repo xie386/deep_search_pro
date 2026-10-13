@@ -59,6 +59,12 @@ def _bump(aid: int) -> None:
         print("[tools] bump_pool_version 失败（忽略）: %s" % e)
 
 
+def _auth_secret(auth: dict) -> str:
+    """取鉴权密钥真值（04 补 E5）：`secret_env` 有名 → 读 .env；无名 → 老库明文。"""
+    from utils import secrets as _secrets
+    return _secrets.get((auth or {}).get("secret_env"), (auth or {}).get("secret", "") or "")
+
+
 def _mask_secret(secret: str) -> str:
     s = (secret or "").strip()
     if not s:
@@ -211,7 +217,7 @@ def sources_list(token: str) -> dict:
             s["config"] = {
                 "base_url": cfg.get("base_url", ""), "auth_type": auth.get("type", "none"),
                 "auth_name": auth.get("name", ""), "auth_prefix": auth.get("prefix", ""),
-                "auth_secret_masked": _mask_secret(auth.get("secret", "")),
+                "auth_secret_masked": _mask_secret(_auth_secret(auth)),
                 "headers": cfg.get("headers") or {}, "timeout": cfg.get("timeout", 30),
                 "max_bytes": cfg.get("max_bytes", 1048576),
                 "allow_private": bool(cfg.get("allow_private", True)),
@@ -268,7 +274,12 @@ def source_save(req: ApiSourceReq, token: str) -> dict:
            "allow_private": bool(req.allow_private)}
     if auth_type != "none":
         cfg["auth"] = {"type": auth_type, "name": (req.auth_name or "").strip(),
-                       "prefix": req.auth_prefix or "", "secret": (req.auth_secret or "").strip()}
+                       "prefix": req.auth_prefix or ""}
+        # ★ 04 补 E5：密钥只写 .env（沿用 price_sources.secret_env 口径），库内只留键名
+        _s = (req.auth_secret or "").strip()
+        if _s and not _s.startswith("****"):
+            from utils import secrets as _secrets
+            cfg["auth"]["secret_env"] = _secrets.put("tool", "%s_%s" % (aid, slug), _s, req.name or slug)
 
     conn = _db()
     try:
@@ -277,10 +288,12 @@ def source_save(req: ApiSourceReq, token: str) -> dict:
         if row:
             old_cfg = _json_or_empty(dict(row).get("config_json"))
             # 密钥留空 = 不修改（与模型配置同款交互）
-            if "auth" in cfg and not cfg["auth"].get("secret"):
-                old_secret = (old_cfg.get("auth") or {}).get("secret", "")
-                if old_secret:
-                    cfg["auth"]["secret"] = old_secret
+            if "auth" in cfg and not cfg["auth"].get("secret_env"):
+                _old_auth = old_cfg.get("auth") or {}
+                if _old_auth.get("secret_env"):
+                    cfg["auth"]["secret_env"] = _old_auth["secret_env"]   # 键名沿用（值还在 .env）
+                elif (_old_auth.get("secret") or "").strip():
+                    cfg["auth"]["secret"] = _old_auth["secret"]           # 老库明文兼容
                 else:
                     cfg.pop("auth", None)
             conn.execute("UPDATE tool_sources SET name=?, config_json=?, abilities=?, docs=?, intro=?, note=?, "
@@ -442,10 +455,10 @@ def source_test(sid: int, token: str, *, probe: bool = False) -> dict:
     steps.append({"name": "base_url 合法", "ok": ok_url,
                   "detail": cfg.get("base_url") or "缺 base_url"})
     auth = cfg.get("auth") or {}
-    auth_ok = (auth.get("type") in (None, "none")) or bool(auth.get("secret"))
+    auth_ok = (auth.get("type") in (None, "none")) or bool(_auth_secret(auth))
     steps.append({"name": "鉴权配置完整", "ok": auth_ok,
-                  "detail": ("无鉴权" if not auth.get("secret") else "%s: %s%s"
-                             % (auth.get("type"), auth.get("name"), "（已填密钥）" if auth.get("secret") else ""))})
+                  "detail": ("无鉴权" if not _auth_secret(auth) else "%s: %s%s"
+                             % (auth.get("type"), auth.get("name"), "（已填密钥）" if _auth_secret(auth) else ""))})
     steps.append({"name": "允许访问内网", "ok": True,
                   "detail": "是（用户裁决默认值）" if cfg.get("allow_private", True) else "否（已收紧）"})
 

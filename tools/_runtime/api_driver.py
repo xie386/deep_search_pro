@@ -130,6 +130,10 @@ def build_request(source_cfg: dict, spec: dict, args: dict) -> dict:
     # 鉴权
     auth = source_cfg.get("auth") or {}
     atype = (auth.get("type") or "none").strip().lower()
+    # ★ 04 补 E5：库内只存键名（secret_env）→ 真值从 .env 取；老库明文列兜底
+    if auth.get("secret_env"):
+        import os as _os
+        auth = dict(auth, secret=(_os.environ.get(str(auth["secret_env"])) or "").strip())
     if atype in ("header", "query") and auth.get("secret"):
         val = "%s%s" % (auth.get("prefix") or "", auth["secret"])
         if atype == "header":

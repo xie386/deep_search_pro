@@ -80,10 +80,9 @@ class DeltaSink:
         self.min_interval = float(min_interval)
         self.min_chars = int(min_chars)
         if emit is None:
-            from api.monitor import monitor as _monitor
-
-            def emit(kind: str, text: str, seq: int) -> None:      # noqa: E306 - 局部默认实现
-                _monitor.report_delta(kind, text, seq)
+            # 2026-10-14（D7①）：agent 不再反向 import api —— emit 必须由调用方注入
+            # （api 侧传 api.monitor.monitor.report_delta；测试传自己的收集函数 ✓）。
+            raise ValueError("DeltaSink 需要显式传入 emit（agent 不反向依赖 api；api 侧传 monitor.report_delta）")
 
         self._emit = emit
         self._buf: dict[str, str] = {"answer": "", "reasoning": ""}

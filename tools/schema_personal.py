@@ -230,7 +230,9 @@ def ensure_tables() -> None:
         try:
             for _tbl, _cols in (
                     ("llm_providers", [("price_in_cached", "REAL"), ("price_in_uncached", "REAL"),
-                                       ("price_out", "REAL"), ("supports_vision", "INTEGER DEFAULT 0")]),
+                                       ("price_out", "REAL"), ("supports_vision", "INTEGER DEFAULT 0"),
+                                       # ★ 04 补 E5：密钥「名入库、值走 .env」
+                                       ("secret_env", "TEXT")]),
                     ("usage_events", [("provider_id", "INTEGER"), ("model_name", "TEXT"),
                                       ("input_tokens", "INTEGER"), ("output_tokens", "INTEGER"),
                                       ("cached_tokens", "INTEGER"), ("uncached_tokens", "INTEGER"),
@@ -429,7 +431,10 @@ CREATE TABLE IF NOT EXISTS sessions (
                 provider_name TEXT NOT NULL,          -- 显示名，如「DeepSeek」
                 model_name TEXT NOT NULL,             -- 模型名，如 deepseek-chat
                 base_url   TEXT NOT NULL,             -- OpenAI 兼容接口地址
-                api_key    TEXT NOT NULL,             -- 密钥
+                api_key    TEXT NOT NULL,             -- 密钥（★ 04 补 E5 起：新存的密钥只写 .env，本列留空）
+                -- ★ 04 补 · E5（2026-10-14 用户选 A 案）：密钥键名（如 LLM_KEY_DEEPSEEK_3），
+                --   值只在 .env；本列非空时 api_key 列应为空串。取用一律走 utils/secrets.get()。
+                secret_env TEXT,
                 is_active  INTEGER DEFAULT 0,         -- 1=当前启用
                 -- ★ v3.1 视觉能力：1=这套配置**能收图片**（前端「模型选型」勾选 ✓ 配置导向，不写死厂商 ✗）
                 --   0/NULL=不能收 → 带图提问会被明确拦下（**绝不静默丢图** ✗）
