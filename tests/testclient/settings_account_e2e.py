@@ -51,8 +51,11 @@ def _purge():
     """
     try:
         conn = sp.get_personal_conn()
+        # ★ 修（2026-10-14）：LIKE 里的 `%` 是通配符，经 `%`-格式化时必须写 `%%` ——
+        #   原写法 "t_sec%_%d" 会让格式化抛 ValueError（unsupported format character '_'），
+        #   被下面的 except 吞掉 → 清理**静默失效**（临时账号留在真实库）。
         rows = [dict(x) for x in conn.execute(
-            "SELECT id, username FROM accounts WHERE username LIKE ?", ("t_sec%_%d" % STAMP,))]
+            "SELECT id, username FROM accounts WHERE username LIKE ?", ("t_sec%%_%d" % STAMP,))]
         conn.close()
         for r_ in rows:
             sp.purge_account(r_["id"])
