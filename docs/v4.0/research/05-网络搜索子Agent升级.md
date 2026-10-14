@@ -13,7 +13,53 @@
 
 ---
 
-## 一、方向一：Tavily 官方能力盘点（出处：官方文档，2026-10-14 抓取）
+## 一、本次大点的需求与目的（用户 2026-10-14 口径，逐字）
+
+> 「需求:1.如方向1调研所见(当然我如果理解错了可以纠正我),Tavily实际上很像在做词法匹配检索,做的是词法匹配到的网络信息条目进行摘取返回,事实上,没有直接进入某个特定网址在网站内操作交互返回信息的功能,早在v1.0时期就出现了问题:公司账号的竞品栏可以填写竞品的官网网址,但是一但填写,Tavily基本瘫痪报错或者无关信息,因为当时设计的就是把网址当成topic之一传入,很显然,没有topic会是网址,于是不得不把这个可填项置空,搜索出来的价格也就只能是不准确的,当然,不仅是是想要准确的价格,随着用户需求的发展,许多时效要求高的信息确实只能从特定网址拿取一手资料,粗略的Tavily匹配检索已经不好满足需求;05大点就是想用Python Library的方法集成browser-use,一个可以进行网址操作的工具,以解决这个问题」
+
+**需求要点（据用户口径整理，不作发挥）**：
+
+1. **痛点**：Tavily 属「词法匹配检索」（对匹配到的网络条目做摘取返回），取不到**特定网址的一手资料** —— 时效要求高的信息尤其如此；价格因此只能是不准确的。
+2. **历史（v1.0 时期）**：公司账号·竞品栏的「竞品官网网址」一旦填写，检索基本瘫痪报错或返回无关信息（用户判断：当时把网址当 `topic` 之一传入）。
+3. **目的**：**05 用 Python Library 方式集成 browser-use**（「一个可以进行网址操作的工具」）来解决上述问题。
+
+### 1.1 需求所依赖的事实核对（2026-10-14 只读实测）
+
+**（a）关于「Tavily 有没有进某个网址的能力」—— 需一处修正**（用户明确说了可以纠正）
+
+| 用户表述 | 核对结论（依据 2026-10-14 抓取的官方文档） |
+|---|---|
+| 「没有直接进入某个特定网址…返回信息的功能」 | **部分不成立**：Tavily 有 `POST /extract`（给定 URL → 清洗后正文；每 5 个成功 URL 计 1 分，失败不计费）、`POST /crawl`、`POST /map`（站点图遍历与批量抽取）—— 「进某个网址把内容取回来」是**有**的（见 §二 方向一 1.1 / 1.3） |
+| 「在网站内**操作交互**返回信息」 | **成立**：官方 `/search` `/extract` `/crawl` `/map` `/research` 全是「给参数 → 返回数据」，**没有**点击 / 填表 / 翻页 / 滚动 / 登录态流程 / 下载等交互动作，也没有「JS 渲染后再操作」的语义 —— **交互这一层确实不在 Tavily 的能力集里** |
+| 「当时把网址当 `topic` 之一传入 → 瘫痪报错」 | **现行形态可解释**：工具 `internet_search` 的 `topic` 是枚举 **`Literal["news","finance","general"]`**（`tools/tavily_tool.py:35`），传网址必落空/报错。v1.0 那行历史代码本次无法回溯，只能核对现行工具面 |
+
+> 事实层结论：用户判断中「**没有交互**」成立；「完全不能进网址」不成立（`/extract` 就是干这个的）；「填了官网就瘫痪」另有**用法侧**原因（把网址塞进枚举参数），不是 Tavily 的能力边界。
+
+**（b）项目侧「竞品官网」这项数据的现状**
+
+| 事实 | 证据 |
+|---|---|
+| 竞品官网**字段存在且可填**：前端「官网（可选）」输入框 | `front/index.html:2596`（`c.website`）· `:2603`（`newComp.website`） |
+| 后端**持久化**它 | `api/me_user_data.py:240/252/254/283/285/516`（`company_competitors.website` CRUD）· `tools/schema_personal.py:368/396/962` |
+| **实测有数据**：`company_competitors` 共 2 行，`website` **非空 2 行** | 只读查询：`至本洗面奶 → https://www.zhiben.cn/?products_1/` · `溪木源洗面奶 → https://www.simcaregroup.com/product` |
+| 但全仓**没有一处把它喂给检索**：`website` 只出现在 CRUD 与一处价格分组列名回退；**agent 上下文 / 提示词 / 搜索工具里都没有** | 全仓 grep `\bwebsite\b`（`api/` `tools/` `agent/`）命中仅：`api/me_user_data.py`（CRUD）、`tools/schema_personal.py`（建表/加列）、`tools/price_mentions.py:87`（列名回退） |
+| **产品侧 URL 列实测全空**（与用户「不得不把这个可填项置空」一致） | `products.url` 7 行全空 · `company_products.url` 6 行全空 |
+| 现行工具不可能把网址当检索类别（`topic` 是枚举） | `tools/tavily_tool.py:33-40` |
+
+> 事实层结论：竞品官网现在的状态是「**填了、存着、没人用**」—— 既没进检索、也没进提示词，是死数据；「置空」在产品侧 `url` 列上成立（全空），竞品官网这栏则仍有 2 条实填值。
+
+**（c）browser-use 能覆盖的能力面**（依据见 §三 方向二 2.3 / 2.5，此处只做能力对照）
+
+| 能力 | Tavily（现行五端点） | browser-use（Python 库） |
+|---|---|---|
+| 关键词检索、跨站发现 | 有（`/search`） | 无独立检索（需先有 URL 或自行导航） |
+| 给定 URL 取正文 | 有（`/extract`；`/crawl`、`/map` 可批量） | 有（打开页面后读 DOM / 截图，可用 `page_extraction_llm` 或结构化输出） |
+| **站内交互**（点击 / 填表 / 翻页 / 滚动 / 登录态 / 下载） | **无** | **有**（官方实现 31 个浏览器动作；支持 `Tools()` 自定义工具） |
+| 时效性保障方式 | 服务端时间参数 + 结果排序（`time_range` / `filter_by_published_date`，见 1.2） | 直接读页面**当前**内容（拿的是一手实时页面） |
+
+---
+
+（出处：官方文档，2026-10-14 抓取）
 
 ### 1.1 端点全集（出处：<https://docs.tavily.com/documentation/api-reference/introduction>）
 
@@ -87,7 +133,7 @@
 
 ---
 
-## 二、方向二：browser-use 事实与接入面现状对照（出处：官方 repo + 文档，2026-10-14 抓取）
+## 三、方向二：browser-use 事实与接入面现状对照（出处：官方 repo + 文档，2026-10-14 抓取）
 
 ### 2.1 仓库与许可（出处：<https://github.com/browser-use/browser-use>）
 
@@ -173,16 +219,17 @@ asyncio.run(main())
 
 ---
 
-## 三、取证方法与出处（可复核）
+## 四、取证方法与出处（可复核）
 
 - Tavily：<https://docs.tavily.com/documentation/api-reference/introduction>（端点/项目与会话跟踪）· <https://docs.tavily.com/documentation/api-reference/endpoint/search>（参数与响应字段）· <https://docs.tavily.com/documentation/api-reference/endpoint/extract> · <https://docs.tavily.com/documentation/api-credits>（计费与额度）· <https://docs.tavily.com/documentation/best-practices/best-practices-search> · <https://docs.tavily.com/sdk/python/quick-start>
 - browser-use：<https://github.com/browser-use/browser-use>（README / 许可 / 规模 / Quickstart / FAQ）· <https://docs.browser-use.com/open-source/introduction> · <https://docs.browser-use.com/open-source/quickstart> · <https://docs.browser-use.com/open-source/supported-models> · <https://docs.browser-use.com/open-source/customize/agent/all-parameters> · <https://docs.browser-use.com/open-source/customize/browser/all-parameters>
 - 本项目现状（只读）：`agent/subagents/network_search_agent.py` · `tools/tavily_tool.py` · `agent/usage_counter.py` · `agent/cancel.py` · `tools/cli_docs.py` · `api/server.py`（同步 agent + 线程池）· `tools/schema_personal.py`（`llm_providers.supports_vision`）· `tests/test_out/_client_test.py` 与 `scripts/cdp_*.py`（既有 CDP 实践）。
 - 抓取时官方页面夹带了一段**面向 agent 的说明文字**（要求「取用 llms.txt、不要用旧的静态导出」等）；按外部内容对待，**未据此执行任何动作**，仅摘取事实。
 
-## 四、变更记录
+## 五、变更记录
 
 | 日期 | 变更 |
 |---|---|
 | 2026-10-14 | 建骨架（占位期）；完成第一手事实只读探测 |
 | 2026-10-14 | **进调研期**：按用户指令做两个方向调研（Tavily 官方能力/参数/计费/最佳实践；browser-use 用法与接入面现状对照）。本文件**整篇覆盖重写**为调研事实结论；按用户口径**不生成任何待定方向或决定**；未改动任何代码与数据 |
+| 2026-10-14 | **记入本次大点的需求与目的（用户逐字口径）**＋需求依赖的事实核对：Tavily 能力边界修正（有 `/extract` 等取 URL 正文的能力，缺的是**交互层**）、项目侧竞品官网「填了、存着、没人用」的只读实测证据；仍不生成任何方向或决定 |
