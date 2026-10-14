@@ -53,3 +53,18 @@
 | **裁定结果** | **A**：一律以实际装到的版本为准；文档口径与实现不一致时，实现侧以实测为准并在文件头注明差异 |
 | **依据** | 实现期实测证据：`from browser_use import ProxySettings` 报 `ImportError`（顶层不导出，实际在 `browser_use.browser.profile`）；`Agent(max_steps=…, calculate_cost=…)` 不在其构造参数表内（`max_steps` 归 `agent.run()`）；`Browser(headless=…, channel=…, user_data_dir=…)` 的字段实为 `BrowserProfile` 所有。用户 2026-10-14 在裁定 3 中选定路线 A（独立 venv + 子进程），本裁定是该路线下的实现口径 |
 | **影响面** | `scripts/browser_runner.py` 的构造段与文件头「适配的版本」说明；另外记录三处**本机环境必需**的适配（均写成代码注释）：① Chrome 必须 `--no-sandbox`（本进程跑在受限令牌下，否则 0.2 秒崩 `0x80000003`、无任何输出；实测加该参数后 CDP 就绪）；② CDP/localhost 必须绕系统代理（`NO_PROXY`，否则 `did not receive a valid HTTP response`）；③ `LOCALAPPDATA`/`TEMP`/profile 一律落**项目内 D 盘**（该进程只能写项目目录，且不占 C 盘）。另：模型调用超时放宽 120 秒 + `flash_mode`/`use_thinking=False` 提速（默认 75 秒会被慢模型打穿，白白吃掉步数） |
+
+---
+
+## 裁定 5（2026-10-14）：浏览器侧**单独指定模型**（设置项 `BROWSER_MODEL_REF`，留空=跟随聊天侧）
+
+| 项 | 内容 |
+|---|---|
+| **日期** | 2026-10-14 |
+| **分叉点** | 浏览器侧模型怎么取。实测（同站点同任务）证明 `browse_pages` 要求模型**按 JSON 输出动作**，而三个可选模型差异极大：**GLM-5.3-Flash（siliconflow）**动作干净、结构化输出 0 报错；**agnes-3.0-flash（项目默认）**真点进了系列页但兼容模式下 2 步输出成大白话（`AgentOutput Invalid JSON`）；**deepseek-flash** 回自己的 DSML 方言（`<｜｜DSML｜｜ calls>`）、**零点击**完全不可用（此前"19 秒很快"是假象——它根本没执行动作） |
+| **可选方案** | A 沿用账号生效配置（想用浏览器就得把 GLM 设为生效，**聊天侧也跟着换**，耦合） ／ **B 浏览器侧单独一个「模型引用」设置项**（留空=跟随聊天侧） ／ C 只在代码里做原生/兼容自动切换（不解决模型能力差异） |
+| **裁定结果** | **B**（并同时做 C：原生结构化输出优先，仅当上游明确拒绝 `response_format` 时自动切兼容重试一次） |
+| **依据** | 用户 2026-10-14 回答「B」（在我给出 A/B/C 三案与实测对照表之后） |
+| **影响面** | `utils/settings.py` 新增 `BROWSER_MODEL_REF`（浏览器组，text，留空=跟随聊天侧；help 写明实测依据与「本项是全机设置、各账号请用同名配置」）；`api/customize.py` 新增 `get_provider_by_ref(aid, ref)`（ref 支持配置名或 id，必须属该账号 → 防越权；与 `get_active_provider` 同口径拿真值）；`tools/browser_tool.py` 模型解析三级链；`scripts/browser_runner.py` 原生优先+自动降级重试；单测 +6（全量 686 passed / 1 skipped） |
+
+> 遗留（不属裁定，属运维事实）：GLM 的配置目前只存在于「尼古喵喵」账号下。公司账号（灵康科技有限公司）要用浏览器侧干净模型，需在该账号下**新增一条同名（或把 `BROWSER_MODEL_REF` 指向它）的 GLM 配置**，否则会回退到它的生效配置（现为 deepseek → 浏览器侧不可用）。
