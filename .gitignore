@@ -22,6 +22,7 @@ venv/
 browser_venv/          # 05：browser-use 的独立运行环境（与主 venv 隔离，绝不入库）
 .env
 .env.*
+!.env.example          # ★ 模板必须入库（真密钥文件 .env / .env.bak_* 继续忽略）
 .idea/
 .vscode/
 .DS_Store
