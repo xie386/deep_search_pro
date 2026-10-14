@@ -29,10 +29,14 @@ def test_main_agent_has_three_way_routing_section():
         assert mode in y, "缺模式字样：%s" % mode
 
 
-def test_sub_agent_obeys_declared_mode_only():
-    seg = PROMPTS.read_text(encoding="utf-8").split("sub_agents:", 1)[1]
-    assert "声明之外的方式一律不启用" in seg, "子 Agent 未按「声明」执行 —— 模式会形同虚设"
-    assert "不许先检索" in seg, "情况②的「禁止先检索」口径丢了"
+def test_prompts_point_at_three_workflow_tools():
+    """取法改由**工作流工具**承担（2026-10-14 用户定稿）：提示词必须点名三个工作流，
+    并且子 Agent 只许调"点名的那一个"。"""
+    y = PROMPTS.read_text(encoding="utf-8")
+    seg = y.split("sub_agents:", 1)[1]
+    for wf in ("web_search_only", "browse_only", "search_then_browse"):
+        assert wf in y, "提示词未点名工作流：%s" % wf
+    assert "只调主 Agent 点名的那一个工作流" in seg, "子 Agent 缺「只调点名工作流」的纪律"
     assert "1~2 个" in seg, "情况③的站点数上限丢了"
 
 

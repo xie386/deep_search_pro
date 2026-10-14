@@ -28,8 +28,8 @@ load_dotenv()
 tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
 
-# 步骤2： 定义一个网络搜索工具
-@tool
+# 步骤2： 网络搜索**实现**（v4.0 大点 05 起：本函数已**不再作为 agent 工具挂载** —— 降级为 util，
+#   只被 `tools/web_workflows.py` 的三个工作流调用。撤下 @tool 是为了让"取法"由工作流的签名在结构上约束住。）
 def internet_search(
         query: str,
         topic: Literal[ "news",  "finance",  "general"] = "general",

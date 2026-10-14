@@ -114,8 +114,9 @@ SPECS: tuple[dict, ...] = (
               "**JS 动态浮层**，纯文本模式（supports_vision=0）读 DOM 反复超时、上下文与价格一项都拿不到；"
               "换成多模态看截图后，同一题 4 步 51.6 秒一次拿全（含 1M 上下文、$20 输出价）。"),
     dict(key="BROWSER_USE_ENABLED", kind="switch", default="1", group="browser", restart=True,
-         label="浏览器抓取工具", help="打开后【网络搜索助手】多一个 browse_pages 工具：进入指定网址取一手资料"
-                                     "（先用 Tavily 定位筛选、再打开关键页深挖）；关掉=与升级前完全一致。改动需重启后端。"),
+         label="浏览器抓取工具", help="打开后【网络搜索助手】多两个取法工作流：`browse_only`（只进指定网址）与 "
+                                     "`search_then_browse`（先检索定位、再进站深抓）；常挂的是 `web_search_only`（只全网检索）。"
+                                     "关掉=只剩全网检索，与升级前等价。改动需重启后端。"),
     dict(key="BROWSER_MAX_STEPS", kind="number", default="8", group="browser", min=1, max=100,
          label="单次最多步数", help="一次浏览任务最多操作多少步。浏览器侧是多步模型循环，**每步约 35~40 秒**"
                                    "（本机实测），步数越多越慢越费 token；8 步足够「打开一页取要点」。"),

@@ -48,6 +48,11 @@ _EXACT = {
     "internet_search": KIND_RETRIEVAL_EXTERNAL,
     # 05：浏览器工具（browser-use）也是**外部检索** —— 让界面能把「进网址抓取」与 Tavily 分开看。
     "browse_pages": KIND_RETRIEVAL_EXTERNAL,
+    # ★ 05 工作流工具（2026-10-14）：它们**内部**已显式记了底层调用的外部检索账，
+    #   所以工作流这层映射成 internal，避免额度被重复计一次。
+    "web_search_only": KIND_INTERNAL,
+    "browse_only": KIND_INTERNAL,
+    "search_then_browse": KIND_INTERNAL,
     "invoke_tool": None,            # None = 看参数里的能力名（api:… / mcp:… / 其它）
     "query_kb": KIND_INTERNAL,
     "read_agent_doc": KIND_INTERNAL,
@@ -236,6 +241,16 @@ def _prices_for_row(conn, account_id: int, provider_id) -> dict | None:
         return _prices_of(dict(row)) if row is not None else None
     except Exception:
         return None
+
+
+def context() -> tuple:
+    """公开的上下文读取：`(account_id, thread_id, turn_index)`（拿不到就 `(None,"",0)`）。
+
+    ★ 为什么要有它：v4.0 大点 05 的**工作流工具**（`tools/web_workflows.py`）会在内部显式 `record(...)`
+    底层真正花额度的调用（Tavily / 浏览器），否则额度账会被工作流这层遮蔽（M4 的口径：要能回答
+    "这次为什么烧了额度"）。工作流本身在分类表里映射成**内部工具**，避免与显式记账重复计费。
+    """
+    return _context()
 
 
 def recalc_costs(account_id: int, days: int = 30) -> dict:

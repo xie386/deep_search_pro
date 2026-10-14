@@ -103,13 +103,12 @@ def _proxy() -> str:
             or os.getenv("HTTP_PROXY") or os.getenv("http_proxy") or "").strip()
 
 
-@tool
 def browse_pages(task: str, urls: list[str] | None = None, max_steps: int | None = None) -> dict:
-    """进入**指定网址**的页面做交互或深度抓取，取回一手资料（价格 / 参数 / 公告 / 日期等）。
+    """（util）进入**指定网址**的页面做交互或深度抓取，取回一手资料（价格 / 参数 / 公告 / 日期等）。
 
-    ★ 什么时候用：提问里带了网址，或上一轮 `internet_search` 的结果里挑出了**关键页**需要打开细看时。
-      **没有网址时不要用它** —— 那时只用 `internet_search`。
-    ★ 不要用它替代检索：先用 `internet_search` 定位与筛选，再用本工具打开**少数**关键页深挖（成本更高）。
+    ★ v4.0 大点 05（2026-10-14）起：本函数**不再作为 agent 工具挂载** —— 只被 `tools/web_workflows.py`
+      的三个取法工作流调用（撤下 @tool 是为了让"只进站、不检索"这类约束由工作流签名在结构上钉住）。
+      Agent 要进站请走工作流：`browse_only`（只进指定网址）或 `search_then_browse`（先检索定位再进站）。
 
     :param task: 要在这些页面上拿什么，用自然语言写清（例：找出该商品当前售价与规格）。
     :param urls: 要打开的页面地址（**传了就直达该页**，不必让模型自己找入口）。建议 1~3 个。

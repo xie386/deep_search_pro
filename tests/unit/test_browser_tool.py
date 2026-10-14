@@ -26,26 +26,26 @@ sys.path.insert(0, str(ROOT))
 
 
 # ---------------------------------------------------------------- 装配与开关
-def test_subagent_has_both_tools_by_default():
-    """默认（开关=1）子 Agent 挂两个工具：检索走 Tavily、进网址走浏览器。"""
+def test_subagent_mounts_three_workflows_by_default():
+    """默认（开关=1）子 Agent 挂**三个取法工作流**（底层 Tavily/浏览器已降级为 util，不再直接挂载）。"""
     from agent.subagents.network_search_agent import network_search_agent
     names = [t.name for t in network_search_agent["tools"]]
-    assert names == ["internet_search", "browse_pages"], names
+    assert names == ["web_search_only", "browse_only", "search_then_browse"], names
 
 
 def test_switch_off_removes_browser_tool(monkeypatch):
-    """关掉总开关后子 Agent **只剩 internet_search**（装配期生效 → 行为与升级前逐字等价）。"""
+    """关掉总开关后子 Agent **只剩 web_search_only**（装配期生效 → 行为与升级前等价、可安全回滚）。"""
     from utils import settings
     import agent.subagents.network_search_agent as mod
     monkeypatch.setattr(settings, "get_bool",
                         lambda k, d=None: False if k == "BROWSER_USE_ENABLED" else bool(d))
     try:
         m2 = importlib.reload(mod)
-        assert [t.name for t in m2.network_search_agent["tools"]] == ["internet_search"]
+        assert [t.name for t in m2.network_search_agent["tools"]] == ["web_search_only"]
     finally:
         monkeypatch.undo()
         importlib.reload(mod)                     # 复原，别把开关状态漏给别的用例
-    assert [t.name for t in mod.network_search_agent["tools"]] == ["internet_search", "browse_pages"]
+    assert [t.name for t in mod.network_search_agent["tools"]] == ["web_search_only", "browse_only", "search_then_browse"]
 
 
 def test_call_when_switch_off_talks_chinese(monkeypatch):
@@ -54,7 +54,7 @@ def test_call_when_switch_off_talks_chinese(monkeypatch):
     from utils import settings
     monkeypatch.setattr(settings, "get_bool",
                         lambda k, d=None: False if k == "BROWSER_USE_ENABLED" else bool(d))
-    got = browser_tool.browse_pages.invoke({"task": "看下价格", "urls": ["https://a.b/"]})
+    got = browser_tool.browse_pages(**{"task": "看下价格", "urls": ["https://a.b/"]})
     assert got["ok"] is False and "关闭" in got["error"]
 
 
@@ -64,7 +64,7 @@ def test_missing_venv_gives_actionable_hint(monkeypatch, tmp_path):
     from utils import settings
     monkeypatch.setattr(settings, "get_bool", lambda k, d=None: True)
     monkeypatch.setattr(browser_tool, "_VENV_PY", tmp_path / "nope" / "python.exe")
-    got = browser_tool.browse_pages.invoke({"task": "看下价格"})
+    got = browser_tool.browse_pages(**{"task": "看下价格"})
     assert got["ok"] is False and "browser_venv" in got["error"] and "uv pip install" in got["error"]
 
 
@@ -74,7 +74,7 @@ def test_no_model_config_talks_chinese(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "get_bool", lambda k, d=None: True)
     monkeypatch.setattr(browser_tool, "_VENV_PY", Path(sys.executable))   # 存在即可
     monkeypatch.setattr(browser_tool, "_active_llm", lambda: {})
-    got = browser_tool.browse_pages.invoke({"task": "看下价格"})
+    got = browser_tool.browse_pages(**{"task": "看下价格"})
     assert got["ok"] is False and "模型" in got["error"]
 
 
@@ -109,7 +109,7 @@ def test_parses_last_json_line(monkeypatch, tmp_path):
     _ready(monkeypatch, browser_tool, tmp_path)
     _fake_run(monkeypatch, browser_tool,
               'INFO 一些日志\n{"ok": true, "results": [{"url": "https://a.b/", "content": "售价 99"}], "steps": 2}')
-    got = browser_tool.browse_pages.invoke({"task": "看下价格", "urls": ["https://a.b/"]})
+    got = browser_tool.browse_pages(**{"task": "看下价格", "urls": ["https://a.b/"]})
     assert got["ok"] is True and got["results"][0]["content"] == "售价 99"
 
 
@@ -117,7 +117,7 @@ def test_runner_failure_passes_through(monkeypatch, tmp_path):
     from tools import browser_tool
     _ready(monkeypatch, browser_tool, tmp_path)
     _fake_run(monkeypatch, browser_tool, {"ok": False, "error": "站点打不开"})
-    got = browser_tool.browse_pages.invoke({"task": "看下价格"})
+    got = browser_tool.browse_pages(**{"task": "看下价格"})
     assert got["ok"] is False and got["error"] == "站点打不开"
 
 
@@ -125,7 +125,7 @@ def test_empty_results_adds_note(monkeypatch, tmp_path):
     from tools import browser_tool
     _ready(monkeypatch, browser_tool, tmp_path)
     _fake_run(monkeypatch, browser_tool, {"ok": True, "results": []})
-    got = browser_tool.browse_pages.invoke({"task": "看下价格"})
+    got = browser_tool.browse_pages(**{"task": "看下价格"})
     assert got["ok"] is True and "note" in got
 
 
@@ -133,7 +133,7 @@ def test_timeout_degrades_not_raises(monkeypatch, tmp_path):
     from tools import browser_tool
     _ready(monkeypatch, browser_tool, tmp_path)
     _fake_run(monkeypatch, browser_tool, {}, raise_timeout=True)
-    got = browser_tool.browse_pages.invoke({"task": "看下价格"})
+    got = browser_tool.browse_pages(**{"task": "看下价格"})
     assert got["ok"] is False and "超时" in got["error"]
 
 
@@ -152,7 +152,7 @@ def test_url_cap_applied(monkeypatch, tmp_path):
     monkeypatch.setattr(browser_tool.subprocess, "run", fake)
     from utils import settings
     monkeypatch.setattr(settings, "get_int", lambda k, d=0: 1 if k == "BROWSER_MAX_URLS" else d)
-    browser_tool.browse_pages.invoke({"task": "t", "urls": ["https://a/1", "https://a/2", "https://a/3"]})
+    browser_tool.browse_pages(**{"task": "t", "urls": ["https://a/1", "https://a/2", "https://a/3"]})
     assert len(seen[0]["urls"]) == 1, seen[0]["urls"]
     assert seen[0]["llm"]["model"] == "m" and seen[0]["vision"] is False
 
