@@ -188,3 +188,95 @@ def test_runner_helpers_offline():
     assert rr.run({})["ok"] is False and "task" in rr.run({})["error"]
     assert rr.run({"task": "x"})["ok"] is False and "model" in rr.run({"task": "x"})["error"]
     assert "search" in rr.EXCLUDE_ACTIONS and "write_file" in rr.EXCLUDE_ACTIONS   # 搜索只走 Tavily、不开写能力
+
+# ---------------------------------------------------------------- 浏览器侧模型（裁定 5）
+def test_browser_model_ref_setting_registered():
+    """「浏览器侧模型」设置项必须登记在浏览器组里（留空=跟随聊天侧）。"""
+    from utils import settings
+    spec = [s for s in settings.SPECS if s["key"] == "BROWSER_MODEL_REF"]
+    assert spec, "BROWSER_MODEL_REF 没登记"
+    assert spec[0]["group"] == "browser" and spec[0]["kind"] == "text"
+    assert spec[0].get("default", "") == ""
+
+
+def _patch_model_sources(monkeypatch, ref_value, ref_row, active_row):
+    from tools import browser_tool as bt
+    from api import context as ctxmod
+    from api import customize as cz
+    from utils import settings
+    monkeypatch.setattr(ctxmod, "get_owner_context", lambda: 4)
+    monkeypatch.setattr(settings, "get", lambda k, d=None: ref_value if k == "BROWSER_MODEL_REF" else d)
+    monkeypatch.setattr(cz, "get_provider_by_ref", lambda aid, ref: ref_row)
+    monkeypatch.setattr(cz, "get_active_provider", lambda aid: active_row)
+    return bt
+
+
+def test_browser_model_ref_wins(monkeypatch):
+    """填了引用 → 用那一条（哪怕账号另有生效配置）。"""
+    ref = {"model_name": "zai-org/GLM-5.3-Flash", "base_url": "https://api.siliconflow.cn/v1",
+           "api_key": "k1", "supports_vision": False}
+    act = {"model_name": "deepseek-flash", "base_url": "https://api.deepseek.com",
+           "api_key": "k2", "supports_vision": False}
+    bt = _patch_model_sources(monkeypatch, "GLM-5.3-Flash", ref, act)
+    got = bt._active_llm()
+    assert got["model"] == "zai-org/GLM-5.3-Flash" and got["api_key"] == "k1"
+
+
+def test_browser_model_ref_empty_follows_chat_side(monkeypatch):
+    """留空 → 跟随聊天侧（账号生效配置）。"""
+    act = {"model_name": "deepseek-flash", "base_url": "https://api.deepseek.com",
+           "api_key": "k2", "supports_vision": False}
+    bt = _patch_model_sources(monkeypatch, "", None, act)
+    assert bt._active_llm()["model"] == "deepseek-flash"
+
+
+def test_browser_model_ref_miss_falls_back(monkeypatch):
+    """填了但没命中（None）→ 不让整轮失败，回退到生效配置。"""
+    act = {"model_name": "agnes-3.0-flash", "base_url": "https://x/v1", "api_key": "k", "supports_vision": True}
+    bt = _patch_model_sources(monkeypatch, "不存在的名字", None, act)
+    got = bt._active_llm()
+    assert got["model"] == "agnes-3.0-flash" and got["vision"] is True
+
+
+def test_runner_native_first_then_auto_compat(monkeypatch):
+    """原生优先；只有上游拒绝结构化输出时才自动切兼容重试一次。"""
+    rr = _load_runner()
+    seen = []
+
+    def fake(req):
+        seen.append(bool(req.get("compat_json")))
+        if len(seen) == 1:
+            return {"ok": False, "error": "browser-use 不可用（RuntimeError: response_format type is unavailable now）"}
+        return {"ok": True, "results": [{"url": "u", "content": "c"}]}
+
+    monkeypatch.setattr(rr, "_run_once", fake)
+    out = rr.run({"task": "x", "llm": {"model": "m"}})
+    assert seen == [False, True] and out["ok"] is True
+
+
+def test_runner_explicit_flag_disables_auto_retry(monkeypatch):
+    """调用方显式指定 compat_json 时不再自动重试（测试与排查要靠它固定路径）。"""
+    rr = _load_runner()
+    seen = []
+
+    def fake(req):
+        seen.append(req.get("compat_json"))
+        return {"ok": False, "error": "RuntimeError: response_format type is unavailable now"}
+
+    monkeypatch.setattr(rr, "_run_once", fake)
+    rr.run({"task": "x", "compat_json": True})
+    rr.run({"task": "x", "compat_json": False})
+    assert seen == [True, False]
+
+
+def test_runner_other_errors_do_not_retry(monkeypatch):
+    """与结构化输出无关的失败**不**重试（省时间、也避免掩盖真因）。"""
+    rr = _load_runner()
+    seen = []
+
+    def fake(req):
+        seen.append(1)
+        return {"ok": False, "error": "站点打不开"}
+
+    monkeypatch.setattr(rr, "_run_once", fake)
+    assert rr.run({"task": "x"})["ok"] is False and len(seen) == 1

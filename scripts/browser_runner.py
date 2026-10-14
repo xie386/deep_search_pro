@@ -90,7 +90,7 @@ def _cleanup_profile(req: dict) -> None:
         pass
 
 
-def run(req: dict) -> dict:
+def _run_once(req: dict) -> dict:
     """跑一次浏览器任务，返回契约里的 dict（**绝不抛异常**，错误也走返回值）。"""
     t0 = time.time()
     task = (req.get("task") or "").strip()
@@ -127,9 +127,13 @@ def run(req: dict) -> dict:
         #   （真机实验里 browse_pages 因此连败 8 次）。故对不支持结构化输出的模型改用**兼容路径**：
         #   · dont_force_structured_output=True   —— 不向上游强推 response_format；
         #   · add_schema_to_system_prompt=True    —— 改为把 schema 写进系统提示，仍能拿到结构化结果。
-        #   为什么不按厂商分支：GLM/siliconflow 两条路都能吃，统一走兼容路径最省心、也是一条代码路径。
-        llm_kw["dont_force_structured_output"] = True
-        llm_kw["add_schema_to_system_prompt"] = True
+        #   ★ 但真机对照（同站点同任务）显示兼容路径**会让格式纪律变松**：
+        #     agnes-3.0-flash 在兼容模式下有 2 步把动作输出成大白话（AgentOutput Invalid JSON），
+        #     而 GLM-5.3-Flash 走**原生**结构化输出时 0 报错。故做成可切换（默认兼容=最广适配），
+        #     由调用方/实测决定该用哪条路 —— 见 `compat_json` 入参。
+        if bool(req.get("compat_json", False)):           # 默认**原生**；只有上游拒绝时才由 run() 自动重试兼容路径
+            llm_kw["dont_force_structured_output"] = True
+            llm_kw["add_schema_to_system_prompt"] = True
         llm = ChatOpenAI(**llm_kw)
 
         # 独立临时 profile（不碰用户浏览器）；放在 BROWSER_USE_CONFIG_DIR 下（D 盘），跑完在 finally 里删掉。
@@ -243,6 +247,24 @@ def run(req: dict) -> dict:
         "errors": errs,
         "success": bool(history.is_successful()) if history.is_done() else None,
     }
+
+
+def run(req: dict) -> dict:
+    """跑一次；**原生结构化输出优先**，仅当上游明确拒绝（`response_format` 不可用）时自动切兼容路径重试一次。
+
+    为什么（2026-10-14 真机对照，同站点同任务）：
+      · 原生路径（推 response_format）：GLM-5.3-Flash 0 报错、动作干净 → 首选；
+      · 兼容路径（把 schema 写进系统提示）：agnes-3.0-flash 会丢步（动作输出成大白话）、
+        GLM 也能吃，但格式纪律明显变松 → 只在必要时用；
+      · deepseek 两种都不行（它回自己的 DSML 方言）→ 必须靠「浏览器侧模型」设置项另指定模型。
+    调用方传了 `compat_json`（True/False）就尊重它，不再自动重试。
+    """
+    out = _run_once(req if req.get("compat_json") is not None else dict(req, compat_json=False))
+    if (not out.get("ok")) and (req.get("compat_json") is None) \
+            and "response_format" in str(out.get("error") or ""):
+        _log("上游拒绝结构化输出（response_format 不可用）→ 改用兼容路径重试一次")
+        out = _run_once(dict(req, compat_json=True))
+    return out
 
 
 def main() -> int:

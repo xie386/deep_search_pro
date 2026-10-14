@@ -102,6 +102,14 @@ SPECS: tuple[dict, ...] = (
     # 口径见 docs/v4.0/v4.0规划文档.md §05 ③ 段；裁定见 docs/v4.0/Verdict/05-网络搜索子Agent升级.md。
     # ★ 总开关标了 restart=True：子 Agent 的工具列表是**装配期**固定的（框架约定），
     #   关掉后需重启后端才彻底不挂载（工具内部另有一道兜底，调用时也会直接回话）。
+    dict(key="BROWSER_MODEL_REF", kind="text", default="", group="browser",
+         label="浏览器侧模型（留空=跟随聊天侧）",
+         help="填「定制助手 · 模型选型」里某条配置的**名字或 id**，浏览器抓取专用它；留空=跟随聊天侧生效配置"
+              "（无生效配置则用 .env 默认模型）。"
+              "为什么要能单独指定（2026-10-14 实测）：浏览器工具要求模型**按 JSON 输出动作** —— "
+              "siliconflow 的 GLM 干净可用、项目默认 agnes 会丢步、deepseek 用自己的 DSML 方言完全不可用。"
+              "★ 本项是**全机**设置：请在各账号里用**同名**配置（例如统一叫「浏览-GLM」），"
+              "没配同名配置的账号会自动回退到它自己的生效配置。"),
     dict(key="BROWSER_USE_ENABLED", kind="switch", default="1", group="browser", restart=True,
          label="浏览器抓取工具", help="打开后【网络搜索助手】多一个 browse_pages 工具：进入指定网址取一手资料"
                                      "（先用 Tavily 定位筛选、再打开关键页深挖）；关掉=与升级前完全一致。改动需重启后端。"),

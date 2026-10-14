@@ -56,17 +56,32 @@ def _active_llm() -> dict:
     """
     try:
         from api.context import get_owner_context
-        from api.customize import get_active_provider
+        from api.customize import get_active_provider, get_provider_by_ref
         aid = get_owner_context()
     except Exception as e:                                  # noqa: BLE001
         print(f"[browser] 读模型配置失败：{e}")
         return {}
     row = None
     if aid:
+        # ① 「浏览器侧模型」设置项（留空=跟随聊天侧）：填了配置名或 id 就用它 —— 已实测有模型驱动不了浏览器
+        ref = ""
         try:
-            row = get_active_provider(int(aid))
-        except Exception as e:                              # noqa: BLE001
-            print(f"[browser] 读生效模型配置失败：{e}")
+            ref = (_settings.get("BROWSER_MODEL_REF") or "").strip()
+        except Exception:                                   # noqa: BLE001
+            ref = ""
+        if ref:
+            try:
+                row = get_provider_by_ref(int(aid), ref)
+                if row is None:
+                    print(f"[browser] 浏览器侧模型引用「{ref}」没命中（按配置名/id 都没找到）→ 回退到生效配置")
+            except Exception as e:                          # noqa: BLE001
+                print(f"[browser] 解析浏览器侧模型引用失败：{e}")
+        # ② 账号生效配置（聊天侧同源）
+        if row is None:
+            try:
+                row = get_active_provider(int(aid))
+            except Exception as e:                          # noqa: BLE001
+                print(f"[browser] 读生效模型配置失败：{e}")
     if row:
         model = (row.get("model_name") or "").strip()
         key = (row.get("api_key") or "").strip()            # mask=False → 已是真值（E5 的 secret_env 由它解析）

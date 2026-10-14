@@ -347,6 +347,36 @@ def llm_provider_set_active(pid: int, token: str) -> dict:
         conn.close()
 
 
+def get_provider_by_ref(aid: int, ref: str) -> Optional[dict]:
+    """按「引用」取某账号的一条模型配置（v4.0 大点 05：浏览器侧可单独指定模型）。**返回原样密钥**。
+
+    `ref` 支持两种写法（配置导向，不写死任何厂商）：
+      · 配置名（`provider_name`，忽略大小写与首尾空白）；
+      · 行 id（纯数字，且必须是该账号自己的行 —— 防越权）。
+    找不到返回 None，由调用方回退到「账号生效配置 → `.env` 默认模型」。
+
+    与 `get_active_provider` 同一口径：这里**只用于造模型**，所以 mask=False（拿真值）。
+    """
+    ref = (ref or "").strip()
+    if not ref:
+        return None
+    ensure_tables()
+    conn = get_personal_conn()
+    try:
+        row = None
+        if ref.isdigit():
+            row = conn.execute("SELECT * FROM llm_providers WHERE id=? AND owner_id=?",
+                               (int(ref), int(aid))).fetchone()
+        if row is None:
+            row = conn.execute(
+                "SELECT * FROM llm_providers WHERE owner_id=?"
+                " AND lower(trim(provider_name))=lower(trim(?)) ORDER BY id DESC LIMIT 1",
+                (int(aid), ref)).fetchone()
+        return _normalize_provider({k: row[k] for k in row.keys()}, mask=False) if row else None
+    finally:
+        conn.close()
+
+
 def get_active_provider(aid: int) -> Optional[dict]:
     """查询某账号启用的模型配置（无则 None = 用默认 .env 模型）。**返回原样密钥**（造模型要用）。
 
