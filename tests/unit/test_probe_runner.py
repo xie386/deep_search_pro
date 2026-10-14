@@ -281,7 +281,10 @@ def test_probe_runner_offline():
         c2.commit()
         return c2
 
-    scratch2 = "_probe_selftest_user"
+    # ★ 2026-10-15：本块**不能**复用上面那块的 scratch 目录 —— 两块共用同一个
+    #   `_probe_selftest_user` 时，pytest-randomly 调换执行顺序后，上一块留下的
+    #   `probe_run_*.json` 会污染本块「只留最近一份」的计数，导致随机顺序下偶发失败。
+    scratch2 = "_probe_selftest_user_b"
     sbox = os.path.join(pr.SANDBOX_DIR, scratch2)
     os.makedirs(sbox, exist_ok=True)
     junk = os.path.join(sbox, "junk_本轮新产物.txt")
@@ -583,7 +586,7 @@ def test_probe_runner_offline():
 #    跑完必须自清 —— 此前只建不删，前置清理后被单测反复重建（"清理被重新污染"的根因之一）。
 import atexit as _atexit
 
-_SCRATCH_USERS = ("_probe_selftest_user",)
+_SCRATCH_USERS = ("_probe_selftest_user", "_probe_selftest_user_b")
 
 
 def _cleanup_scratch_dirs():
