@@ -122,6 +122,14 @@ def run(req: dict) -> dict:
         #   · ChatOpenAI(timeout=…) 放宽单次调用上限（默认 120s）；
         #   · Agent(flash_mode=True, use_thinking=False) 砍掉长篇思考与冗余提示，显著提速。
         llm_kw["timeout"] = float(req.get("llm_timeout_s") or 120)
+        # ★ 2026-10-14 真机实测（deepseek）：browser-use 会发结构化输出参数（`response_format`），
+        #   deepseek 的 API 直接拒：`response_format type is unavailable now` → 整次浏览失败
+        #   （真机实验里 browse_pages 因此连败 8 次）。故对不支持结构化输出的模型改用**兼容路径**：
+        #   · dont_force_structured_output=True   —— 不向上游强推 response_format；
+        #   · add_schema_to_system_prompt=True    —— 改为把 schema 写进系统提示，仍能拿到结构化结果。
+        #   为什么不按厂商分支：GLM/siliconflow 两条路都能吃，统一走兼容路径最省心、也是一条代码路径。
+        llm_kw["dont_force_structured_output"] = True
+        llm_kw["add_schema_to_system_prompt"] = True
         llm = ChatOpenAI(**llm_kw)
 
         # 独立临时 profile（不碰用户浏览器）；放在 BROWSER_USE_CONFIG_DIR 下（D 盘），跑完在 finally 里删掉。

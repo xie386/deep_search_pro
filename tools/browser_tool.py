@@ -44,40 +44,42 @@ def _fail(msg: str) -> dict:
 
 
 def _active_llm() -> dict:
-    """当前账号生效的模型配置 → 浏览器侧模型；缺模型或缺密钥都返回 {}，由调用方去说人话。"""
+    """浏览器侧模型 —— **与聊天侧同一处判定**：优先账号「定制助手 · 模型选型」里启用的那条
+    （`api.customize.get_active_provider`：只认 `is_active=1`，返回**原样密钥**、老库明文作兜底）；
+    **没有启用配置时退回 `.env` 默认模型**（`agent/llm.py` 同源：`LLM_MODEL_MAX` + `OPENAI_API_KEY`
+    + `OPENAI_BASE_URL`；项目默认 agnes 本身多模态）。
+
+    ★ 为什么必须对齐（2026-10-14 真机前发现）：本工具最初自己查 `llm_providers` 的
+      `is_active DESC, id DESC` 第一条，会把**没启用**的自定义配置当成"生效配置" ——
+      而聊天侧只有 `is_active=1` 才算，否则走 `.env` 默认模型。两边不一致就会出现
+      「对话用 agnes、浏览器侧却偷偷用了另一个模型」。缺模型或缺密钥都返回 {}，由调用方说人话。
+    """
     try:
         from api.context import get_owner_context
+        from api.customize import get_active_provider
         aid = get_owner_context()
-    except Exception as e:                                  # noqa: BLE001
-        print(f"[browser] 读账号上下文失败：{e}")
-        return {}
-    if not aid:
-        return {}
-    try:
-        from tools.schema_personal import get_personal_conn
-        conn = get_personal_conn()
-        try:
-            row = conn.execute("SELECT * FROM llm_providers WHERE owner_id=?"
-                               " ORDER BY is_active DESC, id DESC LIMIT 1", (int(aid),)).fetchone()
-            row = dict(row) if row is not None else {}
-        finally:
-            conn.close()
     except Exception as e:                                  # noqa: BLE001
         print(f"[browser] 读模型配置失败：{e}")
         return {}
-    if not row:
-        return {}
-    try:
-        from utils.secrets import get as _secret_get
-        key = _secret_get(row.get("secret_env"), legacy=row.get("api_key") or "")
-    except Exception:                                       # noqa: BLE001
-        key = (row.get("api_key") or "").strip()
-    if not (row.get("model_name") and key):
-        return {}
-    return {"model": row.get("model_name") or "",
-            "base_url": (row.get("base_url") or "").strip(),
-            "api_key": key,
-            "vision": bool(row.get("supports_vision"))}
+    row = None
+    if aid:
+        try:
+            row = get_active_provider(int(aid))
+        except Exception as e:                              # noqa: BLE001
+            print(f"[browser] 读生效模型配置失败：{e}")
+    if row:
+        model = (row.get("model_name") or "").strip()
+        key = (row.get("api_key") or "").strip()            # mask=False → 已是真值（E5 的 secret_env 由它解析）
+        if model and key:
+            return {"model": model, "base_url": (row.get("base_url") or "").strip(),
+                    "api_key": key, "vision": bool(row.get("supports_vision"))}
+        print("[browser] 生效配置缺模型名或缺密钥 → 退回 .env 默认模型")
+    model = (os.getenv("LLM_MODEL_MAX") or "").strip()
+    key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    if model and key:
+        return {"model": model, "base_url": (os.getenv("OPENAI_BASE_URL") or "").strip(),
+                "api_key": key, "vision": True}             # 项目默认 agnes 本身多模态（与 api/server.py:711 同口径）
+    return {}
 
 
 def _proxy() -> str:
@@ -110,8 +112,8 @@ def browse_pages(task: str, urls: list[str] | None = None, max_steps: int | None
                      "browser_venv/Scripts/python.exe browser-use`。")
     llm = _active_llm()
     if not llm:
-        return _fail("没有可用的模型配置：请先在「定制助手 · 模型选型」配置并启用一条模型"
-                     "（浏览器侧沿用该配置，不另配一套）。")
+        return _fail("没有可用的模型配置：浏览器侧沿用聊天侧同一处判定 —— 要么在「定制助手 · 模型选型」"
+                     "里配置并**启用**一条模型，要么在 `.env` 里配好默认模型（LLM_MODEL_MAX / OPENAI_API_KEY）。")
 
     us = [u.strip() for u in (urls or []) if (u or "").strip()]
     cap = max(1, _settings.get_int("BROWSER_MAX_URLS", 3))
