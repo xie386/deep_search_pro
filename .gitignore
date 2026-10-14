@@ -19,6 +19,7 @@ htmlcov/
 # ── 虚拟环境 / 编辑器 / 系统 ──
 .venv/
 venv/
+browser_venv/          # 05：browser-use 的独立运行环境（与主 venv 隔离，绝不入库）
 .env
 .env.*
 .idea/
@@ -77,3 +78,7 @@ docs/v4.0/backups/
 
 # 调研期脚本与实验数据（docs 放代码的破例，2026-10-12 用户裁定：隔离在 *-demo/ 子目录里，本地留存不入库）
 docs/v4.0/research/*-demo/
+browser-use-user-data-dir-*/   # 05：browser-use 导入时会自建（内容全是运行态）
+browser_use_agent_*/         # 05：browser-use 的会话产物目录（导入/运行时会自建，全为运行态）
+browser-use-downloads-*/    # 05：browser-use 的下载暂存目录
+/tmp*/

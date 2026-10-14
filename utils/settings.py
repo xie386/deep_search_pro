@@ -97,6 +97,24 @@ SPECS: tuple[dict, ...] = (
 
     # ★ 2026-10-13 用户拍板：**密钥组整组撤下**（原先在这里只读掩码展示 OPENAI_API_KEY /
     #   TAVILY_API_KEY）——密钥一律只在 `.env` 管，界面既不展示也不回显。
+
+    # ---------------- 网络搜索子Agent升级（05 · browser-use 浏览器工具） ----------------
+    # 口径见 docs/v4.0/v4.0规划文档.md §05 ③ 段；裁定见 docs/v4.0/Verdict/05-网络搜索子Agent升级.md。
+    # ★ 总开关标了 restart=True：子 Agent 的工具列表是**装配期**固定的（框架约定），
+    #   关掉后需重启后端才彻底不挂载（工具内部另有一道兜底，调用时也会直接回话）。
+    dict(key="BROWSER_USE_ENABLED", kind="switch", default="1", group="browser", restart=True,
+         label="浏览器抓取工具", help="打开后【网络搜索助手】多一个 browse_pages 工具：进入指定网址取一手资料"
+                                     "（先用 Tavily 定位筛选、再打开关键页深挖）；关掉=与升级前完全一致。改动需重启后端。"),
+    dict(key="BROWSER_MAX_STEPS", kind="number", default="8", group="browser", min=1, max=100,
+         label="单次最多步数", help="一次浏览任务最多操作多少步。浏览器侧是多步模型循环，**每步约 35~40 秒**"
+                                   "（本机实测），步数越多越慢越费 token；8 步足够「打开一页取要点」。"),
+    dict(key="BROWSER_TASK_TIMEOUT_S", kind="number", default="300", group="browser", min=30,
+         label="单次超时（秒）", help="一次浏览任务的总超时（默认 300：约等于 8 步的实测耗时）；"
+                                     "超时会连浏览器一起收掉，并回退提示改用 Tavily。"),
+    dict(key="BROWSER_MAX_URLS", kind="number", default="3", group="browser", min=1, max=10,
+         label="单次最多打开页数", help="一次任务最多打开几个目标页，超出只取前 N 个（先筛后进，别一次铺开）。"),
+    dict(key="BROWSER_HEADLESS", kind="switch", default="1", group="browser",
+         label="无头运行浏览器", help="默认无头（不弹窗口）；排查页面问题时关掉它，观察真实浏览器行为。"),
 )
 
 SPEC_BY_KEY = {s["key"]: s for s in SPECS}
@@ -317,6 +335,8 @@ def apply_runtime_hooks(keys: list) -> list:
 # --------------------------------------------------------------------------- #
 GROUP_LABELS = {
     "switches": ("🔘 开关", "可以随时开关；保存即生效（个别标注需重启）。"),
+    "browser": ("🌐 浏览器抓取（网络搜索升级）", "网络搜索助手多一个「进网址取一手资料」的工具："
+                                             "有网址时先 Tavily 定位筛选、再打开关键页深挖；另有步数/超时/页数三道闸。"),
     "decision": ("🧭 决策模型参数", "账号路由上「近分精排」的行为参数；保存即生效。"),
     "mail": ("✉️ 邮件发信（验证码通道）", "发件箱在 .env（QQMAIL / QQMSTP）——本页只管显示名、调试开关与发信配额；"
                                           "收件邮箱是各账号自己绑的那个。"),

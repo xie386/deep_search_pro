@@ -46,6 +46,8 @@ _EXACT = {
     #   `retrieval_external : internet_search（Tavily）`），我原来只写了 tavily*/web_search* 等子串，
     #   结果**唯一花额度的那一类一条都没记上** —— 整个 M4 就是为回答"这次为什么烧了额度"而做的。
     "internet_search": KIND_RETRIEVAL_EXTERNAL,
+    # 05：浏览器工具（browser-use）也是**外部检索** —— 让界面能把「进网址抓取」与 Tavily 分开看。
+    "browse_pages": KIND_RETRIEVAL_EXTERNAL,
     "invoke_tool": None,            # None = 看参数里的能力名（api:… / mcp:… / 其它）
     "query_kb": KIND_INTERNAL,
     "read_agent_doc": KIND_INTERNAL,
@@ -56,7 +58,7 @@ _EXACT = {
 }
 EXTRA_TOOL_KINDS: dict = {}
 
-_EXTERNAL_HINTS = ("tavily", "web_search", "search_web", "websearch", "news_search", "rss")
+_EXTERNAL_HINTS = ("tavily", "web_search", "search_web", "websearch", "news_search", "rss", "browse")
 _SHELL_HINTS = ("shell", "run_command", "exec_command")
 
 
