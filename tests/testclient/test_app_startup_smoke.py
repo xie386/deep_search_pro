@@ -63,6 +63,10 @@ def test_startup_hook_reports_missing_names_early():
             bound.add(sub.arg)
         elif isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Store):
             bound.add(sub.id)
+        elif isinstance(sub, ast.ExceptHandler) and sub.name:
+            # `except X as name:` —— 名字挂在 ExceptHandler.name（字符串），不是 ast.Name 节点；
+            # 漏了它会把合法的 `except Exception as _e:` 误报成未绑定（2026-10-15 踩到）。
+            bound.add(sub.name)
 
     used = {n.id for n in ast.walk(hook) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
     unknown = sorted(n for n in used - bound if not hasattr(builtins, n))

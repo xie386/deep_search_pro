@@ -505,12 +505,17 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
     # 前端 POST /api/chat/cancel 置位，模型调用前的检查点负责抛 AgentCancelled。
     # finally 里清标记，避免残留标志把下一轮 invoke 立刻掐掉。
     agent_cancel.begin(thread_id)
+    # ★ 2026-10-15：在跑轮次台账 —— 进程被强杀 / 重启时靠它在下次启动补落中断占位。
+    #   真机实测踩到过：端口冲突导致后端在跑一轮时重启，那一轮没有任何回执就凭空消失。
+    from agent import turn_ledger as _turn_ledger
+    _turn_ledger.begin(account_id, thread_id, question)
     try:
         # v3.1：默认走流式（正文/思考逐段推前端 ✓ 中断能真的省 token ✓）；
         # ZX_STREAM=0 时行为与改造前**逐字一致** ✓
         result, _streamed = _invoke_or_stream(agent, {"messages": invoke_messages}, cfg, thread_id)
     finally:
         agent_cancel.end(thread_id)
+        _turn_ledger.end(thread_id)
     # 思考捕获（A+ 方案）：ReasoningChatOpenAI 保留 reasoning_content 到每轮
     # AIMessage 的 additional_kwargs，invoke 完成后遍历提取并推给前端右栏——
     # 单请求（省 token）、不弃 langchain、覆盖所有轮次（含工具调用后的思考）。
@@ -600,6 +605,16 @@ async def _startup():
     threading.Thread(target=_voice_asr.warmup, daemon=True).start()
     from api.digest_scheduler import start as start_digest_sched
     start_digest_sched()
+    # ★ 2026-10-15：上次进程若是被强杀 / 重启打断的，给那些没跑完的轮次补落中断占位
+    #   （否则历史里悬着一个没有回答的提问，下一轮装配还会把它当待答问题）。
+    try:
+        from agent import turn_ledger as _turn_ledger
+        _done = _turn_ledger.recover()
+        if _done:
+            print("[turn_ledger] 已为 %d 条被中断的轮次补落占位：%s"
+                  % (len(_done), ", ".join(d["thread_id"][:8] for d in _done)))
+    except Exception as _e:                                  # noqa: BLE001
+        print("[turn_ledger] 启动补偿失败（忽略）: %s: %s" % (type(_e).__name__, _e))
 
 
 @app.on_event("shutdown")
