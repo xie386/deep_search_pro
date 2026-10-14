@@ -235,3 +235,53 @@ asyncio.run(main())
 | 2026-10-14 | 建骨架（占位期）；完成第一手事实只读探测 |
 | 2026-10-14 | **进调研期**：按用户指令做两个方向调研（Tavily 官方能力/参数/计费/最佳实践；browser-use 用法与接入面现状对照）。本文件**整篇覆盖重写**为调研事实结论；按用户口径**不生成任何待定方向或决定**；未改动任何代码与数据 |
 | 2026-10-14 | **记入本次大点的需求与目的（用户逐字口径）**＋需求依赖的事实核对：Tavily 能力边界修正（有 `/extract` 等取 URL 正文的能力，缺的是**交互层**）、项目侧竞品官网「填了、存着、没人用」的只读实测证据；仍不生成任何方向或决定 |
+
+---
+
+## 六、补充调研（2026-10-14，为「定方案」补齐实现级事实）
+
+### 6.1 browser-use：实现级参数与行为（出处：官方 `AGENTS.md`（v2），<https://raw.githubusercontent.com/browser-use/browser-use/main/AGENTS.md>；另有 <https://docs.browser-use.com/open-source/customize/agent/all-parameters>）
+
+| 事实 | 值 / 说明 |
+|---|---|
+| 执行入口 | `history = await agent.run(max_steps=100)`（**async**；本次未找到同步入口） |
+| **`directly_open_url`** | **默认 `True`**：官方原文「If we detect a url in the task, we directly open it」——即**任务串里带 URL 会被直接打开**，不需要模型先"决定去访问" |
+| `initial_actions` | 主任务之前**不经模型**执行的动作列表（可用于预先导航/预填） |
+| `max_steps` / `max_actions_per_step` / `max_failures` | 100 / 3 / 3（AGENTS.md 口径；另一页曾写 5/5 —— 两处口径不同，以实现期实际版本为准） |
+| `llm_timeout` / `step_timeout` | 90s / 120s |
+| `max_history_items` | 只保留最近 N 步进 LLM 记忆（None = 全留） |
+| `use_vision` | `AGENTS.md` 写默认 `"auto"`；`customize/agent/all-parameters` 页写默认 `True` —— **两处口径冲突，实现期以实际版本为准**（`"auto"` 语义：带截图工具但按需用图） |
+| `page_extraction_llm` | 单独用于页面内容抽取的模型；官方建议「用小而快的模型，因为它只负责从页面抽文本」 |
+| `output_model_schema` | Pydantic 模型 → 结构化输出；结果在 `history.structured_output` |
+| `Tools(exclude_actions=[...])` | 可**裁剪内置动作**（如排除 `search`/`write_file`） |
+| 内置动作清单（20 项） | 导航/控制：`search`(DuckDuckGo/Google/Bing)、`navigate`、`go_back`、`wait`；交互：`click`、`input`、`upload_file`、`scroll`、`find_text`、`send_keys`；JS：`evaluate`；标签页：`switch`、`close`；抽取：`extract`、`screenshot`；表单：`dropdown_options`、`select_dropdown`；文件：`write_file`、`read_file`、`replace_file`；结束：`done` |
+| 自定义工具 | `Tools()` + `@tools.action(description=…, allowed_domains=[…])`；⚠️ 官方警告：**参数名必须精确匹配**（如 `browser_session: BrowserSession`），否则工具静默失败 |
+| `AgentHistoryList` 可用面 | `urls()`、`screenshot_paths()`、`action_names()`、**`extracted_content()`**、`errors()`、`has_errors()`、`model_actions()`、`model_thoughts()`、`last_action()`、`final_result()`、`is_done()`、`is_successful()`、`number_of_steps()`、`total_duration_seconds()` |
+| 成本 | `calculate_cost=True` 可算并记录 API 成本 |
+| **遥测** | 默认用 PostHog 收集匿名使用数据；**可用 `ANONYMIZED_TELEMETRY=false` 关掉**（环境变量或代码里设） |
+| Cloud 相关 | `use_cloud=True` / `@sandbox` / `BROWSER_USE_API_KEY` 属其托管服务，本次不采用 |
+
+### 6.2 本项目接入面（2026-10-14 只读实测，供方案落到文件/函数）
+
+| 接入点 | 现状事实 |
+|---|---|
+| 子 Agent 装配 | `agent/subagents/network_search_agent.py:9`（`"tools": [internet_search]`）—— 新增工具即在此登记 |
+| 子 Agent 提示词 | `prompt/prompts.yml` 的 `sub_agents.tavily`（`name` / `description` / `system_prompt`）—— 工具清单与工作流纪律写在这里；现有纪律第 5 条已是「逐条标注来源名称+日期+URL」 |
+| 工具写法参照 | `tools/tavily_tool.py`：`@tool` + 每次调用先 `monitor.report_tool(tool_name=…, args=…)`（前端靠它推进度） |
+| **用户数据注入** | `agent/context_sources.py`：`register(name, provider)` + `collect(account_id, question)`；`build_request_context(..., sources=...)`（`agent/build_context.py:276`）—— 「账号里已知的网址」从这里注入是现成通道 |
+| 取消契约 | `agent/cancel.py`：`is_cancelled()` / `check()`（抛 `AgentCancelled`）/ `running_thread()` —— 长任务（浏览器多步）可在步间查 |
+| 用量分类 | `agent/usage_counter.py`：五类 `internal/retrieval_external/shell/api/mcp`；判定顺序＝精确表 → 扩展表 → `invoke_tool` 前缀 → 子串（`tavily/web_search/…`）→ 兜底 internal —— 新工具名需登记 |
+| 设置开关载体 | `utils/settings.py:39` `SPECS: tuple[dict, ...]`（`SPEC_BY_KEY` 索引）—— 新增开关/参数照抄即自动出现在设置页 |
+| 本机浏览器 | Chrome：`C:\Program Files\Google\Chrome\Application\chrome.exe` **存在**；Edge：`C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe` **存在** |
+| 既有 CDP 实践 | `tests/test_out/_client_test.py`（独立 Chrome + 临时 profile + CDP 驱动）、`scripts/cdp_*.py` |
+| 依赖现状 | venv 由 uv 管理（**无 pip 模块**，故只能用 `uv pip …`）；`uv pip list` 未在本轮执行（调研期只读，未做任何环境改动）→ **与既有包的冲突面仍属未验证**（见 §三 2.7） |
+
+### 6.3 仍然未验证的（进实现期的第一批验证动作）
+
+1. `uv pip install browser-use` 在本项目 venv（Python 3.11.15）能否装上、装上后 `uv pip check` 是否干净 —— **未执行**。
+2. `import browser_use` 与既有 `langchain`/`deepagents`/`pydantic` 版本的共存 —— **未执行**。
+3. 浏览器侧模型：现有 `llm_providers` 里的 OpenAI 兼容配置能否直接喂给 `ChatOpenAI`（官方称可以，含自定义 URL）—— **未实测**。
+4. browser-use 是否暴露**步级回调**（用于接 `cancel.check()`）—— 本次抓取的文档未提及，**未验证**。
+
+
+| 2026-10-14 | **补充调研**（§六）：browser-use 实现级参数与行为（AGENTS.md）、本项目接入面（子 Agent 装配 / 提示词段 / context_sources / cancel / usage_counter / settings SPECS / 本机 Chrome 路径）、以及 4 条实现期首批验证动作 |
