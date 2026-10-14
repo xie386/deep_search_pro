@@ -489,6 +489,10 @@ def maybe_refine(account_id: int | None, question: str, entries, dec: dict,
             failure_log.record("decision_model", err or "empty_response", account_id)
         except Exception:  # noqa: BLE001
             pass
+        # ★ 2026-10-15：计费 / 鉴权 / 模型不存在这类**重试也不会好**的错误 → 自动关掉该账号开关。
+        #   真机实测踩到过：开关曾开着而模型侧没额度，于是**每轮都白试一次**、用户却无从察觉
+        #   （开关的改动作当时也没有审计留痕）。这类错误不解自愈，静默重试只是持续浪费。
+        _maybe_auto_off(account_id, err)
         audit(event="error", account_id=account_id, error=err, ms=ms, **why)
         return None
 
@@ -510,6 +514,49 @@ def maybe_refine(account_id: int | None, question: str, entries, dec: dict,
         _append(CACHE_PATH, _CACHE[ck])
     return _apply(dec, order, choice, why, {"cached": False, "key": ck, "disp": choice_disp,
                                            "probs": probs, "ms": ms})
+
+
+#: 「重试也不会好」的错误特征（计费 / 额度 / 鉴权 / 模型名不存在）—— 命中即自动关掉账号开关。
+_FATAL_ERR_MARKS = ("http_402", "http_403", "no credits", "insufficient", "quota",
+                    "billing", "http_401", "invalid_api_key", "authentication",
+                    "model_not_found", "not found", "does not exist")
+
+
+def _maybe_auto_off(account_id: int | None, err: str | None) -> bool:
+    """模型侧致命错误 → 把该账号的「决策模型精排」开关关掉，并写审计。
+
+    为什么自动关（2026-10-15 真机实测）：开关曾开着而模型侧没额度，用户每发一轮就白试一次，
+    界面上没有任何可感知的反馈；错误本身不解自愈，继续重试只是持续浪费。
+    开关是账号级 DB 字段（`accounts.decision_router`），这里直接落库 = 与前端手动关闭等价，
+    用户随时可在界面上再打开。返回是否真的改了库。
+    """
+    low = (err or "").lower()
+    if not account_id or not any(m in low for m in _FATAL_ERR_MARKS):
+        return False
+    try:
+        from tools.schema_personal import get_personal_conn, ensure_tables
+        ensure_tables()
+        conn = get_personal_conn()
+        try:
+            cur = conn.execute("UPDATE accounts SET decision_router=0 WHERE id=?", (int(account_id),))
+            changed = bool(getattr(cur, "rowcount", 0))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001
+        return False
+    if changed:
+        # 只走本模块的 audit：它落在同一个 decision 审计流，且**单测里已被重定向到临时目录**
+        # （2026-10-15 踩到：早先这里另调 utils.audit，于是单测把真实审计文件写脏了）。
+        try:
+            audit(event="auto_off", account_id=account_id, reason="fatal_model_error",
+                  error=(err or "")[:100],
+                  note="模型侧致命错误，已自动关闭；可在前端开关重新打开")
+        except Exception:                                    # noqa: BLE001
+            pass                                             # 审计是记录，不是前置条件
+        print("[decision] 账号 %s 的决策模型精排已自动关闭（模型侧致命错误：%s）"
+              % (account_id, (err or "")[:60]))
+    return changed
 
 
 def _apply(dec: dict, order: list[str], choice: str, why: dict, extra: dict) -> dict | None:

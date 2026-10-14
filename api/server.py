@@ -1428,6 +1428,14 @@ async def decision_router_set(req: dict = Body(...), token: str = Query(...)):
     finally:
         conn.close()
     print("[decision] 账号 %s 的决策模型精排 → %s" % (sess["account_id"], "开" if on else "关"))
+    # ★ 2026-10-15：开关的改动作**必须留痕**。真机出现过「开关是开着的，却没人记得开过」的排查困境
+    #   —— 当时全仓只有这个端点能改该字段，但没有任何记录，只能靠推理还原。记进 decision 审计流。
+    try:
+        from utils import audit as _audit
+        _audit.write_event("decision", "switch", account_id=sess.get("account_id"),
+                           on=bool(on), by=sess.get("username"), via="api")
+    except Exception as _ae:                                  # noqa: BLE001
+        print("[decision] 开关变更审计写入失败（忽略）: %s: %s" % (type(_ae).__name__, _ae))
     return {"on": bool(on)}
 
 

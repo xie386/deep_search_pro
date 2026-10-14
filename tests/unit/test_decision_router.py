@@ -234,8 +234,28 @@ def test_maybe_refine_full_flow_and_cache(ents, monkeypatch):
     assert dr._SESSION["hits"] == 1
 
 
+class _FakeConnForAutoOff:
+    """极简假连接：只为让「致命错误 → 自动关开关」那条路径不去碰真库。"""
+
+    def execute(self, sql, params=()):
+        class _Cur:
+            rowcount = 0
+        return _Cur()
+
+    def commit(self):
+        pass
+
+    def close(self):
+        pass
+
+
 def test_maybe_refine_error_is_fail_safe(ents, monkeypatch):
     monkeypatch.setattr(dr, "switch_on", lambda account_id=None: True)
+    # 2026-10-15：本用例的错误串正是 http_402 → 会走到「自动降级」。那条路径要写库，
+    # 而单测不许碰真库（04 轮立的纪律），这里把库连接换掉；自动降级本身另有专门用例。
+    import tools.schema_personal as _sp
+    monkeypatch.setattr(_sp, "ensure_tables", lambda: None)
+    monkeypatch.setattr(_sp, "get_personal_conn", lambda: _FakeConnForAutoOff())
     monkeypatch.setenv("DECISION_MODEL_NAME", "m")
     monkeypatch.setenv("DECISION_MODEL_BASE_URL", "https://x/api/v1")
     monkeypatch.setenv("DECISION_MODEL_API_KEY", "k")
