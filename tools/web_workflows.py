@@ -44,6 +44,61 @@ _AGGREGATOR_HINTS = (
 )
 
 
+# ---------------------------------------------------------------- 两道代码闸（2026-10-14 审计驱动）
+# 为什么进代码：提示词里写"整轮 ≤5 次检索"**被实测无视** —— 审计显示一轮 2 分钟内发了约 30 次
+#（含字面重复：同一查询词前后各发一次）。所以改成代码强制：同轮重复 <按查询词去重> / 每轮次数上限。
+_TURN_SEARCH: dict = {}          # (aid, thread, turn) -> 已用次数
+_TURN_QUERIES: dict = {}         # (aid, thread, turn) -> 已发过的查询词集合
+_GATE_LOCK = __import__("threading").Lock()      # 工具跑在工作线程里，计数要加锁
+_TURN_KEEP = 24                  # 只保留最近 N 轮，防长跑进程内存膨胀
+
+
+def _turn_key() -> tuple:
+    try:
+        from agent import usage_counter as uc
+        aid, tid, turn = uc.context()
+        return (int(aid or 0), str(tid or ""), int(turn or 0))
+    except Exception:                                       # noqa: BLE001
+        return (0, "", 0)
+
+
+def _prune() -> None:
+    for d in (_TURN_SEARCH, _TURN_QUERIES):
+        while len(d) > _TURN_KEEP:
+            d.pop(next(iter(d)), None)
+
+
+def budget_gate(query: str) -> str | None:
+    """返回 `None` = 放行；返回字符串 = **拒绝原因（中文人话）**。
+
+    两道闸：① 同一轮里**同一个查询词**已发过 → 拒绝（去重）；② 本轮累计检索数达上限 → 拒绝。
+    上限取设置项 `WEB_SEARCH_MAX_PER_TURN`（默认 15；0=不限）。纯计数、不花钱，可离线单测。
+    """
+    key = _turn_key()
+    qkey = " ".join((query or "").split()).lower()
+    with _GATE_LOCK:
+        seen = _TURN_QUERIES.setdefault(key, set())
+        if qkey and qkey in seen:
+            _prune()
+            return "同一个查询词本轮已经查过（重复调用不再发起）——直接使用已有结果作答即可"
+        cap = 15
+        try:
+            from utils import settings as _s
+            cap = int(_s.get_int("WEB_SEARCH_MAX_PER_TURN", 15) or 0)
+        except Exception:                                   # noqa: BLE001
+            cap = 15
+        used = _TURN_SEARCH.get(key, 0)
+        if cap > 0 and used >= cap:
+            _prune()
+            return ("本轮检索次数已达上限（%d 次）——请用已有结果作答；若确有缺口，"
+                    "在回答里如实说明缺哪一项" % cap)
+        if qkey:
+            seen.add(qkey)
+        _TURN_SEARCH[key] = used + 1
+        _prune()
+    return None
+
+
 def _sizes(obj) -> int:
     try:
         return len(json.dumps(obj, ensure_ascii=False, default=str))
@@ -105,6 +160,9 @@ def web_search_only(query: str, topic: str = "general", max_results: int = 8,
     :param bilingual: 中英双语检索（中文实体词召回更全；仅当 query 含中文时生效）。
     :return: Tavily 原始结构（`{"results": [...]}`），便于逐条标注来源。
     """
+    refused = budget_gate(query)
+    if refused:
+        return {"ok": False, "error": refused, "results": [], "refused_by_budget": True}
     monitor.report_tool(tool_name="全网检索", args={"query": query, "topic": topic, "days": days, "bilingual": bilingual})
     t0 = time.time()
     try:
@@ -152,6 +210,9 @@ def search_then_browse(query: str, task: str, max_sites: int = 2, topic: str = "
     :param topic: general / news / finance。
     :return: {"ok":…, "search": <检索原始结构>, "browsed": <进站结果>, "sites": [<实际进的网址>]}
     """
+    refused = budget_gate(query)
+    if refused:
+        return {"ok": False, "error": refused, "results": [], "refused_by_budget": True}
     monitor.report_tool(tool_name="先检索定位再进站",
                         args={"query": query, "task": task, "max_sites": max_sites})
     t0 = time.time()

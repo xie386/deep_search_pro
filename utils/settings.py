@@ -102,6 +102,10 @@ SPECS: tuple[dict, ...] = (
     # 口径见 docs/v4.0/v4.0规划文档.md §05 ③ 段；裁定见 docs/v4.0/Verdict/05-网络搜索子Agent升级.md。
     # ★ 总开关标了 restart=True：子 Agent 的工具列表是**装配期**固定的（框架约定），
     #   关掉后需重启后端才彻底不挂载（工具内部另有一道兜底，调用时也会直接回话）。
+    dict(key="WEB_SEARCH_MAX_PER_TURN", kind="number", default="15", group="browser", min=0,
+         label="每轮检索次数上限", help="同一个问题（一轮）里最多发起多少次关键词检索；0=不限。"
+                                       "★ 提示词里的次数纪律实测会被无视（审计见一轮 30 次），所以这道闸**在代码里强制**："
+                                       "超出后不再发起、回一句中文说明让你用已有结果作答；同一查询词重复调用也会被直接跳过。"),
     dict(key="BROWSER_MODEL_REF", kind="text", default="", group="browser",
          label="浏览器侧模型（留空=跟随聊天侧）",
          help="填「定制助手 · 模型选型」里某条配置的**名字或 id**，浏览器抓取专用它；留空=跟随聊天侧生效配置"
