@@ -4794,7 +4794,7 @@ createApp({
       } catch (e) {}
       if (ws) { try { ws.close(); } catch (e) {} wsTarget = ''; }
       token.value = ''; username.value = ''; password.value = '';
-      resetPriceState();            // ★ 注销：清掉上一个账号的价格缓存
+      resetAccountState();          // ★ 注销/会话失效：清掉上一个账号的**全部**按账号缓存（含技能与工具）
       errMsg.value = msg || '';
       authMode.value = 'login';
       if (msg) showToast(msg, true);
@@ -5559,6 +5559,7 @@ createApp({
         storeSet('zx_token', data.token);
         storeSet('zx_user', data.account.username);
         storeSet('zx_role', data.account.role);
+        resetAccountState();   // ★ 换账号先清干净，再按新账号重新加载（否则技能与工具仍显示上个账号）
         go('home');
         connectWS(); loadMyData();
         loadReports(); loadSubs(); loadProviders(); loadSouls(); loadMemory(); loadVoicePacks();
@@ -5610,10 +5611,7 @@ createApp({
       document.body.style.removeProperty('--user-bg');
       document.body.style.setProperty('--bg-opacity', '.6');
       bgActive.value = '';
-      messages.value = []; monitor.value = []; thinkingText.value = '';
-      sessions.value = []; activeThread.value = '';
-      kbStatus.value = null; kbExportShow.value = false; kbIngestShow.value = false;
-      myData.value = emptyMy();
+      resetAccountState();   // ★ 统一清空所有按账号取数的缓存（原来只清了消息/会话/知识库）
     }
 
     // ---------- 背景设置（服务端持久化图库）----------
@@ -6797,6 +6795,33 @@ createApp({
     function resetPriceState() {
       priceSummary.value = null; priceAlerts.value = []; priceHist.value = {};
       complexDraft.value = {}; priceEdit.value = {}; priceSaving.value = '';
+    }
+
+    // ★ 2026-10-15 用户报障修（账号串味）：切账号时必须把**所有按账号取数的缓存**清掉，
+    //   否则会出现「工作台是药喵、技能与工具还是尼古喵喵」这种半新半旧的状态。
+    //   根因：技能与工具那几处各自有「加载过就不再取」的门闩（cliLoaded / mcpAll / shAllowed）
+    //   与「非空即保留」（probeOpen 里的题集），而 doLogin / doLogout / forceLogout 都只清了
+    //   消息与会话 → 切账号后那三个页签**不会重取**，显示的是上个账号的数据（真机实测踩到）。
+    //   两件事一起做：① 复位门闩（页签再次访问时重新拉）；② 清掉列表类缓存（防旧值残留）。
+    function resetAccountState() {
+      resetPriceState();
+      // ① 门闩（让页签下次访问时重新拉取）
+      cliLoaded.value = false;
+      mcpAll.value = []; tsSources.value = [];
+      shAllowed.value = [];
+      // ② 列表类缓存（技能与工具 / 工具池测评 / 定制助手 / 报告会话等）
+      cliItems.value = []; cliTemplates.value = []; cliNote.value = {};
+      skills.value = [];
+      probeCases.value = []; probeSheets.value = [];
+      probeScores.value = {}; probeAgent.value = {};        // 人工终判与Agent预填都属"上一个账号的题"
+      probePriv.value = null; probeVague.value = null;
+      providers.value = []; soulList.value = []; soulContent.value = '';
+      memoryContent.value = '';
+      sessions.value = []; activeThread.value = '';
+      reports.value = []; subs.value = []; voicePacks.value = [];
+      kbStatus.value = null; kbExportShow.value = false; kbIngestShow.value = false;
+      messages.value = []; monitor.value = []; thinkingText.value = '';
+      myData.value = emptyMy();
     }
     const complexDraft = ref({});
     function priceInfoOf(it) {
