@@ -89,6 +89,22 @@ def test_reset_also_clears_probe_board():
     assert "probe.value =" in body
 
 
+def test_reset_only_touches_declared_refs():
+    """★ 2026-10-15 真机复测踩到：resetAccountState 里写了 `kbExportShow.value = false`，
+    而这个 ref 早已不存在（旧注销路径里就有同一行隐患）→ 登录时抛 ReferenceError 被 doLogin
+    的 catch 吞成「网络错误」，导致 go('home') 与后续所有加载都没执行 = 页面卡在登录页、什么都不显示。
+
+    这里静态核对：该函数里出现的每个 `名字.value` 都必须在文件中有声明。
+    """
+    import re
+    src = _src()
+    body = _fn_body(src, "resetAccountState")
+    used = sorted(set(re.findall(r"([A-Za-z_$][\w$]*)\.value", body)))
+    missing = [n for n in used
+               if not re.search(r"(const|let|var)\s+%s\s*=|function\s+%s\s*\(" % (n, n), src)]
+    assert not missing, "resetAccountState 引用了未声明的名字（登录时会抛错）：%s" % missing
+
+
 def test_no_double_count_of_manual_clears():
     """注销路径用手写的零散清理换成统一复位后，别把 myData/sessions 的清空又写回去两遍。"""
     body = _fn_body(_src(), "doLogout")

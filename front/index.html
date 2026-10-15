@@ -6822,7 +6822,7 @@ createApp({
       memoryContent.value = '';
       sessions.value = []; activeThread.value = '';
       reports.value = []; subs.value = []; voicePacks.value = [];
-      kbStatus.value = null; kbExportShow.value = false; kbIngestShow.value = false;
+      kbStatus.value = null; kbIngestShow.value = false;   // 注意：kbExportShow 这个 ref 早已不存在，别再引用
       messages.value = []; monitor.value = []; thinkingText.value = '';
       myData.value = emptyMy();
     }
