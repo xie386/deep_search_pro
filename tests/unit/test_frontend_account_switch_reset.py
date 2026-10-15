@@ -57,6 +57,38 @@ def test_reset_still_clears_prices():
     assert "resetPriceState()" in _fn_body(_src(), "resetAccountState")
 
 
+def test_module_entry_loads_the_current_subtab():
+    """第二轮修复（2026-10-15 真机复测暴露）：只清缓存不触发重取 → 换账号后本模块一片空白。
+
+    `go('skills')` 原来只调用 `loadSkills()`（技能子页签），其余五个子页签靠「子页签变化」
+    才加载；登录后进本模块时子页签值没变 → 什么都不会取。现在必须走 `loadSkillsTab(true)`。
+    """
+    src = _src()
+    go_line = next(l for l in src.splitlines() if "location.hash = '#/' + v;" in l)
+    assert "loadSkillsTab(true)" in go_line, "进入「技能与工具」必须按当前子页签加载"
+
+
+def test_subtab_watcher_has_no_once_latches():
+    """子页签切换必须无条件重取（去掉 cliLoaded / mcpAll / shAllowed 的「加载过就不再取」）。"""
+    src = _src()
+    w = next(l for l in src.splitlines() if l.strip().startswith("watch(skTab"))
+    assert "loadSkillsTab(true)" in w
+    for latch in ("cliLoaded", "mcpAll", "shAllowed"):
+        assert latch not in w, "子页签监听里还留着门闩：%s" % latch
+
+
+def test_dispatcher_covers_all_six_subtabs():
+    body = _fn_body(_src(), "loadSkillsTab")
+    for t in ("'skill'", "'shell'", "'cli'", "'mcp'", "'api'", "'probe'"):
+        assert t in body, "loadSkillsTab 没有覆盖子页签 %s" % t
+
+
+def test_reset_also_clears_probe_board():
+    """工具池大屏也要清：不清的话首帧会闪现上一个账号的指标（真机复测看到的就是这个）。"""
+    body = _fn_body(_src(), "resetAccountState")
+    assert "probe.value =" in body
+
+
 def test_no_double_count_of_manual_clears():
     """注销路径用手写的零散清理换成统一复位后，别把 myData/sessions 的清空又写回去两遍。"""
     body = _fn_body(_src(), "doLogout")

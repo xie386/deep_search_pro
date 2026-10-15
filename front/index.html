@@ -5229,11 +5229,13 @@ createApp({
     // ---------- 路由 ----------
     function go(v) {
       if (v === 'shell') { skTab.value = 'shell'; v = 'skills'; }   // #/shell → CLI 面板 tab
-      location.hash = '#/' + v; view.value = v; if (v === 'chat') { nextTick(scrollToBottom); loadPriceSummary(); loadPriceAlerts(); } if (v === 'kb') loadKbStatus(); if (v === 'skills') loadSkills();
+      location.hash = '#/' + v; view.value = v; if (v === 'chat') { nextTick(scrollToBottom); loadPriceSummary(); loadPriceAlerts(); } if (v === 'kb') loadKbStatus(); if (v === 'skills') loadSkillsTab(true);
     }
     window.addEventListener('hashchange', () => {
       view.value = location.hash.replace('#/', '') || 'home';
       if (view.value === 'shell') { skTab.value = 'shell'; view.value = 'skills'; }
+      // ★ 2026-10-15：hash / 返回键进入「技能与工具」也要按当前子页签加载（这条路径不走 go()）
+      if (view.value === 'skills') loadSkillsTab(true);
       if (view.value === 'chat') nextTick(scrollToBottom);
       if (view.value === 'reports') { newReports.value = 0; loadReports(); loadSubs(); }
       if (view.value === 'skills') loadSkills();
@@ -6812,6 +6814,7 @@ createApp({
       // ② 列表类缓存（技能与工具 / 工具池测评 / 定制助手 / 报告会话等）
       cliItems.value = []; cliTemplates.value = []; cliNote.value = {};
       skills.value = [];
+      probe.value = { pool_version: 0, pool_size: 0, items: [], health: {}, metrics: {} };
       probeCases.value = []; probeSheets.value = [];
       probeScores.value = {}; probeAgent.value = {};        // 人工终判与Agent预填都属"上一个账号的题"
       probePriv.value = null; probeVague.value = null;
@@ -7449,7 +7452,19 @@ createApp({
     }
 
     // 进 CLI 面板 tab 才拉白名单（省一次请求；切回来复用缓存）
-    watch(skTab, (t) => { if (t === 'shell' && !shAllowed.value.length) shLoadAllowed(); if (t === 'cli' && !cliLoaded.value) loadCliCatalog(); if ((t === 'api' || t === 'mcp') && !mcpAll.value.length) tsLoad(); if (t === 'probe') probeOpen(); });
+    // ★ 2026-10-15 修（第二轮）：技能与工具下面六个子页签，原先是「子页签**变化**才加载」，
+    //   且带「加载过就不再取」的门闩（cliLoaded / mcpAll.length / shAllowed.length）——
+    //   于是「登录后进本模块」这条路径（子页签值没变）**什么都不会取**：换账号后
+    //   要么一片空白（缓存被复位了）、要么还是上一个账号的数据（没复位的 probe 大屏）。
+    //   现在统一走 loadSkillsTab()：主视图进入本模块、切换子页签，都按当前子页签强制重取。
+    function loadSkillsTab(force) {
+      if (skTab.value === 'skill') { loadSkills(); return; }
+      if (skTab.value === 'shell') { shLoadAllowed(); return; }
+      if (skTab.value === 'cli') { loadCliCatalog(force); return; }
+      if (skTab.value === 'mcp' || skTab.value === 'api') { tsLoad(); return; }
+      if (skTab.value === 'probe') { probeOpen(); return; }
+    }
+    watch(skTab, () => { loadSkillsTab(true); });
     // ★ 工具池测评**每次进页签都刷新**（它是「看完改完再回来复测」的仪表盘，不是一次性目录 ✓ 与上面几个「只加载一次」的页签不同）
 
     // 与后端 customize.py 常量对齐（前后端双硬校验）
