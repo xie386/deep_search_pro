@@ -317,8 +317,14 @@ const FORM = () => ({ slug: 'weather', name: ' 和风天气 ', base_url: 'https:
             '★ 占位卡必须已经被真实表单取代（不能再是"后续扩展位"）');
   assert.ok(src.indexOf('我确认这是写操作') >= 0, '模板里应有写操作二次确认勾选项');
   assert.ok(src.indexOf('ts-write-ack') >= 0 && src.indexOf('ts-badge') >= 0, '模板应引用新样式类');
-  assert.ok(src.indexOf("if ((t === 'api' || t === 'mcp') && !mcpAll.value.length) tsLoad();") >= 0,
-            '切到 API / MCP 工具 tab 应懒加载来源（与 CLI tab 同款；一份数据分给两个 tab）');
+  // ★ 2026-10-16：原断言钉的是**旧实现的字面串**（带 "!mcpAll.value.length" 门闩那版）——
+  //   账号串味修复（第二轮）把六个子页签统一收进 loadSkillsTab()，该字面串自然不存在了。
+  //   行为其实还在、而且更彻底：切到 api/mcp 页签一定重取（不再"加载过就不再取"）。
+  //   所以改钉**意图**：路由分支必须把 api / mcp 指到 tsLoad()。
+  assert.ok(/skTab\.value === 'mcp' \|\| skTab\.value === 'api'\s*\)\s*\{\s*tsLoad\(\)/.test(src),
+            '切到 API / MCP 工具 tab 必须拉到来源（经 loadSkillsTab 路由到 tsLoad；一份数据分给两个 tab）');
+  assert.ok(src.indexOf('function loadSkillsTab(') >= 0 && src.indexOf('watch(skTab,') >= 0,
+            '统一入口 loadSkillsTab 与其 watch 必须在（账号串味修复的成果，别回退）');
   assert.ok(src.indexOf('@click="tsOpenImport(s)"') >= 0,
             '来源卡上要有「＋ 导入 / 查看工具」入口');
   assert.ok(src.indexOf("s.id + '/candidates") >= 0,
