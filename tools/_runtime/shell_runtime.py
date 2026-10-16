@@ -91,6 +91,21 @@ def sandbox_dir(username: str | None) -> Path:
     return d
 
 
+def active_workdir(username: str | None, account_id: int | None = None) -> Path:
+    """当前启用的工作目录（06 定案）：账号有启用条目就用它，否则回账号沙箱。
+
+    ★ 这是「工作目录」的唯一锚点：Agent 的 `run_shell_command`、CLI 面板、白名单清单
+      三处入口都取这里，路径守卫 `_resolve_in_sandbox` 逻辑本身不变。
+    解析失败一律回落沙箱 —— 工作目录出问题绝不能拖垮对话（与 sandbox_dir 同款容错）。
+    """
+    try:
+        from tools import workdir_store
+        p, _entry = workdir_store.active(account_id, username)
+        return p
+    except Exception:                       # noqa: BLE001
+        return sandbox_dir(username)
+
+
 def _safe_username(username: str | None) -> str:
     """用户名进目录名前先消毒：只留字母数字与 _ - . 中文，防 `../` 与 Windows 保留名。"""
     raw = (username or "").strip() or ANON_USERNAME
@@ -422,7 +437,7 @@ def execute(command: str, args: list[str] | None = None, timeout: int | None = N
     """
     args = list(args or [])
     command = (command or "").strip()
-    sandbox = sandbox_dir(username)
+    sandbox = active_workdir(username, account_id)   # 06：跟随当前启用工作目录
     meta = ALLOWED_COMMANDS.get(command)
     dyn = None if meta is not None else cli_registry.allowed_for_agent(account_id).get(command)
     if dyn is None and meta is None and adhoc and command in adhoc:
@@ -548,7 +563,7 @@ def execute(command: str, args: list[str] | None = None, timeout: int | None = N
 def run_line(line: str, username: str | None = None, timeout: int | None = None,
              account_id: int | None = None) -> dict:
     """CLI 面板入口：把一行命令拆 token 后走 execute。"""
-    sandbox = sandbox_dir(username)
+    sandbox = active_workdir(username, account_id)   # 06：面板 cwd 跟随工作目录
     try:
         toks = parse_line(line)
     except ShellRejected as e:
@@ -563,7 +578,7 @@ def allowed_commands(username: str | None = None, account_id: int | None = None)
 
     `third_party` = 该账号已接入、且清单允许 Agent 只读代跑的第三方 CLI（M4c）。
     """
-    sandbox = sandbox_dir(username)
+    sandbox = active_workdir(username, account_id)   # 06：白名单清单里的 cwd 同步
     live = cli_registry.allowed_for_agent(account_id)
     third = []
     for bin_name, info in sorted(live.items()):

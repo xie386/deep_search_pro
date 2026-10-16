@@ -129,6 +129,17 @@ SPECS: tuple[dict, ...] = (
                                      "超时会连浏览器一起收掉，并回退提示改用 Tavily。"),
     dict(key="BROWSER_MAX_URLS", kind="number", default="3", group="browser", min=1, max=10,
          label="单次最多打开页数", help="一次任务最多打开几个目标页，超出只取前 N 个（先筛后进，别一次铺开）。"),
+    # ── v4.0 大点 06（2026-10-16 定案）：工作目录与「/」唤起上限 ──
+    dict(key="WORKDIR_TRASH_TTL_DAYS", kind="number", default="7", group="workdir", min=1, max=365,
+         label="回收站保留天数", help="删除的文件先移入工作目录的 .回收站/，超过这些天数后自动清理。"),
+    dict(key="WORKDIR_MAX_WRITE_MB", kind="number", default="1", group="workdir", min=1, max=500,
+         label="单次读写上限（MB）", help="Agent 写工具单次写入、以及文件预览单次读取的体积上限。"),
+    dict(key="PICK_MAX_SKILLS", kind="number", default="5", group="workdir", min=1, max=7,
+         label="「/」技能单轮上限", help="聊天框打 / 唤起列表时，技能组一次最多能选几个（上限 7）。"),
+    dict(key="PICK_MAX_WRITE_SETS", kind="number", default="5", group="workdir", min=1, max=7,
+         label="「/」写工具集单轮上限", help="自配写工具集一次最多能选几个（上限 7）。"),
+    dict(key="PICK_MAX_WORKFLOWS", kind="number", default="5", group="workdir", min=1, max=7,
+         label="「/」workflow 单轮上限", help="workflow 一次最多能选几个（上限 7）。"),
     dict(key="BROWSER_HEADLESS", kind="switch", default="1", group="browser",
          label="无头运行浏览器", help="默认无头（不弹窗口）；排查页面问题时关掉它，观察真实浏览器行为。"),
 )
@@ -355,7 +366,9 @@ GROUP_LABELS = {
                                              "有网址时先 Tavily 定位筛选、再打开关键页深挖；另有步数/超时/页数三道闸。"),
     "decision": ("🧭 决策模型参数", "账号路由上「近分精排」的行为参数；保存即生效。"),
     "mail": ("✉️ 邮件发信（验证码通道）", "发件箱在 .env（QQMAIL / QQMSTP）——本页只管显示名、调试开关与发信配额；"
-                                          "收件邮箱是各账号自己绑的那个。"),
+                                           "收件邮箱是各账号自己绑的那个。"),
+    "workdir": ("📁 工作目录与「/」唤起", "Agent 工作目录的回收站保留期、单次读写上限，"
+                                            "以及聊天框打 / 唤起列表时三组（技能 / 写工具集 / workflow）各自单轮可选几个。"),
     # 密钥组已整组撤下（2026-10-13 用户拍板：密钥只在 .env，界面不展示也不回显）
 }
 

@@ -247,6 +247,22 @@ def ensure_tables() -> None:
         except Exception as _e:
             print("[schema] M6c 加列跳过:", _e)
 
+        # v4.0 大点 06（2026-10-16 定案）：自配工具的「池归属」与写CLI白名单。
+        #   pool：readonly（默认，进路由池、参与测评）| write（只汇总，不进路由、不测评）。
+        #   ★ 池归属判定只看**用户确认后的有效 read_only**，不看初始识别结果（Verdict/06 裁定 6）。
+        #   教训照旧：幂等补列**必须待在函数体顶层**；且**绝不能**放进下面的 executescript ——
+        #   那里任一语句报错会中断整段脚本，其后的建表全部跳过。
+        try:
+            for _tbl, _cols in (("user_clis", [("pool", "TEXT NOT NULL DEFAULT 'readonly'"),
+                                              ("write_cmds", "TEXT NOT NULL DEFAULT ''")]),):
+                _have = {r[1] for r in conn.execute("PRAGMA table_info(%s)" % _tbl)}
+                for _name, _type in _cols:
+                    if _have and _name not in _have:
+                        conn.execute("ALTER TABLE %s ADD COLUMN %s %s" % (_tbl, _name, _type))
+            conn.commit()
+        except Exception as _e:
+            print("[schema] 06 工作目录补列跳过:", _e)
+
         # ★ v3.1：视觉开关的一次性默认（**必须在上面加列之后** ✓ 幂等、只动 NULL 行 ✓）
         #   ① 名字里带 agnes 的（项目默认模型，本身多模态 ✓）→ 1；② 其余老行 NULL → 0（显式"不能"，避免三态 ✓）
         try:
@@ -317,6 +333,23 @@ CREATE TABLE IF NOT EXISTS verify_codes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_verify_codes_acct ON verify_codes(account_id, purpose);
+
+-- v4.0 大点 06（2026-10-16 定案）：账号级「工作目录」。
+--   可定义多个、**同一时刻至多一个 is_active=1**（切换在同一事务内先清零再置一）。
+--   默认条目 = 账号沙箱路径，前端显示名「主页」（is_default=1，不可删）。
+--   本表带 account_id → 自动进 purge_account 的清理链（它自省 sqlite_master）；外部目录**不动**。
+CREATE TABLE IF NOT EXISTS account_workdirs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id  INTEGER NOT NULL REFERENCES accounts(id),
+    name        TEXT NOT NULL,
+    path        TEXT NOT NULL,
+    is_active   INTEGER NOT NULL DEFAULT 0,
+    is_default  INTEGER NOT NULL DEFAULT 0,
+    created_at  INTEGER NOT NULL DEFAULT 0,
+    updated_at  INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_account_workdirs_acct ON account_workdirs(account_id, is_active);
 
 CREATE TABLE IF NOT EXISTS sessions (
                 token      TEXT PRIMARY KEY,
