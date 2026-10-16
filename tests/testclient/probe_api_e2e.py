@@ -57,8 +57,8 @@ _conn.close()
 tmp_acc = dict(_trow)
 tok2 = create_session(tmp_acc)
 q2 = {"token": tok2}
-tmp_sbox = os.path.join(pr.SANDBOX_DIR, TMP_USER)                    # 临时账号的沙箱（随便写 ✓）
-_real_sbox = os.path.join(pr.SANDBOX_DIR, USER)
+tmp_sbox = os.path.join(pr.ARTIFACTS_DIR, TMP_USER)                  # 06：产物目录（原沙箱；临时账号随便写）
+_real_sbox = os.path.join(pr.ARTIFACTS_DIR, USER)
 
 
 def _real_fingerprint():

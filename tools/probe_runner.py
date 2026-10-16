@@ -15,7 +15,7 @@
     1. 题集来自 JSON（`tests/fixtures/probe_sets/<name>.json`），不再写死；
     2. 快照文件按用户裁定命名 `probe_打分表YYYYMMDD_HHMMSS.md`，落 `output/{username}/`；
        `snapshot_files()` **跳过**该前缀（裁定 6-⑤：清理时按前缀排除）；
-    3. 执行与判分**分离**：执行只把「原始记录」写进 `data/sandbox/{username}/probe_run_*.json`
+    3. 执行与判分**分离**：执行只把「原始记录」写进 `user_data/probe_artifacts/{username}/probe_run_*.json`
        （该目录本来就在清理清单里 ✓ 不新建目录）；判分完成后由 `write_sheet()` 产出正式打分表，
        临时产物随之被清理（用户裁定：「保留打完分的打分表…其余产物删除」）；
     4. `build_sheet()` 产出三段式快照（① 该版本有哪些工具 ② 该版本的工具描述词法 ③ 最终数据），
@@ -36,13 +36,15 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # ★ 2026-10-13（大点 04 · 议题一）：用户数据路径全部改问 `utils/paths.py`（唯一事实源）
 from utils import paths as _upaths                                              # noqa: E402
 OUTPUT_DIR = str(_upaths.OUTPUT_DIR)
-SANDBOX_DIR = str(_upaths.SANDBOX_ROOT)
+# ★ 06：测评产物**不再写进沙箱**（沙箱白盒化后它们会摊在用户眼前；它们只是测评的临时产物）。
+#   根目录换成 user_data/probe_artifacts/（与沙箱并列）。
+ARTIFACTS_DIR = str(_upaths.PROBE_ARTIFACTS)
 SET_DIR = os.path.join(ROOT, "tests", "fixtures", "probe_sets")
 
 # ---- 快照文件（用户 2026-10-10 定的命名与过滤口径）---------------------------------
 SHEET_PREFIX = "probe_打分表"
 SHEET_RE = re.compile(r"^probe_打分表\d{8}_\d{6}\.md$")
-# ★ 本轮**原始记录**（`data/sandbox/{用户名}/probe_run_*.json`）：**判分 / 词法建议 / 写入大屏**都要读它。
+# ★ 本轮**原始记录**（`user_data/probe_artifacts/{用户名}/probe_run_*.json`）：**判分 / 词法建议 / 写入大屏**都要读它。
 #   2026-10-11 用户真机报「判分失败：找不到这一轮的原始记录」—— 根因就是水位线清理把刚写完的它
 #   当「本轮新产物」删了（清理在本轮跑完**那一刻**执行，而判分在其**之后**）。
 #   现在它不参与水位线清理 ✓，生命周期改由 `_prune_raw()` 管（只留最近一份）。
@@ -458,7 +460,8 @@ def snapshot_profile(username: str) -> dict:
     src = profile_dir(username)
     # ★ 目录名带**毫秒**：同一秒内连跑两次（评测里很可能）不至于把上一份快照静默覆盖掉
     stamp = "%s_%03d" % (time.strftime("%Y%m%d_%H%M%S"), int((time.time() % 1) * 1000))
-    rel_dir = os.path.join(str(_upaths.SANDBOX_ROOT.relative_to(ROOT)), username,
+    # 06：画像快照也搬出沙箱（与原始记录同一个根）
+    rel_dir = os.path.join(str(_upaths.PROBE_ARTIFACTS.relative_to(ROOT)), username,
                            "profile_backup_%s" % stamp)
     dst = os.path.join(ROOT, rel_dir)
     files: dict = {}
@@ -755,7 +758,7 @@ def run_cases(acc_id: int, username: str, cases: list, *, set_doc: dict | None =
     """跑一轮测评：**只记录、不判对错** ✓。
 
     返回 dict(ts, rows, watermark, gone, raw_path, ext_retrievals, elapsed_s, pool)。
-    原始记录落 `data/sandbox/{username}/probe_run_YYYYmmdd_HHMMSS.json` —— **判分/建议/写入大屏的输入**，
+    原始记录落 `user_data/probe_artifacts/{username}/probe_run_YYYYmmdd_HHMMSS.json` —— **判分/建议/写入大屏的输入**，
     跑完只留最近一份（`_prune_raw`），**不参与**水位线清理（否则判分就找不到这一轮 ✓ 2026-10-11 修）。
     """
     from tools import capability_pool as cp
@@ -771,8 +774,9 @@ def run_cases(acc_id: int, username: str, cases: list, *, set_doc: dict | None =
         acc = account_by_id(acc_id)
         token = create_session(acc)
 
-    sandbox = os.path.join(SANDBOX_DIR, username)
-    os.makedirs(sandbox, exist_ok=True)
+    # 06：本轮产物目录（原为沙箱；语义 = 测评产物，不是"Agent 的工作目录"）
+    artifacts = os.path.join(ARTIFACTS_DIR, username)
+    os.makedirs(artifacts, exist_ok=True)
     # ★ 开跑前清一次**上一轮残留**的测评会话（中途崩溃/被中断才会留下 —— 用户 2026-10-11 裁定：
     #   测评会话禁止进会话库，且真机全量测试后全删）
     stale = cs.purge_probe_sessions(int(acc_id))
@@ -829,10 +833,10 @@ def run_cases(acc_id: int, username: str, cases: list, *, set_doc: dict | None =
         purged = cs.purge_probe_sessions(int(acc_id))     # 本轮的测评会话 → 全清（不进会话库 ✓）
         if purged.get("conversations"):
             gone["probe_sessions"] = purged
-        pruned = _prune_raw(sandbox, keep=1)              # 原始记录只留最近一份
+        pruned = _prune_raw(artifacts, keep=1)             # 原始记录只留最近一份
         if pruned:
             gone["raw_pruned"] = pruned
-        bak = _prune_backups(sandbox, keep=1)             # 画像快照只留最近一份
+        bak = _prune_backups(artifacts, keep=1)            # 画像快照只留最近一份
         if bak:
             gone["profile_pruned"] = bak
 
@@ -853,7 +857,7 @@ def run_cases(acc_id: int, username: str, cases: list, *, set_doc: dict | None =
         "watermark": {k: v for k, v in wm.items() if k != "files"},
         "gone": gone,
     }
-    raw_path = os.path.join(sandbox, "probe_run_%s.json" % time.strftime("%Y%m%d_%H%M%S"))
+    raw_path = os.path.join(artifacts, "probe_run_%s.json" % time.strftime("%Y%m%d_%H%M%S"))
     doc["raw_path"] = raw_path
     with open(raw_path, "w", encoding="utf-8") as f:
         json.dump(doc, f, ensure_ascii=False, indent=2)

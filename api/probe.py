@@ -305,7 +305,7 @@ def _load_run_for(token: str, raw_path: str | None) -> dict:
     """取本轮原始记录：优先用传入路径（必须落在本账号 sandbox 内 ✓ 防穿越），否则取最近一轮。"""
     c = _ctx(token)
     if raw_path:
-        base = os.path.abspath(os.path.join(pr.SANDBOX_DIR, c["username"]))
+        base = os.path.abspath(os.path.join(pr.ARTIFACTS_DIR, c["username"]))   # 06：产物已搬出沙箱
         full = os.path.abspath(os.path.join(base, os.path.basename(raw_path)))
         if not full.startswith(base) or not os.path.isfile(full):
             raise HTTPException(http_status.HTTP_400_BAD_REQUEST,
@@ -315,7 +315,7 @@ def _load_run_for(token: str, raw_path: str | None) -> dict:
     st = _RUNS.get(c["account_id"]) or {}
     if st.get("raw_path") and os.path.isfile(st["raw_path"]):
         return pr.load_run(st["raw_path"])
-    d = os.path.join(pr.SANDBOX_DIR, c["username"])
+    d = os.path.join(pr.ARTIFACTS_DIR, c["username"])   # 06：产物已搬出沙箱（原 SANDBOX_DIR）
     if os.path.isdir(d):
         # ★ 2026-10-11：必须用**严格** RAW_RE 匹配 —— 原来只判 `startswith("probe_run_")`，
         #   于是 `probe_run_xxx.json.e2e_hidden` / `.bak` / 半成品临时件都会被当成「本轮记录」

@@ -40,15 +40,20 @@ OUTPUT_DIR = USER_DATA_ROOT / "output"
 PIC_DIR = USER_DATA_ROOT / "pic"
 RAG_DB = USER_DATA_ROOT / "rag_knowledge" / "db"
 SANDBOX_ROOT = USER_DATA_ROOT / "sandbox"
+# ★ 06（2026-10-16 定案）：03 测评的**中间产物**（原始记录 probe_run_*.json / 画像快照 profile_backup_*）
+#   从沙箱里搬出来，放这里。为什么：沙箱白盒化后那些东西会直接摊在用户眼前（用户从来没听说过它们），
+#   而它们只是测评的临时产物。搬出后"沙箱 = Agent 的工作目录"这件事才对用户成立。
+PROBE_ARTIFACTS = USER_DATA_ROOT / "probe_artifacts"
 PROBE_SETS_DIR = USER_DATA_ROOT / "probe_sets"
 TTS_REF_DIR = USER_DATA_ROOT / "tts_ref"
 
 #: 唯一的「账号级目录根」清单 —— 清理 / 统计 / 迁移都读它，**不要在任何地方再造副本**。
-ACCOUNT_DIRS = (AGENTS_DOCS, OUTPUT_DIR, PIC_DIR, RAG_DB, SANDBOX_ROOT, TTS_REF_DIR)
+ACCOUNT_DIRS = (AGENTS_DOCS, OUTPUT_DIR, PIC_DIR, RAG_DB, SANDBOX_ROOT, TTS_REF_DIR, PROBE_ARTIFACTS)
 
 #: 测评清理（水位线）只允许碰的目录 —— **不含 `TTS_REF_DIR`**（音色参考音频不是测评产物，
 #  误删会丢用户素材）、**不含 `RAG_DB`**（向量库不是探针产物）。口径同 `probe_runner.py:400` 的教训。
-PROBE_ARTIFACT_DIRS = (AGENTS_DOCS, OUTPUT_DIR, PIC_DIR, SANDBOX_ROOT)
+# 水位线清理要绕开的账号目录（测评产物在里面：删了判分/画像还原就没了）
+PROBE_ARTIFACT_DIRS = (AGENTS_DOCS, OUTPUT_DIR, PIC_DIR, PROBE_ARTIFACTS)
 
 #: 账号级**单文件**（相对 `USER_DATA_ROOT` 的路径模板）。
 PROBE_SET_TPL = "probe_sets/{username}.json"
@@ -130,6 +135,11 @@ def rag_db_dir(username) -> Path:
 
 def sandbox_dir(username) -> Path:
     return SANDBOX_ROOT / _name(username)
+
+
+def probe_artifacts_dir(username) -> Path:
+    """03 测评中间产物的账号目录（原始记录 / 画像快照）。"""
+    return PROBE_ARTIFACTS / _name(username)
 
 
 def tts_ref_dir(username) -> Path:

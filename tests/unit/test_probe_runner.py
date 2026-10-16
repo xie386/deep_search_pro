@@ -285,7 +285,7 @@ def test_probe_runner_offline():
     #   `_probe_selftest_user` 时，pytest-randomly 调换执行顺序后，上一块留下的
     #   `probe_run_*.json` 会污染本块「只留最近一份」的计数，导致随机顺序下偶发失败。
     scratch2 = "_probe_selftest_user_b"
-    sbox = os.path.join(pr.SANDBOX_DIR, scratch2)
+    sbox = os.path.join(pr.ARTIFACTS_DIR, scratch2)     # 06：产物目录（原 SANDBOX_DIR）
     os.makedirs(sbox, exist_ok=True)
     junk = os.path.join(sbox, "junk_本轮新产物.txt")
     _saved = (pr._conn, pr.pool_overview, pr.ask, pr.calls_of_thread,
@@ -426,7 +426,7 @@ def test_probe_runner_offline():
     finally:
         (pr._conn, pr.pool_overview, pr.calls_of_thread,
          pr.calls_of_thread_src, pr.ext_retrievals) = _saved10c
-        shutil.rmtree(os.path.join(pr.SANDBOX_DIR, scratch2), ignore_errors=True)
+        shutil.rmtree(os.path.join(pr.ARTIFACTS_DIR, scratch2), ignore_errors=True)
         if _sv_to is None:
             os.environ.pop("PROBE_ASK_TIMEOUT", None)
         else:

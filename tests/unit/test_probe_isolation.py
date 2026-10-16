@@ -100,7 +100,7 @@ def test_probe_isolation():
     # ---------------- ② 画像 / 笔记：快照 → 还原 ----------------
     scratch = "_probe_selftest_profile"
     pdir = pr.profile_dir(scratch)
-    sbox = os.path.join(pr.SANDBOX_DIR, scratch)
+    sbox = os.path.join(pr.ARTIFACTS_DIR, scratch)      # 06：产物目录（原 SANDBOX_DIR）
     shutil.rmtree(pdir, ignore_errors=True)
     shutil.rmtree(sbox, ignore_errors=True)
     try:
@@ -117,8 +117,8 @@ def test_probe_isolation():
         check("快照：整个 agents_docs/{用户名}/ 都进沙箱（2 个文件）",
               snap["count"] == 2 and os.path.isfile(os.path.join(ROOT, *snap["dir"].split("/"), "MEMORY.md")),
               snap["count"])
-        check("快照：进了沙箱的备份目录（相对路径落在 data/sandbox/）",
-              snap["dir"].replace("\\", "/").startswith("user_data/sandbox/%s/profile_backup_" % scratch), snap["dir"])
+        check("快照：进了产物目录（06 起从沙箱搬到 user_data/probe_artifacts/）",
+              snap["dir"].replace("\\", "/").startswith("user_data/probe_artifacts/%s/profile_backup_" % scratch), snap["dir"])
         check("快照目录**不参与**水位线清理（否则还原源被删就还原不了）",
               not any("profile_backup_" in f for f in pr.snapshot_files(scratch)))
 
