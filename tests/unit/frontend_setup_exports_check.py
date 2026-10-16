@@ -127,6 +127,30 @@ def setup_return_names(html: str) -> tuple[set[str], tuple[int, int]]:
     return names, (start, i)
 
 
+def undefined_in_return(html: str) -> list[str]:
+    """★ 2026-10-16 事故守卫：`return { ... }` 里的每个名字，在 setup 内**必须真的有定义**。
+
+    为什么必须单独查：模板绑定的名字只要出现在 return 里，模板检查就绿；`--fix` 又会把
+    缺的名字补进 return —— 于是「有引用、无定义」可以一路绿灯，直到浏览器里
+    `ReferenceError` 让整个 setup 抛错、**整页白屏**（登录页当时就是这么坏的）。
+    """
+    _ret, span = setup_return_names(html)
+    start, end = span
+    body = html[:start]
+    names: list[str] = []
+    for line in html[start - 1:end].splitlines() if span else []:
+        names += re.findall(r"(?:^|[{,\s])([A-Za-z_$][\w$]*)\s*(?=,|\}|$)", line)
+    pats = [r"\b(?:async\s+)?function\s+%s\s*\(",
+            r"\b(?:const|let|var)\s+%s\b",
+            r"^\s*%s\s*=[^=]",
+            r"\b(?:const|let|var)\s*\{[^}]*\b%s\b"]
+    out = []
+    for n in dict.fromkeys(names):
+        if not any(re.search(p % re.escape(n), body, re.M) for p in pats):
+            out.append(n)
+    return out
+
+
 def missing_exports(html: str) -> tuple[dict, set[str], tuple[int, int]]:
     ret, span = setup_return_names(html)
     exprs = template_exprs(html)
@@ -233,7 +257,18 @@ def main():
         check("图注写明是示意图还是截图（不含糊）", "示意图" in md)
     check("API 指导栏有「📘 教程指导」入口（openTutorial('api')）", "openTutorial('api')" in html)
 
+    undef = undefined_in_return(html)
+    check("return 里的每个名字在 setup 内都有定义（%d 个名字）" % len(setup_return_names(html)[0]),
+          not undef, "无定义（会导致整页白屏）: %s" % undef if undef else "")
+
     if missing and "--fix" in sys.argv:
+        # ★ 事故教训：--fix 只许补**在 setup 内有定义**的名字。补了没定义的名字不是修好，
+        #   是把「白屏」从模板层挪到 setup 层、把真问题藏起来。
+        bad = [n for n in sorted(missing) if n in undef]
+        if bad:
+            print("\n  ✗ 拒绝补进 return：这些名字在 setup 内没有定义 —— %s" % bad)
+            print("    请先补上它们的定义（不是把它们写进 return）。")
+            sys.exit(1)
         ins = "".join("        %s,\n" % n for n in sorted(missing))
         io.open(HTML, "w", encoding="utf-8", newline="").write(html[:span[1]] + ins + html[span[1]:])
         print("\n  已补进 return：%s" % sorted(missing))

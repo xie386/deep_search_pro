@@ -8903,6 +8903,165 @@ createApp({
       wxStart();
     });
 
+    // ==================== ★ v4.0 大点 06：工作目录（沙箱白盒化）—— 函数体 ====================
+    // ⚠️ 2026-10-16 事故复盘：这一段**曾经整段丢失**（第 3 步落地时插入过，但被一次
+    //   "$TMPDIR 空变量的备份/还原"冲掉、且从未进过任何提交），而导出检查的 --fix 又把
+    //   32 个名字悄悄补进了 return —— 于是 return 引用未定义变量、setup 整段抛错、**登录页白屏**。
+    //   现在三处一起补：① 恢复本段；② --fix 不许补"没有定义"的名字；③ 新增守卫用例
+    //   test_frontend_setup_definitions（return 里的每个名字都必须在 setup 内有定义）。
+    function wdSize(n) {
+      n = Number(n || 0);
+      if (n >= 1048576) return (n / 1048576).toFixed(1) + 'MB';
+      if (n >= 1024) return (n / 1024).toFixed(1) + 'KB';
+      return n + 'B';
+    }
+    function wdTok(path) { return path + (path.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token.value); }
+
+    async function loadWorkdirs() {
+      wdErr.value = '';
+      try {
+        const r = await fetch(wdTok('/api/workdir/list'));
+        if (r.status === 401) { forceLogout('登录已失效，请重新登录'); return; }
+        if (!r.ok) { wdErr.value = '工作目录加载失败'; return; }
+        const d = await r.json();
+        wdList.value = d.items || [];
+        wdPath.value = '';
+        await wdRefresh();
+      } catch (e) { wdErr.value = '工作目录加载失败：' + e; }
+    }
+    async function wdRefresh() {
+      wdErr.value = '';
+      try {
+        const r = await fetch(wdTok('/api/workdir/tree?subdir=' + encodeURIComponent(wdPath.value)));
+        if (r.status === 401) { forceLogout('登录已失效，请重新登录'); return; }
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) { wdErr.value = d.detail || '目录读取失败'; wdEntries.value = []; return; }
+        wdEntries.value = d.entries || [];
+        wdPath.value = d.path || '';
+      } catch (e) { wdErr.value = '目录读取失败：' + e; }
+    }
+    function wdEnter(e) { wdPath.value = e.rel; wdRefresh(); }
+    function wdUp() {
+      const p = wdPath.value || '';
+      if (!p) return;
+      const i = p.lastIndexOf('/');
+      wdPath.value = i < 0 ? '' : p.slice(0, i);
+      wdRefresh();
+    }
+    async function wdSwitchTo(w) {
+      wdBusy.value = true; wdErr.value = '';
+      try {
+        const r = await api('POST', wdTok('/api/workdir/switch'), { id: w.id });
+        if (r) { await loadWorkdirs(); wdMsg.value = '已启用：' + w.name; }
+      } finally { wdBusy.value = false; }
+    }
+    async function wdRemove(w) {
+      if (!confirm('把「' + w.name + '」移出工作目录列表？\n（只删登记，磁盘上的目录与文件都不动）')) return;
+      const r = await api('POST', wdTok('/api/workdir/remove'), { id: w.id });
+      if (r) { await loadWorkdirs(); wdMsg.value = '已移出：' + w.name; }
+    }
+    async function wdOpenFile(e) {
+      if (e.credential) { wdMsg.value = '该文件属于凭据类，不提供查看与预览。'; return; }
+      const r = await fetch(wdTok('/api/workdir/read?path=' + encodeURIComponent(e.rel)));
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { wdMsg.value = d.detail || '读取失败'; return; }
+      wdFile.value = d; wdPanel.value = 'file'; wdErr.value = '';
+    }
+    async function wdOpenRel(rel) {
+      const r = await fetch(wdTok('/api/workdir/read?path=' + encodeURIComponent(rel)));
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) { wdFile.value = d; wdPanel.value = 'file'; }
+    }
+    async function wdSave() {
+      if (!wdFile.value) return;
+      wdBusy.value = true; wdErr.value = '';
+      try {
+        const r = await fetch(wdTok('/api/workdir/write'), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: wdFile.value.rel, content: wdFile.value.text, mtime: wdFile.value.mtime })
+        });
+        const d = await r.json().catch(() => ({}));
+        if (r.status === 401) { forceLogout('登录已失效，请重新登录'); return; }
+        if (r.status === 409) { wdErr.value = d.detail || '文件已被改动，请重新打开'; return; }
+        if (!r.ok) { wdErr.value = d.detail || '保存失败'; return; }
+        wdFile.value.mtime = d.mtime;
+        wdMsg.value = '已保存：' + wdFile.value.rel;
+        await wdRefresh();
+      } finally { wdBusy.value = false; }
+    }
+    function wdDownloadFile() {
+      if (!wdFile.value) return;
+      window.open(wdTok('/api/workdir/download?path=' + encodeURIComponent(wdFile.value.rel)), '_blank');
+    }
+    async function wdRenameFile() {
+      if (!wdFile.value) return;
+      const t = prompt('重命名 / 移动到（相对工作目录的路径）：', wdFile.value.rel);
+      if (!t || t === wdFile.value.rel) return;
+      const r = await api('POST', wdTok('/api/workdir/rename'), { path: wdFile.value.rel, target: t });
+      if (r) { wdMsg.value = '已重命名为 ' + r.rel; await wdRefresh(); await wdOpenRel(r.rel); }
+    }
+    async function wdDeleteOpenFile() {
+      if (!wdFile.value) return;
+      const rel = wdFile.value.rel, nm = wdFile.value.name;
+      if (!confirm('删除「' + nm + '」？\n会移入回收站（可还原），不会真的消失。')) return;
+      const r = await api('POST', wdTok('/api/workdir/delete'), { path: rel });
+      if (r) { wdClosePanel(); wdMsg.value = '已移入回收站：' + nm; await wdRefresh(); }
+    }
+    async function wdDelete(e) {
+      if (e.protected && !confirm('「' + e.name + '」在保护名单里（Agent 无权改动它）。\n你确定要删除吗？会移入回收站，可还原。')) return;
+      if (!e.protected && !confirm('删除「' + e.name + '」？会移入回收站（可还原）。')) return;
+      const r = await api('POST', wdTok('/api/workdir/delete'), { path: e.rel });
+      if (r) { wdMsg.value = '已移入回收站：' + e.name; await wdRefresh();
+               if (wdPanel.value === 'trash') await wdLoadTrash(); }
+    }
+    function wdNewFile() {
+      const rel = prompt('新建文件（相对工作目录的路径）：', wdPath.value ? (wdPath.value + '/新建.md') : '新建.md');
+      if (!rel) return;
+      api('POST', wdTok('/api/workdir/create'), { path: rel, content: '' }).then(async (r) => {
+        if (r) { wdMsg.value = '已创建：' + r.rel; await wdRefresh(); await wdOpenRel(r.rel); }
+      });
+    }
+    async function wdLoadTrash() {
+      const r = await fetch(wdTok('/api/workdir/trash'));
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) { wdTrash.value = d.items || []; wdTrashTtl.value = d.ttl_days || 7; }
+    }
+    async function wdOpenPanel(which) {
+      wdErr.value = ''; wdMsg.value = '';
+      if (which === 'trash') { await wdLoadTrash(); wdPanel.value = 'trash'; }
+      else { wdPanel.value = which; }
+    }
+    async function wdRestore(it) {
+      const r = await api('POST', wdTok('/api/workdir/trash'), { action: 'restore', name: it.name });
+      if (r) { wdMsg.value = '已还原到 ' + r.rel; await wdLoadTrash(); await wdRefresh(); }
+    }
+    async function wdPurge(it) {
+      const what = it ? ('「' + it.orig + '」') : '回收站里的全部条目';
+      if (!confirm('彻底删除' + what + '？此操作不可还原。')) return;
+      const r = await api('POST', wdTok('/api/workdir/trash'), { action: 'purge', name: it ? it.name : null });
+      if (r) { wdMsg.value = '已彻底删除 ' + (r.purged || 0) + ' 项'; await wdLoadTrash(); }
+    }
+    function wdClosePanel() { wdPanel.value = ''; wdFile.value = null; wdRisk.value = null; wdErr.value = ''; }
+    function wdOpenAdd() { wdRisk.value = null; wdErr.value = ''; wdNew.value = { name: '', path: '' }; wdPanel.value = 'add'; }
+    async function wdAddCheck() {
+      if (!wdNew.value.path.trim()) { wdErr.value = '请填目录的绝对路径'; return; }
+      wdBusy.value = true; wdErr.value = '';
+      try {
+        const r = await api('POST', wdTok('/api/workdir/add'),
+                            { name: wdNew.value.name, path: wdNew.value.path, confirm: false });
+        if (r && r.need_confirm) { wdRisk.value = r.risks || []; }
+      } finally { wdBusy.value = false; }
+    }
+    async function wdAddConfirm() {
+      wdBusy.value = true; wdErr.value = '';
+      try {
+        const r = await api('POST', wdTok('/api/workdir/add'),
+                            { name: wdNew.value.name, path: wdNew.value.path, confirm: true });
+        if (r && r.ok) { wdClosePanel(); await loadWorkdirs();
+                         wdMsg.value = '已添加：' + (r.name || '') + '（点"启用"才会成为当前工作目录）'; }
+      } finally { wdBusy.value = false; }
+    }
+
     // ==================== v4.0 大点 03：工具池测评（第 6 个页签） ====================
     // 与后端 /api/probe/* 一一对应；出题/判分/建议是**独立小 Agent**（不进主 Agent 体系）
     // 进度走**独立轮询** /api/probe/status（不碰主 Agent 的 WS 语义 ✓）
