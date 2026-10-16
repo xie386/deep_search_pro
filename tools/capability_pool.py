@@ -175,6 +175,11 @@ class CapabilityEntry:
     #    向量文本继续用合并后的 `abilities`。别再改回去，理由见 `_entry_text` 的 docstring。
     # ★ 默认空串 → CLI 条目不受影响（向量文本与 M5b 时代逐字一致，有回归断言钉着 content hash）。
     abilities_tool: str = ""
+    # ===== 06：池归属（只读池 / 写池）=====
+    # ★★ 红线（Verdict/06 裁定 6，用户 2026-10-16 逐字点名）：**只许用户显式设定**，默认只读池。
+    #    绝不可以按"初始识别为写"去自动置 write —— 那会把"初始判写、用户强制确认为只读"的能力
+    #    拽出路由池（尼古喵喵当前 4 个 MCP 服务器正是这条路径）。入池凭据始终是 `confirmed`。
+    pool: str = "readonly"
 
     # ---------------- 渲染器：三种形态（路由器按相似度分层使用） ----------------
     @property
@@ -327,6 +332,7 @@ def cli_entry(c: dict) -> CapabilityEntry:
         enabled=bool(c.get("live")),          # 未接入 / 清单为空 → 不进池（fail closed 口径）
         rules=rules,
         invokable=bool(rules),
+        pool=str(c.get("pool") or "readonly"),    # 06：归属只由用户设定，默认只读池
     )
 
 
@@ -395,6 +401,9 @@ def _entry_from_row(row: dict, source_row: dict | None, source: str) -> Capabili
         invoke_spec=spec,
         read_only=bool(row.get("read_only", 1)),
         confirmed=confirmed,
+        # 06：归属只读池 / 写池。**默认只读池**，且与 read_only 及其初始识别**无关** ——
+        #   入池凭据是上面的 confirmed（用户确认过），这一条不许被"初始判写"改写。
+        pool=str(row.get("pool") or "readonly"),
     )
 
 
@@ -455,8 +464,16 @@ _ADAPTERS = {
 
 
 # ---------------------------------------------------------------- 读：池条目（派生视图，不读 tool_capabilities）
-def pool_entries(account_id: int | None, *, enabled_only: bool = True) -> list[CapabilityEntry]:
-    """当前账号的能力池条目。
+def pool_entries(account_id: int | None, *, enabled_only: bool = True,
+                 include_write_pool: bool = False) -> list[CapabilityEntry]:
+    """当前账号**路由池**的条目（默认不含写池）。
+
+    ★ 06 口径（Verdict/06 裁定 6）：归到写池（`pool="write"`）的能力**不进路由、不进测评**，
+      只能被用户在输入框用「/」显式选中的写工具集唤醒；`include_write_pool=True` 只给
+      "写池汇总列表"这类展示用，**路由器绝不能传它**。
+    ⚠️ 但"进池凭据"始终是 `enabled`（= 用户确认过 `confirmed_at` + 工具与来源都启用），
+      **不是** `read_only` 的取值、更不是"初始识别"的结果 —— 所以用户强制确认为只读的
+      （原识别为写）能力永远留在池里。
 
     ⚠️ 直接**从来源适配器派生**（而非读 `tool_capabilities` 表）——保证「来源表是唯一事实源」：
     用户在 CLI 页改了能力描述，池立刻反映，不存在两张表不同步的窗口。
@@ -473,6 +490,8 @@ def pool_entries(account_id: int | None, *, enabled_only: bool = True) -> list[C
             print(f"[M5b] 能力来源 {source} 读取失败（跳过）: {type(e).__name__}: {e}")
     if enabled_only:
         out = [e for e in out if e.enabled]
+    if not include_write_pool:                      # 06：写池不进路由池
+        out = [e for e in out if (getattr(e, "pool", "readonly") or "readonly") != "write"]
     # 去重（同 source+ref 只留一条；来源适配器正常不会重复，防御性处理）
     seen: set[tuple[str, str]] = set()
     uniq: list[CapabilityEntry] = []
@@ -820,4 +839,40 @@ def pool_summary(account_id: int | None) -> dict:
         "by_source": by_source,
         "version": current_pool_version(int(account_id)) if account_id else 0,
         "refs": [f"{e.source}:{e.ref}" for e in entries],
+        "write_pool_count": len(write_pool_entries(account_id)),      # 06：写池只汇总，不进 count
     }
+
+
+def write_pool_entries(account_id: int | None) -> list[CapabilityEntry]:
+    """06 · 写池汇总列表：只列"归到写池"的条目，**不测评、不进路由**（Verdict/06 裁定 6）。"""
+    if not account_id:
+        return []
+    return [e for e in pool_entries(account_id, include_write_pool=True)
+            if (getattr(e, "pool", "readonly") or "readonly") == "write"]
+
+
+def sync_pool_for_source(conn, account_id: int, src_kind: str, slug: str, pool: str) -> int:
+    """按来源批量设置池归属。**只改未确认过的行**（与 M5c-1 `_sync_readonly_for_source` 同款边界）。
+
+    为什么只碰未确认的行：用户确认过的东西（含"强制确认为只读"）是他的最终决定，
+    批量同步不许覆盖 —— 一覆盖就可能把只读能力推进写池 / 把写能力拉进路由池。
+    """
+    pool = "write" if str(pool).lower() == "write" else "readonly"
+    n = 0
+    # 匹配方式与 api/tools_sources.py::_sync_readonly_for_source 对齐（ref LIKE 来源前缀）
+    from api.tools_sources import _ref_like
+    try:
+        rows = conn.execute(
+            "SELECT id, pool, confirmed_at FROM tool_capabilities "
+            "WHERE account_id=? AND source=? AND ref LIKE ?",
+            (int(account_id), src_kind, _ref_like(src_kind, slug))).fetchall()
+    except Exception:                              # noqa: BLE001
+        return 0
+    for r in rows:
+        if r["confirmed_at"]:                      # ★ 已确认 → 不碰（红线）
+            continue
+        if (r["pool"] or "readonly") == pool:
+            continue
+        conn.execute("UPDATE tool_capabilities SET pool=? WHERE id=?", (pool, r["id"]))
+        n += 1
+    return n

@@ -306,7 +306,8 @@ def list_clis(account_id: int | None) -> list[dict]:
         conn = get_personal_conn()
         try:
             rows = conn.execute(
-                "SELECT id, name, bin, install_cmd, auth_cmd, docs, docs_mode, readonly, state, note, updated_at, abilities "
+                "SELECT id, name, bin, install_cmd, auth_cmd, docs, docs_mode, readonly, state, note, updated_at, abilities, "
+                "pool, write_cmds "
                 "FROM user_clis WHERE account_id=? ORDER BY id", (int(account_id),)).fetchall()
         finally:
             conn.close()
@@ -318,6 +319,10 @@ def list_clis(account_id: int | None) -> list[dict]:
             rules, _notes = parse_rules(r["readonly"], r["bin"])
         except CliConfigError:
             rules = []          # 库里存了脏文本也不炸，按「无清单 = 不放行」处理
+        try:                    # 06：写CLI 的**允许写子命令**白名单（不是"去掉限制"，是另列一份）
+            write_rules, _wn = parse_rules((r["write_cmds"] if "write_cmds" in r.keys() else "") or "", r["bin"])
+        except CliConfigError:
+            write_rules = []
         out.append({
             "id": r["id"], "name": r["name"], "bin": r["bin"],
             "install_cmd": r["install_cmd"] or "", "auth_cmd": r["auth_cmd"] or "",
@@ -325,6 +330,10 @@ def list_clis(account_id: int | None) -> list[dict]:
             "docs_mode": (r["docs_mode"] or "url") if "docs_mode" in r.keys() else "url",
             "abilities": (r["abilities"] or "") if "abilities" in r.keys() else "",
             "rules": rules,
+            "write_rules": write_rules,
+            # 06：池归属（readonly / write）。**只由用户设定**，默认只读池 —— 不许按初始识别推导
+            #     （Verdict/06 裁定 6：用户强制确认为只读的能力必须继续留在路由池）。
+            "pool": (r["pool"] if "pool" in r.keys() else "readonly") or "readonly",
             "agent_commands": [f"{r['bin']} " + " ".join(t) for t in rules],
             "state": r["state"] or "none",
             "state_label": STATES.get(r["state"] or "none", "未接入"),
@@ -471,6 +480,8 @@ def allowed_for_agent(account_id: int | None) -> dict[str, dict]:
     for c in list_clis(account_id):
         if c["state"] not in LIVE_STATES or not c["rules"]:
             continue
+        if (c.get("pool") or "readonly") == "write":
+            continue      # 06：写池 CLI 不进路由池（只能被「/」唤醒）；默认只读池，故老数据零变化
         out[c["bin"]] = {"cli_id": c["id"], "name": c["name"], "state": c["state"],
                          "readonly": [list(t) for t in c["rules"]],
                          "agent_commands": c["agent_commands"],
@@ -956,8 +967,14 @@ def command_path(argv: list[str]) -> list[str]:
     return path
 
 
-def readonly_verdict(argv: list[str], readonly: list[list[str]]) -> tuple[bool, str]:
-    """判断这条 argv 是否命中「只读清单」。返回 (是否放行, 原因)。"""
+def readonly_verdict(argv: list[str], readonly: list[list[str]],
+                     write_rules: list[list[str]] | None = None) -> tuple[bool, str]:
+    """判断这条 argv 是否命中「只读清单」（或 06 的「写清单」）。返回 (是否放行, 原因)。
+
+    ★ 06：`write_rules` 是"允许的写子命令"白名单，**只有用户经「/」显式授权的那条路径才传它**。
+      默认不传 → 与改造前逐字一致（写子命令一律拒绝，fail-closed），所以 Agent 的路由路径
+      行为零变化：写CLI 不进路由池、只能被「/」唤醒。
+    """
     for tok in argv or []:
         name = tok.split("=", 1)[0] if tok.startswith("--") else tok
         if name in WRITE_FLAGS:
@@ -976,6 +993,10 @@ def readonly_verdict(argv: list[str], readonly: list[list[str]]) -> tuple[bool, 
     for rule in readonly:
         if path[:len(rule)] == list(rule):
             return True, "命中只读清单：" + " ".join(rule)
+    if write_rules:
+        for rule in write_rules:
+            if path[:len(rule)] == list(rule):
+                return True, "命中写清单（本轮经「/」授权）：" + " ".join(rule)
     return False, ("子命令 `" + " ".join(path) + "` 不在只读清单内——写操作与未列出的命令一律拒绝；"
                    "如需执行请在你自己的终端跑，或把它加进该 CLI 的只读清单")
 

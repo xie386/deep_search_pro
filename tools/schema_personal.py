@@ -254,7 +254,9 @@ def ensure_tables() -> None:
         #   那里任一语句报错会中断整段脚本，其后的建表全部跳过。
         try:
             for _tbl, _cols in (("user_clis", [("pool", "TEXT NOT NULL DEFAULT 'readonly'"),
-                                              ("write_cmds", "TEXT NOT NULL DEFAULT ''")]),):
+                                              ("write_cmds", "TEXT NOT NULL DEFAULT ''")]),
+                                ("tool_capabilities", [("pool", "TEXT NOT NULL DEFAULT 'readonly'")]),
+                                ("tool_sources", [("pool", "TEXT NOT NULL DEFAULT 'readonly'")]),):
                 _have = {r[1] for r in conn.execute("PRAGMA table_info(%s)" % _tbl)}
                 for _name, _type in _cols:
                     if _have and _name not in _have:
