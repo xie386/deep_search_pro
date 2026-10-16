@@ -55,3 +55,58 @@ def test_frontend_setup_definitions_present():
                        "setup 抛错、页面白屏）：%s" % undef)
     ret, _span = chk.setup_return_names(html)
     assert len(ret) > 300, "setup 返回值数量异常（只有 %d 个），检查解析是否失效" % len(ret)
+
+
+def test_views_not_trapped_in_left_column():
+    """★ 2026-10-16 事故守卫二：各视图模板不得被困在 `.col-left` 里。
+
+    真机表现：`.col-left` 少一个闭合时，`.col-mid`/`.col-right`、输入框，
+    以及后面所有页面（知识库/报告/技能与工具/定制助手/设置）全都变成左栏的子节点 ——
+    右栏被挤进左栏、其余页面只剩背景图。标签配平检查能抓住它，模板绑定检查抓不住。
+    """
+    if not INDEX.exists():
+        pytest.skip("找不到 front/index.html")
+    import re as _re
+    html = INDEX.read_text(encoding="utf-8")
+    VOID = {"br","hr","img","input","meta","link","source","area","base","col",
+            "embed","param","track","wbr"}
+    from html.parser import HTMLParser
+
+    class Chain(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=False)
+            self.stack, self.trapped = [], []
+
+        def handle_starttag(self, tag, attrs):
+            if tag in VOID:
+                return
+            d = dict(attrs)
+            cls, vif = d.get("class", "") or "", d.get("v-if", "") or ""
+            self.stack.append((tag, cls))
+            if "col-left" in cls or ("col-left" in [c for _t, c in self.stack]):
+                pass
+            # 只看“视图根”：<template v-if="view==='xxx'"> 这种；不看偶然撞上的类名
+            # （工作目录弹窗复用了 kb-modal 类名、且它本来就在 .col-left 里，属正常）
+            if tag == "template" and "view" in vif.lower():
+                if any("col-left" in cc for _t, cc in self.stack[:-1]):
+                    self.trapped.append((vif, self.getpos()[0]))
+
+        def handle_startendtag(self, *a):
+            pass
+
+        def handle_endtag(self, tag):
+            if tag in VOID:
+                return
+            if self.stack and self.stack[-1][0] == tag:
+                self.stack.pop()
+            else:
+                while self.stack and self.stack[-1][0] != tag:
+                    self.stack.pop()
+                if self.stack:
+                    self.stack.pop()
+
+    c = Chain()
+    i = html.find('<div id="app"')
+    c.feed(html[i:] if i > 0 else html)
+    assert not c.trapped, ("这些视图被困在 .col-left 子树里（会导致右栏被挤进左栏、"
+                           "其余页面只剩背景图）：%s" % c.trapped)

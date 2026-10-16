@@ -1416,6 +1416,14 @@
                 border: 1px solid rgba(84,170,105,.2); margin-bottom: 8px; border-left: 3px solid var(--accent); animation: slide-in .3s ease; }
     @keyframes slide-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
     .mon-item.tool { border-left-color: var(--net); }
+    /* ★ 06：左右栏一键收起 —— 收起的是一列细轨，按钮始终可见可点 */
+    .col-fold { flex: 0 0 16px; cursor: pointer; user-select: none; display: flex;
+                align-items: center; justify-content: center; color: var(--muted);
+                border-radius: 8px; background: rgba(255,255,255,.05); font-size: 14px; }
+    .col-fold:hover { color: var(--fg); background: rgba(255,255,255,.12); }
+    .col-left.collapsed, .col-right.collapsed { flex: 0 0 0 !important; width: 0 !important;
+                min-width: 0 !important; max-width: 0 !important; padding: 0 !important;
+                margin: 0 !important; border: 0 !important; overflow: hidden !important; }
     /* ★ 06：workflow 步骤卡（右栏顶部） */
     .wf-steps { margin-bottom: 10px; border: 1px solid rgba(129,140,248,.45); border-radius: 10px;
                 padding: 8px 10px; background: rgba(129,140,248,.10); }
@@ -2728,7 +2736,10 @@
 
       <!-- ===== AI 对话 ===== -->
       <div class="view chat-view" v-show="view === 'chat'" style="overflow:hidden">
-        <div class="col-left">
+        <!-- ★ 06：左栏一键收起（方案要求）。收起的只是一条细轨，按钮始终可见可点。 -->
+        <div class="col-fold" @click="leftCollapsed = !leftCollapsed"
+             :title="leftCollapsed ? '展开左栏' : '收起左栏'">{{ leftCollapsed ? '›' : '‹' }}</div>
+        <div class="col-left" :class="{ collapsed: leftCollapsed }">
           <div class="session-panel">
             <div class="session-head">
               <span class="session-title">💬 对话</span>
@@ -2881,6 +2892,11 @@
               <div class="thinking" v-if="wdErr">{{ wdErr }}</div>
             </div>
             </div>
+            </div>
+
+        <!-- ★ 06：右栏一键收起 -->
+        <div class="col-fold right" @click="rightCollapsed = !rightCollapsed"
+             :title="rightCollapsed ? '展开右栏' : '收起右栏'">{{ rightCollapsed ? '‹' : '›' }}</div>
 
         <div class="col-mid">
           <div class="chat-scroll" ref="scroll">
@@ -3039,7 +3055,7 @@
           </div>
         </div>
 
-        <div class="col-right">
+        <div class="col-right" :class="{ collapsed: rightCollapsed }">
         <!-- M5-6：价格台账（跌幅 / 目标价 / 更新价格 / 资讯价折叠）-->
         <div class="price-card" :class="{ open: priceCardOpen }"
              v-if="priceSummary && priceSummary._account === username && (priceSummary.items.length || priceSummary.mentions.length)"
@@ -7219,6 +7235,10 @@ createApp({
       if (!wfActive.value) showToast('模板已插入 —— 填好名字后点「＋ 新建」');
     }
 
+    // ★ 06：左右栏一键收起（声明须早于 resetAccountState）
+    const leftCollapsed = ref(false);
+    const rightCollapsed = ref(false);
+
     function resetAccountState() {
       // ★ 06：工作目录面板也按账号取数，切账号必须一起清（与技能/工具同一批门闩问题）
       wdList.value = []; wdPath.value = ''; wdEntries.value = []; wdMsg.value = '';
@@ -7229,6 +7249,7 @@ createApp({
                          caps: { skills: 5, write_sets: 5, workflows: 5 } };
       poolSources.value = [];
       wfItems.value = []; wfActive.value = ''; wfContent.value = ''; wfNewName.value = ''; wfSteps.value = [];
+      leftCollapsed.value = false; rightCollapsed.value = false;
       resetPriceState();
       // ① 门闩（让页签下次访问时重新拉取）
       cliLoaded.value = false;
@@ -9674,6 +9695,8 @@ createApp({
         wfSave,
         wfSteps,
         wfTpl,
+        leftCollapsed,
+        rightCollapsed,
 };
   }
 }).mount('#app');

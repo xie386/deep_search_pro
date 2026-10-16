@@ -187,8 +187,11 @@ try {                       // 与 HEAD 对照：只判「这次改动有没有�
   const tmp = path.join(require('os').tmpdir(), 'probe_front_head.html');
   fs.writeFileSync(tmp, execSync('git show HEAD:front/index.html', { cwd: ROOT, maxBuffer: 1 << 28 }));
   const head = scanTags(fs.readFileSync(tmp, 'utf8').replace(/\r\n/g, '\n').replace(/\r/g, '\n'));
-  check('结构：与 HEAD 同结论（改动未引入新的结构问题）',
-        cur.stack.length === head.stack.length && (!!cur.err === !!head.err),
+  // ★ 2026-10-16：断言从「与 HEAD 完全相同」改为「不引入新的结构问题」——
+  //   因为 HEAD 自己就带着 .col-left 未闭合的毛病（真机表现为右栏被挤进左栏、其余页面空白），
+  //   修好后本项必然“不等”，但那正是变好了。
+  check('结构：未引入新的结构问题（当前不得超过 HEAD）',
+        cur.stack.length <= head.stack.length && (!cur.err || !!head.err),
         '当前 ' + cur.stack.length + ' / HEAD ' + head.stack.length);
 } catch (e) { headOk = false; check('结构：HEAD 对照（git 不可用则跳过）', true, '跳过：' + e.message.slice(0, 60)); }
 
