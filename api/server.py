@@ -62,6 +62,7 @@ from tools.workdir_tools import (workdir_list, workdir_read, workdir_create,
                                  workdir_edit, workdir_delete)
 from api import workdir_api as _wdapi   # 06：工作目录接口层（前端文件管理器的服务端）
 from api import write_pool as _wpool       # 06：自配写工具池（只读池/写池）
+from api import workflows as _wf_req       # 06：workflows 定义（存放 + 校验 + 接口）
 from agent.write_gate import WriteGateMiddleware
 from tools._runtime import shell_runtime as shell_runtime  # M4b：CLI 面板 /api/shell/* 路由用
 from tools import cli_registry as cli_reg  # M4c：第三方 CLI 接入登记（注册表 + 本机检测 + 状态）
@@ -1919,6 +1920,45 @@ async def skill_delete(req: cust.SkillReq, token: str = Query(...)):
 # ----------------------------- 自配写工具池（06） -----------------------------
 # 口径（Verdict/06 裁定 6）：归属**只由用户显式设定**，默认只读池；写池不进路由、不进 03 测评，
 # 只能被输入框「/」选中后唤醒。入池凭据始终是"用户确认过"，与初始识别结果无关。
+# ----------------------------- workflows（06：步骤固定的流程定义） -----------------------------
+# 与技能并排：存在 agents_docs/{账号}/workflows/{名字}.yml，同样的名字/字数上限与保留名校验。
+# 引擎（代码逐步驱动）在 agent/workflow_runner.py；本层只管定义。
+@app.get("/api/workflows", summary="列出我的 workflow（含步骤数与坏文件标记）")
+async def wf_list_api(token: str = Query(...)):
+    from api import workflows as _wf
+    return _wf.wf_list(token)
+
+
+@app.get("/api/workflows/get", summary="读取单个 workflow 定义原文")
+async def wf_get_api(name: str = Query(...), token: str = Query(...)):
+    from api import workflows as _wf
+    return _wf.wf_get(token, name)
+
+
+@app.post("/api/workflows/create", summary="新建 workflow（重名 409；创建即校验 YAML）")
+async def wf_create_api(req: _wf_req.WfReq, token: str = Query(...)):
+    from api import workflows as _wf
+    return _wf.wf_create(token, req)
+
+
+@app.post("/api/workflows/save", summary="保存 workflow（不存在则创建；保存即校验）")
+async def wf_save_api(req: _wf_req.WfReq, token: str = Query(...)):
+    from api import workflows as _wf
+    return _wf.wf_save(token, req)
+
+
+@app.post("/api/workflows/delete", summary="删除 workflow")
+async def wf_delete_api(req: _wf_req.WfReq, token: str = Query(...)):
+    from api import workflows as _wf
+    return _wf.wf_delete(token, req.name)
+
+
+@app.get("/api/workflows/template", summary="表单编辑器的初始模板")
+async def wf_tpl_api(token: str = Query(...)):
+    from api import workflows as _wf
+    return {"content": _wf.wf_template()}
+
+
 @app.get("/api/pool/summary", summary="两池概览 + 写工具集候选 + 「/」三组上限")
 async def pool_summary_api(token: str = Query(...)):
     from api import write_pool as _wpool
