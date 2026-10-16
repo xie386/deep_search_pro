@@ -22,17 +22,36 @@ def _now() -> int:
 
 
 def ensure_default(account_id: int | None, username: str | None) -> None:
-    """懒建默认条目「主页」（指向账号沙箱）。已存在则不动；同时把沙箱的保护名单播种。"""
+    """懒建默认条目「主页」（指向账号沙箱），并在**指向别处时就地修回**；同时播种保护名单。
+
+    ★ 2026-10-16 真机事故：库里出现过一条脏数据 —— account_id=3(尼古喵喵) 的「主页」
+      指向了 `user_data/sandbox/u`（我的单测用 username='u' 碰了真实库留下的）。
+      结果 CLI 面板显示的 cwd 是 `sandbox/u`，看起来像"串到别的账号沙箱"。
+      这里加自愈：默认条目按定义 = 该账号沙箱，路径不符就改回来（只动 is_default 那一行）。
+    """
     if not account_id:
         return
     ensure_tables()                          # 幂等建表（不依赖"启动时一定跑过"的脆弱假设）
+    if not (username or "").strip():
+        return                               # 没账号名不建也不修：避免把真实账号的主页指到公共沙箱
     d = sandbox_dir(username)
     seed_protect(d)
     conn = get_personal_conn()
     try:
-        row = conn.execute("SELECT COUNT(*) FROM account_workdirs WHERE account_id=?",
-                           (int(account_id),)).fetchone()
-        if row and row[0]:
+        row = conn.execute(
+            "SELECT id, name, path, is_default FROM account_workdirs"
+            " WHERE account_id=? ORDER BY is_default DESC, id ASC LIMIT 1",
+            (int(account_id),)).fetchone()
+        if row:
+            if row["is_default"] and row["name"] == DEFAULT_NAME:
+                try:
+                    cur = Path(row["path"]).resolve()
+                except OSError:
+                    cur = None
+                if cur != d.resolve():
+                    conn.execute("UPDATE account_workdirs SET path=?, updated_at=? WHERE id=?",
+                                 (str(d), _now(), row["id"]))
+                    conn.commit()
             return
         conn.execute(
             "INSERT INTO account_workdirs (account_id, name, path, is_active, is_default,"
@@ -80,7 +99,12 @@ def active(account_id: int | None, username: str | None = None) -> tuple[Path, d
             seed_protect(fallback)          # 首次落地时补种保护名单（见下）
             return fallback, None
         p = Path(row["path"])
-        if not p.is_dir():
+        # ★ 自愈的"只读"一侧：默认条目「主页」按定义 = 该账号沙箱。指向别处（历史脏数据）时
+        #   本次**直接回落沙箱**（不写库、不留副作用）；真正改库交给 ensure_default（开面板时）。
+        bad_home = (bool(row["is_default"]) and row["name"] == DEFAULT_NAME
+                    and bool((username or "").strip())
+                    and p.resolve() != sandbox_dir(username).resolve())
+        if not p.is_dir() or bad_home:
             seed_protect(fallback)
             return fallback, None
         seed_protect(p)                     # ★ 真机抓到：只在 ensure_default（打开过文件管理器）时播种，

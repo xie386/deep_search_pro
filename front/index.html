@@ -1106,7 +1106,7 @@
     .reddot { background:#dc2626; color:#fff; font-size:9px; padding:1px 5px; border-radius:8px; margin-left:5px; vertical-align:top; }
 
     /* ---- 对话视图 ---- */
-    .chat-view { display: flex; overflow: hidden; height: 100%; }
+    .chat-view { display: flex; overflow: hidden; height: 100%; position: relative; }
     .col-left { width: 240px; background: rgba(84,170,105,.22); backdrop-filter: blur(10px); border-right: 1px solid var(--line); padding: 16px 14px; overflow-y: auto; }
     .col-mid { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
     .col-right { width: 320px; background: rgba(84,170,105,.22); backdrop-filter: blur(10px); border-left: 1px solid var(--line); padding: 14px 12px; overflow-y: auto; }
@@ -1212,6 +1212,14 @@
     .wd-badge.cred { background: rgba(224,101,63,.18); color: #fca5a5; }
     .wd-box { width: min(78vw, 1080px); max-height: 84vh; display: flex; flex-direction: column; }
     .wd-box .wd-meta { font-size: 11.5px; color: #cbd5e1; margin-bottom: 8px; word-break: break-all; }
+    /* ★ 06：弹窗内表单（深色底）—— 字段标签要亮、要跟输入框拉开，不能压在一起 */
+    .wd-box .fg { display: block; }
+    .wd-box .fg label { display: block; color: #cbd5e1; font-size: 12px; margin: 0 0 5px; }
+    .wd-box .fg .m-input, .wd-box input.m-input { width: 100%; box-sizing: border-box;
+                background: #0f172a; color: #e5e7eb; border: 1px solid rgba(255,255,255,.18);
+                border-radius: 8px; padding: 9px 11px; font-size: 13px; }
+    .wd-warn { font-size: 12px; color: #fcd34d; background: rgba(252,211,77,.12);
+               border: 1px solid rgba(252,211,77,.35); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
     .wd-editor { width: 100%; min-height: 44vh; background: rgba(0,0,0,.4); color: #e5e7eb; border-radius: 10px;
                  border: 1px solid rgba(255,255,255,.12); padding: 12px; font-family: ui-monospace, Consolas, monospace;
                  font-size: 12.5px; line-height: 1.6; resize: vertical; box-sizing: border-box; }
@@ -1417,10 +1425,15 @@
     @keyframes slide-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
     .mon-item.tool { border-left-color: var(--net); }
     /* ★ 06：左右栏一键收起 —— 收起的是一列细轨，按钮始终可见可点 */
-    .col-fold { flex: 0 0 16px; cursor: pointer; user-select: none; display: flex;
-                align-items: center; justify-content: center; color: var(--muted);
-                border-radius: 8px; background: rgba(255,255,255,.05); font-size: 14px; }
-    .col-fold:hover { color: var(--fg); background: rgba(255,255,255,.12); }
+    /* ★ 06：一键收起。绝对定位：不占布局（左栏贴左、中间不留空隙），收起后仍在原位可点。 */
+    .col-fold { position: absolute; top: 50%; transform: translateY(-50%); z-index: 25;
+                width: 14px; height: 54px; cursor: pointer; user-select: none;
+                display: flex; align-items: center; justify-content: center;
+                color: var(--muted); border-radius: 8px; font-size: 14px;
+                background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.10); }
+    .col-fold:hover { color: var(--fg); background: rgba(255,255,255,.16); }
+    .col-fold.left { left: 1px; }
+    .col-fold.right { right: 1px; }
     .col-left.collapsed, .col-right.collapsed { flex: 0 0 0 !important; width: 0 !important;
                 min-width: 0 !important; max-width: 0 !important; padding: 0 !important;
                 margin: 0 !important; border: 0 !important; overflow: hidden !important; }
@@ -2736,8 +2749,72 @@
 
       <!-- ===== AI 对话 ===== -->
       <div class="view chat-view" v-show="view === 'chat'" style="overflow:hidden">
+        <!-- ★ 06：三用弹窗（文件 / 回收站 / 加目录）。必须放在三列之外：.col-left/.col-right 有
+             backdrop-filter，会成为 position:fixed 的包含块，弹窗会被卡进左栏（真机踩到）。 -->
+                <!-- ★ 06：文件 / 回收站 / 加目录 三用弹窗（复用 kb-modal 遮罩） -->
+                <div class="kb-modal" v-if="wdPanel" @click.self="wdClosePanel()">
+                <div class="kb-modal-box wd-box">
+                  <template v-if="wdPanel === 'file'">
+                    <h3>{{ wdFile ? wdFile.name : '文件' }}</h3>
+                    <div class="wd-meta">{{ wdFile ? wdFile.rel : '' }}<template v-if="wdFile"> · {{ wdSize(wdFile.size) }}<template v-if="wdFile.protected"> · 受保护（Agent 不可改）</template></template></div>
+                    <template v-if="wdFile">
+                      <div class="wd-warn" v-if="wdFile.protected">
+                        这是<b>受保护文件</b>。保护名单只约束 Agent（它的写工具一律拒绝），不约束你本人 ——
+                        你可以直接在这里改并保存。注意：改动会影响 Agent 后续行为。
+                      </div>
+                      <textarea class="wd-editor" v-if="wdFile.editable"
+                                v-model="wdFile.text" spellcheck="false"></textarea>
+                      <pre class="wd-preview" v-else-if="wdFile.kind !== 'download'">{{ wdFile.text }}</pre>
+                      <div class="thinking" v-else>这类文件不提供预览，请下载后查看。</div>
+                    </template>
+                    <div class="wd-acts">
+                      <button class="mini-btn act" v-if="wdFile && wdFile.editable"
+                              @click="wdSave()" :disabled="wdBusy">保存</button>
+                      <button class="mini-btn" v-if="wdFile" @click="wdDownloadFile()">下载</button>
+                      <button class="mini-btn" v-if="wdFile" @click="wdRenameFile()">重命名</button>
+                      <button class="mini-btn danger" v-if="wdFile && wdFile.name !== '_保护名单.md'"
+                              @click="wdDeleteOpenFile()">删除</button>
+                      <button class="mini-btn" @click="wdClosePanel()">关闭</button>
+                    </div>
+                  </template>
+
+                  <template v-else-if="wdPanel === 'trash'">
+                    <h3>🗑 回收站</h3>
+                    <div class="wd-meta">删除的文件先放在这里，超过 {{ wdTrashTtl }} 天自动清理；可还原回原路径。</div>
+                    <div class="wd-trash-row" v-for="it in wdTrash" :key="'tr'+it.name">
+                      <span class="rel" :title="it.rel">{{ it.orig }}<span class="wd-path">{{ it.rel }}</span></span>
+                      <button class="mini-btn" @click="wdRestore(it)">还原</button>
+                      <button class="mini-btn danger" @click="wdPurge(it)">彻底删除</button>
+                    </div>
+                    <div class="thinking" v-if="!wdTrash.length">回收站是空的。</div>
+                    <div class="wd-acts">
+                      <button class="mini-btn danger" v-if="wdTrash.length" @click="wdPurge(null)">清空回收站</button>
+                      <button class="mini-btn" @click="wdClosePanel()">关闭</button>
+                    </div>
+                  </template>
+
+                  <template v-else-if="wdPanel === 'add'">
+                    <h3>＋ 加一个工作目录</h3>
+                    <div class="wd-meta">只支持磁盘上<b>真实存在</b>的目录；项目不会接管它，只登记并使用。</div>
+                    <div class="fg"><label>显示名</label><input class="m-input" v-model="wdNew.name" placeholder="如 项目素材盘" /></div>
+                    <div class="fg" style="margin-top:8px"><label>绝对路径 *</label>
+                      <input class="m-input" v-model="wdNew.path" placeholder="如 D:\work\materials" /></div>
+                    <div class="wd-risk" v-if="wdRisk">
+                       <b>这个目录会成为 Agent 的工作目录，请先看清三条风险：</b>
+                      <div v-for="(rk, i) in wdRisk" :key="'rk'+i">{{ i + 1 }}. {{ rk }}</div>
+                    </div>
+                    <div class="wd-acts">
+                      <button class="mini-btn act" v-if="!wdRisk" @click="wdAddCheck()" :disabled="wdBusy">检查并继续</button>
+                      <button class="mini-btn act" v-if="wdRisk" @click="wdAddConfirm()" :disabled="wdBusy">我已了解风险，添加</button>
+                      <button class="mini-btn" @click="wdClosePanel()">取消</button>
+                    </div>
+                  </template>
+                  <div class="thinking" v-if="wdErr">{{ wdErr }}</div>
+                </div>
+                </div>
+
         <!-- ★ 06：左栏一键收起（方案要求）。收起的只是一条细轨，按钮始终可见可点。 -->
-        <div class="col-fold" @click="leftCollapsed = !leftCollapsed"
+        <div class="col-fold left" @click="leftCollapsed = !leftCollapsed"
              :title="leftCollapsed ? '展开左栏' : '收起左栏'">{{ leftCollapsed ? '›' : '‹' }}</div>
         <div class="col-left" :class="{ collapsed: leftCollapsed }">
           <div class="session-panel">
@@ -2835,63 +2912,6 @@
             </div>
             </div>
 
-            <!-- ★ 06：文件 / 回收站 / 加目录 三用弹窗（复用 kb-modal 遮罩） -->
-            <div class="kb-modal" v-if="wdPanel" @click.self="wdClosePanel()">
-            <div class="kb-modal-box wd-box">
-              <template v-if="wdPanel === 'file'">
-                <h3>{{ wdFile ? wdFile.name : '文件' }}</h3>
-                <div class="wd-meta">{{ wdFile ? wdFile.rel : '' }}<template v-if="wdFile"> · {{ wdSize(wdFile.size) }}<template v-if="wdFile.protected"> · 受保护（Agent 不可改）</template></template></div>
-                <template v-if="wdFile">
-                  <textarea class="wd-editor" v-if="wdFile.editable && !wdFile.protected"
-                            v-model="wdFile.text" spellcheck="false"></textarea>
-                  <pre class="wd-preview" v-else-if="wdFile.kind !== 'download'">{{ wdFile.text }}</pre>
-                  <div class="thinking" v-else>这类文件不提供预览，请下载后查看。</div>
-                </template>
-                <div class="wd-acts">
-                  <button class="mini-btn act" v-if="wdFile && wdFile.editable && !wdFile.protected"
-                          @click="wdSave()" :disabled="wdBusy">保存</button>
-                  <button class="mini-btn" v-if="wdFile" @click="wdDownloadFile()">下载</button>
-                  <button class="mini-btn" v-if="wdFile" @click="wdRenameFile()">重命名</button>
-                  <button class="mini-btn danger" v-if="wdFile && wdFile.name !== '_保护名单.md'"
-                          @click="wdDeleteOpenFile()">删除</button>
-                  <button class="mini-btn" @click="wdClosePanel()">关闭</button>
-                </div>
-              </template>
-
-              <template v-else-if="wdPanel === 'trash'">
-                <h3>🗑 回收站</h3>
-                <div class="wd-meta">删除的文件先放在这里，超过 {{ wdTrashTtl }} 天自动清理；可还原回原路径。</div>
-                <div class="wd-trash-row" v-for="it in wdTrash" :key="'tr'+it.name">
-                  <span class="rel" :title="it.rel">{{ it.orig }}<span class="wd-path">{{ it.rel }}</span></span>
-                  <button class="mini-btn" @click="wdRestore(it)">还原</button>
-                  <button class="mini-btn danger" @click="wdPurge(it)">彻底删除</button>
-                </div>
-                <div class="thinking" v-if="!wdTrash.length">回收站是空的。</div>
-                <div class="wd-acts">
-                  <button class="mini-btn danger" v-if="wdTrash.length" @click="wdPurge(null)">清空回收站</button>
-                  <button class="mini-btn" @click="wdClosePanel()">关闭</button>
-                </div>
-              </template>
-
-              <template v-else-if="wdPanel === 'add'">
-                <h3>＋ 加一个工作目录</h3>
-                <div class="wd-meta">只支持磁盘上**真实存在**的目录；项目不会接管它，只登记并使用。</div>
-                <div class="fg"><label>显示名</label><input class="m-input" v-model="wdNew.name" placeholder="如 项目素材盘" /></div>
-                <div class="fg" style="margin-top:8px"><label>绝对路径 *</label>
-                  <input class="m-input" v-model="wdNew.path" placeholder="如 D:\work\materials" /></div>
-                <div class="wd-risk" v-if="wdRisk">
-                   <b>这个目录会成为 Agent 的工作目录，请先看清三条风险：</b>
-                  <div v-for="(rk, i) in wdRisk" :key="'rk'+i">{{ i + 1 }}. {{ rk }}</div>
-                </div>
-                <div class="wd-acts">
-                  <button class="mini-btn act" v-if="!wdRisk" @click="wdAddCheck()" :disabled="wdBusy">检查并继续</button>
-                  <button class="mini-btn act" v-if="wdRisk" @click="wdAddConfirm()" :disabled="wdBusy">我已了解风险，添加</button>
-                  <button class="mini-btn" @click="wdClosePanel()">取消</button>
-                </div>
-              </template>
-              <div class="thinking" v-if="wdErr">{{ wdErr }}</div>
-            </div>
-            </div>
             </div>
 
         <!-- ★ 06：右栏一键收起 -->
@@ -2946,7 +2966,7 @@
             <!-- M4a：敲「/」唤出技能目录（↑↓ 选择，Enter/Tab 选中，Esc 关闭） -->
             <!-- ★ 06：一个菜单三组 —— 技能（可键盘）/ 自配写工具集（点击选中，写能力必须显式授权）/ workflow -->
             <div class="skill-menu" v-if="skMenuOpen">
-              <div class="mi grp">🧩 技能（{{ skPicked.length }}/{{ pickCaps.skills }}）</div>
+              <div class="mi grp">🧩 技能：{{ skMenuList.length }} 个可选 · 已选 {{ skPicked.length }}/{{ pickCaps.skills }}</div>
               <div class="mi" v-for="(s, i) in skMenuList" :key="s.name"
                    :class="{ on: i === skMenuIdx, dis: skPicked.indexOf(s.name) >= 0 }"
                    @click="skillPick(s.name)" @mouseenter="skMenuIdx = i">
@@ -2957,7 +2977,7 @@
                 <span class="sub" v-if="!skills.length">还没有技能 → 去「🧩 技能与工具」新建，或点「🎁 一键创建示例技能」</span>
                 <span class="sub" v-else>没有匹配「{{ skFilter }}」的技能</span>
               </div>
-              <div class="mi grp">🛠 自配写工具集（{{ wsPicked.length }}/{{ pickCaps.write_sets }}）· 选中即授权本轮改文件</div>
+              <div class="mi grp">🛠 自配写工具集：{{ wsSets.length }} 个可选 · 已选 {{ wsPicked.length }}/{{ pickCaps.write_sets }} · 选中即授权本轮改文件</div>
               <div class="mi" v-for="s in wsSets" :key="'ws'+s.kind+s.id"
                    :class="{ dis: wsPicked.indexOf(s.name) >= 0 }" @click="wsPick(s.name)">
                 <span>🛠 {{ s.name }}<span v-if="wsPicked.indexOf(s.name) >= 0"> · 已选</span></span>
@@ -2966,7 +2986,7 @@
               <div class="mi" v-if="!wsSets.length">
                 <span class="sub">还没有写工具集 → 去「🧩 技能与工具」把某条 CLI / API / MCP 归属设为「写池」</span>
               </div>
-              <div class="mi grp">⚙️ workflow（{{ wfPicked.length }}/{{ pickCaps.workflows }}）</div>
+              <div class="mi grp">⚙️ workflow：{{ wfSets.length }} 个可选 · 已选 {{ wfPicked.length }}/{{ pickCaps.workflows }}</div>
               <div class="mi" v-for="s in wfSets" :key="'wf'+s.name"
                    :class="{ dis: wfPicked.indexOf(s.name) >= 0 }" @click="wfPick(s.name)">
                 <span>⚙️ {{ s.name }}<span v-if="wfPicked.indexOf(s.name) >= 0"> · 已选</span></span>
@@ -8995,11 +9015,14 @@ createApp({
     }
     async function wdSave() {
       if (!wdFile.value) return;
+      if (wdFile.value.protected &&
+          !confirm('「' + wdFile.value.name + '」是受保护文件。\n保护名单本来只拦 Agent，你本人可以改 —— 确定保存吗？')) return;
       wdBusy.value = true; wdErr.value = '';
       try {
         const r = await fetch(wdTok('/api/workdir/write'), {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: wdFile.value.rel, content: wdFile.value.text, mtime: wdFile.value.mtime })
+          body: JSON.stringify({ path: wdFile.value.rel, content: wdFile.value.text,
+                                 mtime: wdFile.value.mtime, force: !!wdFile.value.protected })
         });
         const d = await r.json().catch(() => ({}));
         if (r.status === 401) { forceLogout('登录已失效，请重新登录'); return; }

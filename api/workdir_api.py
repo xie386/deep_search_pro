@@ -93,22 +93,26 @@ class IdReq(BaseModel):
 
 class PathReq(BaseModel):
     path: str
+    force: bool = False          # ★ 用户本人在前端的操作：可越过保护名单（只拦 Agent，不拦他）
 
 
 class CreateReq(BaseModel):
     path: str
     content: str = ""
+    force: bool = False
 
 
 class WriteReq(BaseModel):
     path: str
     content: str
     mtime: float | None = None
+    force: bool = False          # ★ 受保护文件：前端二次确认后由用户本人保存
 
 
 class RenameReq(BaseModel):
     path: str
     target: str
+    force: bool = False
 
 
 class TrashReq(BaseModel):
@@ -178,8 +182,8 @@ def tree(token: str, subdir: str = "") -> dict:
         raise HTTPException(400, "目录读取失败：%s" % e)
     for p in children:
         if p.name == guard.RECYCLE_DIR:
-            is_dir, size = True, 0                       # 回收站显示，但内容不在这里列
-        else:
+            continue            # ★ 回收站不在这里列（内部目录；用它自己的「🗑 回收站」面板管理）
+        if True:
             is_dir = p.is_dir()
             try:
                 size = 0 if is_dir else p.stat().st_size
@@ -266,7 +270,7 @@ def write_(token: str, req: WriteReq) -> dict:
         p = guard.resolve_in_workdir(req.path, wd)
     except ValueError as e:
         raise HTTPException(400, str(e))
-    reason = guard.assert_writable(p, wd)
+    reason = guard.assert_writable(p, wd, allow_protected=bool(req.force))
     if reason:
         _audit("write", str(p), False, reason, aid, wd)
         raise HTTPException(403, reason)
@@ -295,7 +299,7 @@ def create_(token: str, req: CreateReq) -> dict:
         p = guard.resolve_in_workdir(req.path, wd)
     except ValueError as e:
         raise HTTPException(400, str(e))
-    reason = guard.assert_writable(p, wd)
+    reason = guard.assert_writable(p, wd, allow_protected=bool(req.force))
     if reason:
         _audit("create", str(p), False, reason, aid, wd)
         raise HTTPException(403, reason)
@@ -315,6 +319,15 @@ def create_(token: str, req: CreateReq) -> dict:
 
 def delete_(token: str, req: PathReq) -> dict:
     aid, un, wd, _ = _ctx(token)
+    # ★ 回收站内部：删=**真删除**（用户 2026-10-16 明确：删别处才进回收站，删回收站里的就该消失）
+    raw = (req.path or "").strip().replace("\\", "/").strip("/")
+    if raw == guard.RECYCLE_DIR:
+        raise HTTPException(400, "回收站不能整个删除；要清空请到「🗑 回收站」面板点「清空回收站」。")
+    if raw.startswith(guard.RECYCLE_DIR + "/"):
+        entry = raw.split("/", 1)[1].split("/")[0]
+        n = guard.trash_purge(wd, entry)
+        _audit("trash_purge", raw, True, "回收站内删除=真删除（%d 项）" % n, aid, wd)
+        return {"ok": True, "purged": n, "permanent": True}
     try:
         p = guard.resolve_in_workdir(req.path, wd)
     except ValueError as e:
@@ -323,7 +336,11 @@ def delete_(token: str, req: PathReq) -> dict:
         raise HTTPException(400, "不能删除工作目录根目录本身")
     if not p.exists():
         raise HTTPException(404, "%s 不存在" % req.path)
-    reason = guard.assert_writable(p, wd)
+    if p.name == guard.PROTECT_FILE:
+        raise HTTPException(400, "%s 不能删除 —— 删了它，所有写操作都会按 fail-closed 被拦死。"
+                                 "要改规则请直接编辑它的内容（自己人可写）。" % guard.PROTECT_FILE)
+    # 删除走「用户本人」口径：名单里列出的受保护文件允许删（前端已二次确认）。
+    reason = guard.assert_writable(p, wd, allow_protected=True)
     if reason:
         _audit("delete", str(p), False, reason, aid, wd)
         raise HTTPException(403, reason)
@@ -348,7 +365,7 @@ def rename_(token: str, req: RenameReq) -> dict:
         raise HTTPException(400, str(e))
     # ★ 门禁先于存在性检查：受保护目标要报"受保护"这个真实原因，也避免用报错差异探测文件是否存在
     for p in (src, dst):
-        reason = guard.assert_writable(p, wd)
+        reason = guard.assert_writable(p, wd, allow_protected=bool(req.force))
         if reason:
             _audit("rename", "%s → %s" % (src, dst), False, reason, aid, wd)
             raise HTTPException(403, reason)

@@ -22,10 +22,21 @@ DB_PATH = os.getenv("PERSONAL_DB_PATH") or str(
 )
 
 
+def db_path() -> str:
+    """库文件路径 —— **调用时**解析环境变量。
+
+    ★ 2026-10-16 事故：原来是 import 期读 `PERSONAL_DB_PATH`，于是"import 之后再设环境变量"的
+      测试会把数据写进**真实库**（我的单测就这么留下了一条脏的 account_workdirs）。
+      改成调用时解析后，测试只要在连库前 setenv 就能正确隔离。
+    """
+    return os.getenv("PERSONAL_DB_PATH") or DB_PATH
+
+
 def get_personal_conn() -> sqlite3.Connection:
-    """返回个人库连接（启用外键 + Row 工厂）。"""
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    """返回个人库连接（启用外键 + Row 工厂）。路径按调用时环境变量解析（见 db_path）。"""
+    _db = db_path()
+    os.makedirs(os.path.dirname(_db), exist_ok=True)
+    conn = sqlite3.connect(_db)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn

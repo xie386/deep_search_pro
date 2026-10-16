@@ -124,6 +124,8 @@ def is_credential(target: Path | str, workdir: Path | str | None = None) -> bool
     for part in p.parts:
         if part in ("/", "\\", ""):
             continue
+        if part == RECYCLE_DIR:                 # 回收站是内部目录，不是凭据（否则里面的条目全被标"凭据"）
+            continue
         if part.startswith("."):
             return True
         if _CRED_RE.search(part):
@@ -144,19 +146,27 @@ def _in_recycle(target: Path | str, workdir: Path | str) -> bool:
         return False
 
 
-def assert_writable(target: Path | str, workdir: Path | str) -> str | None:
-    """写操作统一门禁。None = 放行；否则返回中文拒绝理由。"""
+def assert_writable(target: Path | str, workdir: Path | str,
+                    allow_protected: bool = False) -> str | None:
+    """写操作统一门禁。None = 放行；否则返回中文拒绝理由。
+
+    `allow_protected=True` 只用于**前端文件管理器的用户本人操作**（用户 2026-10-16 裁定）：
+    保护名单是拦 Agent 的，不该把用户自己锁在外面 —— 否则名单本身谁也不能编辑，它就废了。
+    凭据红线与画像目录红线**不受该开关影响**（那两条对人同样生效）。
+    """
     t = Path(target)
     wd = Path(workdir)
     if is_forbidden_dir(t):
         return ("%s 是专属文件夹，其他写工具不得越界；要改画像请用 write_agent_doc。"
                 % "/".join(FORBIDDEN_DIRS))
-    if t.name == PROTECT_FILE:
+    if t.name == PROTECT_FILE and not allow_protected:
         return "%s 是保护名单本身，永远不可被写工具修改或删除。" % PROTECT_FILE
     if _in_recycle(t, wd):                     # 软删目标在回收站内 —— 放行（否则删不进回收站）
         return None
     if is_credential(t, wd):
         return "该路径属于凭据类（含 key/token/secret 或点开头目录），写工具不得触碰。"
+    if allow_protected:
+        return None                            # ★ 用户本人在前端操作：保护名单不拦他
     return protected_reason(t, wd)
 
 
@@ -192,6 +202,13 @@ def resolve_in_workdir(raw: str, workdir: Path | str) -> Path:
         raise ValueError("路径无法解析：%s（%s）" % (s, e))
     if p != wd and wd not in p.parents:
         raise ValueError("路径逃出工作目录：%s\n工作目录只允许访问 %s 内部的路径。" % (s, wd))
+    try:
+        rel_parts = p.relative_to(wd).parts
+    except ValueError:
+        rel_parts = ()
+    if RECYCLE_DIR in rel_parts:
+        raise ValueError("%s 是回收站的内部目录，文件管理器里不直接读写它 —— "
+                         "删除的文件请到「🗑 回收站」面板还原或彻底删除。" % RECYCLE_DIR)
     return p
 
 

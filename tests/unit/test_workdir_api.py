@@ -128,11 +128,18 @@ def test_delete_to_trash_then_restore(env):
     assert (wd / "data" / "t.csv").read_text(encoding="utf-8") == "x,y\n1,2\n"   # 原位还原
 
 
-def test_delete_protected_denied_and_root_denied(env):
+def test_delete_protected_and_root_rules(env):
+    """★ 用户 2026-10-16 裁定：保护名单只约束 Agent，不约束用户本人。
+
+    - 名单里列出的受保护文件：**用户本人在前端可以删**（前端二次确认），不再是 403；
+    - 名单文件**自身**：永远不可删（删了所有写入会被 fail-closed 拦死；要改就编辑内容）；
+    - 工作目录根：不可删。
+    """
     api, g, wd = env
-    assert _codes(api.delete_, "tk", api.PathReq(path="MEMORY.md")) == 403
-    assert _codes(api.delete_, "tk", api.PathReq(path=g.PROTECT_FILE)) == 403
-    assert _codes(api.delete_, "tk", api.PathReq(path=".")) == 400
+    r = api.delete_("tk", api.PathReq(path="MEMORY.md"))          # 用户本人可删：返回 ok，不抛
+    assert r["ok"] is True and r["trash_name"]
+    assert _codes(api.delete_, "tk", api.PathReq(path=g.PROTECT_FILE)) == 400     # 名单自身不可删
+    assert _codes(api.delete_, "tk", api.PathReq(path=".")) == 400                # 根目录不可删
 
 
 def test_trash_purge(env):
@@ -141,3 +148,17 @@ def test_trash_purge(env):
     assert api.trash_("tk", api.TrashReq(action="purge"))["purged"] == 1
     assert api.trash_("tk", api.TrashReq(action="list"))["items"] == []
     assert _codes(api.trash_, "tk", api.TrashReq(action="weird")) == 400
+
+
+def test_protected_files_writable_by_owner_with_force(env):
+    """★ 用户 2026-10-16 裁定：保护名单只拦 Agent，用户本人在前端（二次确认后）可以改。
+
+    不带 force = Agent 口径 → 一律拒绝；带 force = 用户本人 → 用户可改名单里的文件，
+    也可以改**名单文件自身**（否则规则没法维护）。
+    """
+    api, g, wd = env
+    assert _codes(api.write_, "tk", api.WriteReq(path="MEMORY.md", content="x")) == 403          # Agent 口径
+    r = api.write_("tk", api.WriteReq(path="MEMORY.md", content="# 改过了\n", force=True))       # 用户本人
+    assert r["ok"] and (wd / "MEMORY.md").read_text(encoding="utf-8") == "# 改过了\n"
+    r2 = api.write_("tk", api.WriteReq(path=g.PROTECT_FILE, content="# 空名单\n\n", force=True))
+    assert r2["ok"] and (wd / g.PROTECT_FILE).read_text(encoding="utf-8") == "# 空名单\n\n"

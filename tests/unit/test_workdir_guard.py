@@ -187,7 +187,9 @@ def _fake_db(monkeypatch, tmp_path):
     """把 schema_personal 与 workdir_store 一起指到临时库 + 临时沙箱。"""
     from tools import schema_personal as sp, workdir_store as st, workdir_guard as g
     db = tmp_path / "t.db"
+    monkeypatch.delenv("PERSONAL_DB_PATH", raising=False)
     monkeypatch.setattr(sp, "DB_PATH", str(db))
+    assert sp.db_path() == str(db), "★ 隔离没生效 —— 绝不许碰真实库"
     monkeypatch.setattr(st, "get_personal_conn", sp.get_personal_conn)
     monkeypatch.setattr(st, "ensure_tables", sp.ensure_tables)
     monkeypatch.setattr(st, "seed_protect", g.seed_protect)
@@ -255,3 +257,29 @@ def test_active_survives_db_failure(monkeypatch, tmp_path):
     monkeypatch.setattr(st, "get_personal_conn",
                         lambda: (_ for _ in ()).throw(RuntimeError("db down")))
     assert str(st.active(3, "u")[0]) == str(sb)                       # 库坏了也回沙箱
+
+
+def test_home_entry_pointing_elsewhere_is_ignored_and_self_healed(monkeypatch, tmp_path):
+    """★ 2026-10-16 真机事故回归：库里「主页」被写成别的路径时，不许当真。
+
+    事故现场：account_id=3(尼古喵喵) 的「主页」指向 `user_data/sandbox/u`
+    （我的单测用 username='u' 碰了真实库留下的）→ CLI 面板 cwd 显示成 sandbox/u。
+    规则：① active() 遇到"主页"指向与账号沙箱不符时，**本次直接回落沙箱**（只读、不写库）；
+          ② ensure_default() 会把这一行就地修回账号沙箱（只动 is_default 那一行）。
+    """
+    sp, st, sb = _fake_db(monkeypatch, tmp_path)
+    st.ensure_default(3, "u")
+    stray = tmp_path / "elsewhere"
+    stray.mkdir()
+    conn = sp.get_personal_conn()
+    conn.execute("UPDATE account_workdirs SET path=? WHERE is_default=1", (str(stray),))
+    conn.commit()
+    conn.close()
+
+    p, entry = st.active(3, "u")
+    assert p == sb and entry is None, "「主页」指向别处时必须回落账号沙箱，不能当真"
+
+    st.ensure_default(3, "u")                       # 自愈
+    rows = st.list_dirs(3, "u")
+    assert rows[0]["is_default"] and rows[0]["path"] == str(sb), "ensure_default 应把主页路径改回沙箱"
+    assert st.active(3, "u")[0] == sb

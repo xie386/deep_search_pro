@@ -19,8 +19,24 @@ def _setup(monkeypatch, tmp_path, protect=None):
     from tools import workdir_tools as wt, workdir_guard as g
     wd = tmp_path / "wd"; wd.mkdir()
     (wd / g.PROTECT_FILE).write_text(protect if protect is not None else "MEMORY.md\n", encoding="utf-8")
-    monkeypatch.setattr(wt, "_ctx", lambda: (wd, "u", 3))
+    monkeypatch.setattr(wt, "_ctx", lambda: (wd, "t_u", 3))
     monkeypatch.setattr(wt, "_audit", lambda *a, **k: None)
+    # ★ 2026-10-16 事故：这里必须把**库**也隔离。之前用 (wd, "u", 3) 直接跑到 store.list_dirs()，
+    #   而 store 用的是真实库 → 给 account_id=3（尼古喵喵）写进一条「主页」指向 user_data/sandbox/u，
+    #   真机表现为 CLI 面板的 cwd 显示成 sandbox\u。教训：凡是要落库的入口，测试都要换临时库。
+    from tools import workdir_store as st, schema_personal as sp
+    db = tmp_path / "t.db"
+    monkeypatch.delenv("PERSONAL_DB_PATH", raising=False)   # ★ 环境变量优先级高于 DB_PATH，必须先清
+    monkeypatch.setattr(sp, "DB_PATH", str(db))
+    assert sp.db_path() == str(db), "★ 隔离没生效（库路径没指到临时库）—— 绝不许碰真实库" 
+    monkeypatch.setattr(st, "get_personal_conn", sp.get_personal_conn)
+    monkeypatch.setattr(st, "ensure_tables", sp.ensure_tables)
+    monkeypatch.setattr(st, "seed_protect", g.seed_protect)
+    monkeypatch.setattr(st, "sandbox_dir", lambda name=None: wd)
+    sp.ensure_tables()
+    conn = sp.get_personal_conn()                 # account_workdirs 有 FK → 先造账号行
+    conn.execute("INSERT INTO accounts (id, username, password_hash) VALUES (3,'t_u','x')")
+    conn.commit(); conn.close()
     return wt, g, wd
 
 
