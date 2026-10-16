@@ -196,6 +196,7 @@ async function fetch(url, opts) {
 // ★ 06：「/」菜单另两组的状态（send() 里会消费它们；不补会在 eval 里报 ReferenceError）
 const wsPicked = ref([]);
 const wfPicked = ref([]);
+const wfSteps = ref([]);
 
 // 执行真实抽取代码
 
@@ -207,9 +208,9 @@ const runner = new Function(
 
   'loading', 'messages', 'thinkingText', 'activeThread', 'go', 'connectWS', 'scrollToBottom', 'loadSessions',
 
-  'stopping', 'chatAbort', 'watch', '_initHash', 'wsPicked', 'wfPicked',
+  'stopping', 'chatAbort', 'watch', '_initHash', 'wsPicked', 'wfPicked', 'wfSteps',
 
-  block + '\nreturn { wsPicked, wfPicked, skills, skPicked, skMenuOpen, skMenuIdx, skFilter, skMenuList, skOnInput, skOnKey, skillPick, skillUnpick, SK_MAX_PICK, cliItems, cliTemplates, cliStates, cliSummary, cliDoneCount, loadCliCatalog, cliNew, cliFill, cliEdit, cliSave, cliSetState, cliSaveNote, cliDelete, cliForm, cliEditing, cliErr, cliDrafting, cliAbilityDraft, SK_MAX, send };'
+  block + '\nreturn { wsPicked, wfPicked, wfSteps, skills, skPicked, skMenuOpen, skMenuIdx, skFilter, skMenuList, skOnInput, skOnKey, skillPick, skillUnpick, SK_MAX_PICK, cliItems, cliTemplates, cliStates, cliSummary, cliDoneCount, loadCliCatalog, cliNew, cliFill, cliEdit, cliSave, cliSetState, cliSaveNote, cliDelete, cliForm, cliEditing, cliErr, cliDrafting, cliAbilityDraft, SK_MAX, send };'
 
 );
 
@@ -219,7 +220,7 @@ const M = runner(ref, computed, nextTick, document, localStorage, showToast, des
 
                   loading, messages, thinkingText, activeThread, go, connectWS, scrollToBottom, loadSessions,
 
-                  stopping, chatAbort, watch, _initHash, wsPicked, wfPicked);
+                  stopping, chatAbort, watch, _initHash, wsPicked, wfPicked, wfSteps);
 
 
 

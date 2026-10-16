@@ -1416,6 +1416,16 @@
                 border: 1px solid rgba(84,170,105,.2); margin-bottom: 8px; border-left: 3px solid var(--accent); animation: slide-in .3s ease; }
     @keyframes slide-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
     .mon-item.tool { border-left-color: var(--net); }
+    /* ★ 06：workflow 步骤卡（右栏顶部） */
+    .wf-steps { margin-bottom: 10px; border: 1px solid rgba(129,140,248,.45); border-radius: 10px;
+                padding: 8px 10px; background: rgba(129,140,248,.10); }
+    .wf-steps-head { font-size: 12px; color: #c7d2fe; margin-bottom: 6px; }
+    .wf-step { display: flex; gap: 8px; align-items: baseline; font-size: 12px; padding: 3px 0; }
+    .wf-step .tag { font-size: 10px; padding: 1px 6px; border-radius: 6px; background: rgba(255,255,255,.10); }
+    .wf-step.ok .tag { background: rgba(84,170,105,.35); }
+    .wf-step.failed .tag { background: rgba(224,101,63,.35); }
+    .wf-step.run .tag { background: rgba(245,197,66,.35); }
+    .wf-step .tx { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .mon-item.assistant { border-left-color: var(--accent2); }
     .mon-item.task { border-left-color: var(--kb); }
     .mon-item .t { color: var(--muted); font-size: 10.5px; margin-bottom: 2px; }
@@ -3156,6 +3166,13 @@
             <summary>🤔 模型思考过程</summary>
             <div class="think-text">{{ thinkingText }}</div>
           </details>
+          <div class="wf-steps" v-if="wfSteps.length">
+            <div class="wf-steps-head">⚙️ workflow 步骤（{{ wfSteps.filter(s => s.status !== 'run').length }}/{{ wfSteps.length }}）</div>
+            <div class="wf-step" v-for="s in wfSteps" :key="'wfs'+s.idx" :class="s.status">
+              <span class="tag">{{ s.status === 'ok' ? '完成' : s.status === 'failed' ? '失败' : '进行中' }}</span>
+              <span class="tx">第 {{ s.idx }}/{{ s.total }} 步 · {{ s.title }}</span>
+            </div>
+          </div>
           <div class="mon-item" v-for="(e, i) in monitor" :key="i" :class="e.cls">
             <div class="t">{{ e.time }}</div>
             <div>{{ e.msg }}</div>
@@ -3366,7 +3383,7 @@
         </div>
 
         <div class="sk-tabs">
-          <div class="sk-tab" :class="{on: skTab==='skill'}" @click="skTab='skill'">🧩 技能（SKILL.md）</div>
+          <div class="sk-tab" :class="{on: skTab==='skill'}" @click="skTab='skill'">🧩 技能与 workflows</div>
           <div class="sk-tab" :class="{on: skTab==='shell'}" @click="skTab='shell'">🖥️ CLI 面板</div>
           <div class="sk-tab" :class="{on: skTab==='cli'}" @click="skTab='cli'">🧩 自定义 CLI</div>
           <div class="sk-tab" :class="{on: skTab==='mcp'}" @click="skTab='mcp'">🔌 MCP 服务</div>
@@ -3474,11 +3491,55 @@
                     在本页写、或直接让 AI「把刚才这套做法存成技能 XXX」（AI 会写入
                     <code>user_data/agents_docs/{{ username }}/skills/</code>）。
                   </div>
-                </template>
-              </div>
-            </div>
-          </div>
-        </template>
+                  </template>
+                  </div>
+                  </div>
+                  </div>
+
+                  <!-- ★ 06：workflows（步骤固定的流程）。与技能同目录层级，存 agents_docs/{账号}/workflows/{名字}.yml -->
+                  <div class="sk-card">
+                  <h3>⚙️ 我的 workflows（{{ wfItems.length }}）</h3>
+                  <div class="sk-tip">
+                  workflow = <b>步骤固定</b>的一套流程。与技能的区别：技能是"说明书"（交给模型按它发挥），
+                  workflow 由<b>代码逐步驱动</b>——第 1 步做完、校验产出，再放第 2 步；某步失败就<b>停在该步</b>、不跳步。
+                  写好后在「AI 助手」输入框敲 <b>/</b> 选它（一次只能选一个）。
+                  </div>
+                  <div class="sk-grid">
+                  <div class="sk-list">
+                  <div class="sk-empty" v-if="!wfItems.length">
+                  还没有 workflow。点右侧「📋 插入模板」照着改，或从零写。
+                  </div>
+                  <div class="sk-item" v-for="w in wfItems" :key="'wfi'+w.file"
+                     :class="{on: wfActive===w.file}" @click="wfOpen(w.file)">
+                  <div class="n">{{ w.name }}
+                    <span class="wd-badge cred" v-if="!w.ok">定义有误</span>
+                  </div>
+                  <div class="d">{{ w.ok ? (w.desc || '（无说明）') : w.error }}</div>
+                  <div class="m">{{ w.steps }} 步 · {{ w.chars }} 字 · {{ w.updated }}</div>
+                  </div>
+                  </div>
+                  <div>
+                  <div class="sk-row">
+                  <input class="m-input grow" v-model="wfNewName" placeholder="workflow 名，如：竞品官网取价"
+                         @keyup.enter="wfCreate" maxlength="30" />
+                  <button class="mini-btn add-more" @click="wfCreate">＋ 新建</button>
+                  </div>
+                  <textarea class="m-input sk-ta" v-model="wfContent"
+                          placeholder="YAML 定义（步骤固定，见下方模板）…"></textarea>
+                  <div class="sk-row" style="margin-top:8px">
+                  <button class="mini-btn" @click="wfTpl">📋 插入模板</button>
+                  <button class="mini-btn" @click="wfSave" :disabled="!wfActive">💾 保存</button>
+                  <button class="mini-btn del" @click="wfDelete" :disabled="!wfActive">🗑 删除</button>
+                  <span class="sk-cnt" v-if="wfActive">{{ wfContent.length }} / {{ wfMaxLen }} 字 · 最多 {{ wfMaxSteps }} 步</span>
+                  </div>
+                  <div class="sk-tip" style="margin-top:8px">
+                  保存时会**校验**：YAML 能解析、每步有 title、步数不超限。定义有误存不进去 ——
+                  因为它是被引擎逐步执行的，不该等跑到一半才炸。
+                  </div>
+                  </div>
+                  </div>
+                  </div>
+                  </template>
 
         <!-- ========== ⑦ 写工具池（06：归属管理 + 授权入口说明） ========== -->
         <template v-if="skTab==='pool'">
@@ -5692,6 +5753,17 @@ createApp({
             // ★ v3.1 流式：正文/思考的逐段增量（先分流，别落进下面的进度列表 ✓）
             if (p.event === 'delta') { applyStreamDelta(p.data || {}); return; }
             if (p.event === 'tool_start') scheduleUsageRefresh();   // M4-5：工具一开跑就安排刷新
+        // ★ 06：workflow 步骤卡 —— 引擎每步推 report_tool('workflow_step', {'第 N/M 步': 标题})，
+        //   这里认出它并更新右栏步骤卡（不改后端事件格式：靠工具名做标记，够用且零侵入）。
+        if (p.message && p.message.indexOf('workflow_step') >= 0) {
+          const m = p.message.match(/第 (\d+)\/(\d+) 步[：:]?\s*([^'\"}]*)/);
+          if (m) {
+            const idx = Number(m[1]), total = Number(m[2]), title = (m[3] || '').trim();
+            const prev = wfSteps.value.filter(s => s.idx !== idx && !(idx > 1 && s.status === 'run'));
+            wfSteps.value = prev.map(s => s.idx < idx && s.status === 'run' ? { ...s, status: 'ok' } : s);
+            wfSteps.value.push({ idx, total, title: title || ('第 ' + idx + ' 步'), status: 'run' });
+          }
+        }
             if (p.event === 'thinking') {
               // 思考过程：追加到独立折叠区（小字灰色），不刷监控列表
               thinkingText.value += (p.data && p.data.text) || '';
@@ -7029,7 +7101,14 @@ createApp({
         if (!r.ok) return;
         const d = await r.json();
         wsSets.value = d.write_sets || [];
-        wfSets.value = d.workflows || [];            // 第 6 步提供；现在为空
+        // 06：「/」第三组 = 该账号的 workflow（engine 已可执行；一次只允许选一个，方案 §06 ③ I C3）
+        try {
+          const r2 = await fetch('/api/workflows?token=' + encodeURIComponent(token.value));
+          if (r2.ok) {
+            const d2 = await r2.json();
+            wfSets.value = (d2.workflows || []).filter(x => x.ok).map(x => ({ name: x.name, desc: x.desc }));
+          }
+        } catch (e) { /* 第三组取不到不该挡住前两组 */ }
         if (d.caps) pickCaps.value = d.caps;
       } catch (e) { /* 写池信息取不到不该挡住聊天 */ }
     }
@@ -7083,6 +7162,63 @@ createApp({
       }
     }
 
+    // ★ 06：workflows（与技能同页签）。声明须早于 resetAccountState（静态守卫要求）。
+    const wfItems = ref([]);
+    const wfActive = ref('');
+    const wfContent = ref('');
+    const wfNewName = ref('');
+    const wfMaxLen = ref(4000);
+    const wfMaxSteps = ref(12);
+    const wfSteps = ref([]);        // 右栏步骤卡：本轮 workflow 的执行进度
+
+    async function loadWorkflows() {
+      try {
+        const r = await fetch('/api/workflows?token=' + encodeURIComponent(token.value));
+        if (r.status === 401) { forceLogout('登录已失效，请重新登录'); return; }
+        if (!r.ok) return;
+        const d = await r.json();
+        wfItems.value = d.workflows || [];
+        wfMaxLen.value = d.max_len || 4000;
+        wfMaxSteps.value = d.max_steps || 12;
+      } catch (e) { /* workflow 取不到不该挡住技能那一半 */ }
+    }
+    async function wfOpen(file) {
+      const r = await fetch('/api/workflows/get?name=' + encodeURIComponent(file) +
+                            '&token=' + encodeURIComponent(token.value));
+      if (!r.ok) return;
+      const d = await r.json();
+      wfActive.value = d.name || file;
+      wfContent.value = d.content || '';
+      wfNewName.value = wfActive.value;
+    }
+    async function wfCreate() {
+      const nm = (wfNewName.value || '').trim();
+      if (!nm) { showToast('先填 workflow 名', true); return; }
+      const r = await api('POST', '/api/workflows/create?token=' + encodeURIComponent(token.value),
+                          { name: nm, content: wfContent.value || '' });
+      if (r && r.ok) { showToast('已新建：' + r.name); await loadWorkflows(); await loadPickData(); await wfOpen(r.name); }
+    }
+    async function wfSave() {
+      if (!wfActive.value) return;
+      const r = await api('POST', '/api/workflows/save?token=' + encodeURIComponent(token.value),
+                          { name: wfActive.value, content: wfContent.value || '' });
+      if (r && r.ok) { showToast('已保存：' + r.name); await loadWorkflows(); await loadPickData(); }
+    }
+    async function wfDelete() {
+      if (!wfActive.value) return;
+      if (!confirm('删除 workflow「' + wfActive.value + '」？')) return;
+      const r = await api('POST', '/api/workflows/delete?token=' + encodeURIComponent(token.value),
+                          { name: wfActive.value });
+      if (r && r.ok) { wfActive.value = ''; wfContent.value = ''; await loadWorkflows(); await loadPickData(); }
+    }
+    async function wfTpl() {
+      const r = await fetch('/api/workflows/template?token=' + encodeURIComponent(token.value));
+      if (!r.ok) return;
+      const d = await r.json();
+      wfContent.value = d.content || wfContent.value;
+      if (!wfActive.value) showToast('模板已插入 —— 填好名字后点「＋ 新建」');
+    }
+
     function resetAccountState() {
       // ★ 06：工作目录面板也按账号取数，切账号必须一起清（与技能/工具同一批门闩问题）
       wdList.value = []; wdPath.value = ''; wdEntries.value = []; wdMsg.value = '';
@@ -7092,6 +7228,7 @@ createApp({
       poolData.value = { write_count: 0, readonly_count: 0, write_sets: [], sources: [],
                          caps: { skills: 5, write_sets: 5, workflows: 5 } };
       poolSources.value = [];
+      wfItems.value = []; wfActive.value = ''; wfContent.value = ''; wfNewName.value = ''; wfSteps.value = [];
       resetPriceState();
       // ① 门闩（让页签下次访问时重新拉取）
       cliLoaded.value = false;
@@ -7744,7 +7881,7 @@ createApp({
     //   要么一片空白（缓存被复位了）、要么还是上一个账号的数据（没复位的 probe 大屏）。
     //   现在统一走 loadSkillsTab()：主视图进入本模块、切换子页签，都按当前子页签强制重取。
     function loadSkillsTab(force) {
-      if (skTab.value === 'skill') { loadSkills(); return; }
+      if (skTab.value === 'skill') { loadSkills(); loadWorkflows(); return; }   // 06：同页签两段一起
       if (skTab.value === 'shell') { shLoadAllowed(); return; }
       if (skTab.value === 'cli') { loadCliCatalog(force); return; }
       if (skTab.value === 'mcp' || skTab.value === 'api') { tsLoad(); return; }
@@ -8585,6 +8722,7 @@ createApp({
       stopping.value = false;
       desktopStatus('正在回答…');      // 桌面版：托盘提示跟着回答进度（长回答不用盯窗口）
       thinkingText.value = '';  // 新一轮对话清空思考区
+      wfSteps.value = [];       // 06：新一轮清空 workflow 步骤卡
       await nextTick(); scrollToBottom();
       const ctl = new AbortController();  // 中断兜底：后端卡在工具里时可客户端撒手
       chatAbort = ctl;
@@ -9365,6 +9503,18 @@ createApp({
         poolData,
         poolSources,
         setPool,
+        wfActive,
+        wfContent,
+        wfCreate,
+        wfDelete,
+        wfItems,
+        wfMaxLen,
+        wfMaxSteps,
+        wfNewName,
+        wfOpen,
+        wfSave,
+        wfSteps,
+        wfTpl,
 };
   }
 }).mount('#app');
