@@ -332,5 +332,77 @@ B2 允许 `edit_file` 对受保护文件"只读 + 定位"。若用户把**凭据
 | 沙箱遗留清理（尼古喵喵 5 项 → `docs/v4.0/backups/sandbox_legacy_20261016_192630/`）| **已执行**（§2.6）|
 | 药喵 extra 3 文件：`agents_docs/药喵/` → `sandbox/药喵/` | **已执行**（§6.3）|
 | 03 测评产物（`probe_run_*.json` / `profile_backup_*`）搬出沙箱 | 随实现期代码改动一并执行（§2.5）|
+---
+
+## 十、实现细节取证（2026-10-16，为 ③ 段准备）
+
+> 本节把 P1~P6 各功能"真正怎么落地"的代码级事实固定下来（行号以 2026-10-16 为准）。进定方案期后 ③ 段照此展开，不必再翻代码。
+
+### 10.1 路径与工作目录（对应 §9.2 第 2 项）
+
+| 事实 | 位置 | 对实现的意义 |
+|---|---|---|
+| 沙箱目录**唯一锚点** `sandbox_dir(username)`：resolve + 按需建目录 + 播种 README | `tools/_runtime/shell_runtime.py:74-91` | 改造成 `active_workdir(username, account_id)` 后，三个入口**自动跟随** |
+| 三个入口都在同一文件里调它 | 同文件 `425`（Agent 与面板共用的 `execute`）· `551`（CLI 面板 `run_line`）· `566`（白名单清单 `allowed_commands`） | 改动面＝3 处取值，**不动流程** |
+| 路径守卫 `_resolve_in_sandbox(tok, sandbox)` **已把根目录当参数**（NUL/UNC/resolve/parents 校验 + 中文人话报错）| 同文件 `104-123` | **守卫逻辑无需改**，只换传入的根；保护名单作为**额外一道**接在其后 |
+| Agent 侧入口已把账号传下来 | `tools/shell_executor.py:68`（`username, account_id`）→ `shell_runtime.execute(...)` | 工作目录解析所需的 `account_id` 现成可用 |
+| 目录自述文案 | 同文件 `83-88`（"CLI 沙箱目录…只能在这个目录里读写"）| 白盒化后要随「工作目录」口径改写 |
+
+### 10.2 工具装配与运行期闸（对应 §9.2 第 7 项）
+
+| 事实 | 位置 |
+|---|---|
+| Agent 是**模块级单例**：`AGENT = create_deep_agent(model=…, subagents=[…], tools=[read_agent_doc, write_agent_doc, list_agent_docs, query_kb, run_shell_command, invoke_tool, update_user_profile, record_price], middleware=[_ToolExclusionMiddleware(...), usage_counter.UsageCounterMiddleware()])` | `api/server.py:247-254`（工具 import 在 `54-59`）|
+| 工具面**导入期固定** → 印证 P5-B2：「写工具始终挂载 + 运行期闸」，不按轮装配 | 同上 |
+| 中间件**已拦截每一次工具调用** | `agent/usage_counter.py:337`（类）· `401 wrap_tool_call` · `413 awrap_tool_call` → 运行期闸放这里，或并列新增一个 `WriteGateMiddleware` |
+| 新工具的写法模板 | `tools/writetofile.py`（`@tool` + `monitor.report_tool` + 参数校验 + 中文人话结果 + `__main__` 自测段）|
+
+### 10.3 「/」唤起与注入通道（对应 §9.2 第 8 项前半）
+
+| 事实 | 位置 |
+|---|---|
+| 前端多选状态与菜单 | `front/index.html:2792-2807`（`.skill-menu` / `skPicked` / 过滤 / 键盘）；refs 在 `7291 · 7362-7364` |
+| 注入方式：名字逗号拼进 URL | `front/index.html:8304` → `&skills=`；后端 `api/server.py:712/721` |
+| 注入通道：`cust.get_skills_text(account_id, skill_names)` → `skills_text` → 装配（`build_context`）→ `ctx.skills_injected` 出提示 | `api/server.py:442-444 · 481 · 489 · 495-496` → **「/」另外两组照此通道扩展**（或合并为一份组合文本）|
+
+### 10.4 设置项（对应 §9.2 第 1 项；含 P3 两个新键的落法）
+
+| 事实 | 位置 |
+|---|---|
+| 设置页**完全数据驱动**：`v-for="g in setGroups"` ← `/api/settings` | `front/index.html:4430 · 4915-4918` → **新增键只需进 `utils/settings.py::SPECS`，前端零改动** |
+| 两层设置：`app_settings`（全局、无 account_id）vs `accounts` 表列（账号级，如 `decision_router` / `digest_auto`）| 见 §4.2；`WORKDIR_TRASH_TTL_DAYS` / `WORKDIR_MAX_WRITE_MB` 走全局层 |
+
+### 10.5 前端落点（对应 §9.2 第 6 项）
+
+| 事实 | 位置 |
+|---|---|
+| 聊天视图三栏：`col-left` / `col-mid`（+ 右栏）| `front/index.html:2685 · 2746`；左栏现有「我的竞品 / 我的兴趣 / 我的关注」在 `2722-2739` → **工作目录面板放 `col-left` 内** |
+| 弹窗模式可复用 | `front/index.html:1163-1170`（`.kb-modal` / `.kb-modal-box`，宽 `min(560px,92vw)` → 编辑弹窗需加宽/可拉）|
+| 输入框左侧按钮（改造成列表展开按钮）| `front/index.html:2830`，现为 `soonHint('语音输入')` 占位 |
+| 前端测试基建 | `tests/harness/*.js`（4 套，纯函数级）· `tests/unit/frontend_setup_exports_check.py`（导出不变量 25 项）· `tests/unit/test_frontend_account_switch_reset.py`（静态断言范式）|
+
+### 10.6 workflows 引擎（对应 §9.2 第 8 项后半）
+
+| 事实 | 位置 |
+|---|---|
+| 编排器先例：周报引擎用 `create_deep_agent(..., subagents=[network_search_agent, digest_agent])`，引擎自身不调外部 API | `agent/digest_engine.py:4 · 112 · 222-225` |
+| 逐步驱动先例：测评跑手 `run_cases(acc_id, username, cases, *, set_doc=None, ...)` —— 一个函数吃「账号 + 用例清单」，逐条跑并回结果 | `tools/probe_runner.py:753` → workflow 编排器照此签名形态 |
+| 进度 / 台账通道 | `api/monitor.py`（`report_tool` / `report_thinking`）+ WS 推送 + `agent/turn_ledger.py` → 步骤卡的数据源 |
+
+### 10.7 03 测评产物搬迁（对应 §9.2 第 9 项）
+
+| 事实 | 位置 |
+|---|---|
+| 路径事实源 | `utils/paths.py:42`（`SANDBOX_ROOT`）· `47`（`ACCOUNT_DIRS`）· `51`（`PROBE_ARTIFACT_DIRS`）· `131-132 sandbox_dir()` · `154`（清理链）|
+| 跑手侧 | `tools/probe_runner.py:39`（`SANDBOX_DIR`）· `461`（原始记录落盘）· `424 _prune_raw()`（只留最近 1 份）· `18-20`（"该目录本来就在清理清单里"——搬迁后依据要同步改）|
+| 水位线排除口径 | `probe_runner.py:399-418`（打分表 / 原始记录 / 画像快照三类默认不参与清理）|
+
+### 10.8 预览能力与凭据红线（对应 §9.2 第 3 / 6 项）
+
+| 事实 | 依据 |
+|---|---|
+| 可预览：`.docx`（python-docx）· `.xlsx`（openpyxl）· `.csv`（pandas）· `.md`（markdown）；**不可预览**：PDF（无 pdfplumber / fitz）| venv 实测（§6.2）|
+| 扩展名白名单**有现成写法**可参照 | `tools/_runtime/shell_runtime.py:126-128`（`_PATH_EXT`）|
+| 凭据红线（连读都拒绝）为**新增校验**，在后端 workdir 接口内做（按 `*key*`/`*token*`/`*secret*` 与点开头目录判定）| 本点定案（§5.4 / §6.1-B3）|
 
 ---
