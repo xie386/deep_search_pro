@@ -89,12 +89,34 @@ def summary(account_id: int | None) -> dict:
     entries = cp.pool_entries(account_id, include_write_pool=True)
     ro = [e for e in entries if (getattr(e, "pool", "readonly") or "readonly") != "write"]
     wr = cp.write_pool_entries(account_id)
+    # 全部**来源**（CLI / API 服务器 / MCP 服务器）及其归属 —— 面板据此显示切换控件。
+    #   ★ 这一层是"来源级"归属：用户在这里把某条来源整体归到写池，单条能力的人工决定不受影响。
+    sources = []
+    for c in cr.list_clis(account_id):
+        sources.append({"kind": "cli", "id": c["id"], "name": c["name"], "ref": c["bin"],
+                        "pool": c.get("pool") or "readonly",
+                        "live": c["state"] in ("installed", "authed"),
+                        "cmds": len(c.get("rules") or []), "write_cmds": len(c.get("write_rules") or [])})
+    try:
+        conn = get_personal_conn()
+        try:
+            for r in conn.execute(
+                    "SELECT id, source, slug, name, enabled, pool FROM tool_sources "
+                    "WHERE account_id=? ORDER BY source, id", (int(account_id),)):
+                sources.append({"kind": r["source"], "id": r["id"], "name": r["name"], "ref": r["slug"],
+                                "pool": r["pool"] or "readonly", "live": bool(r["enabled"]),
+                                "cmds": 0, "write_cmds": 0})
+        finally:
+            conn.close()
+    except Exception:                       # noqa: BLE001
+        pass
     return {
         "ok": True,
         "readonly_count": len(ro),
         "write_count": len(wr),
         "write_sets": write_sets(account_id),
         "write_entries": [{"source": e.source, "ref": e.ref, "name": e.name} for e in wr],
+        "sources": sources,
         "caps": _caps(),
     }
 

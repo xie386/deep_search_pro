@@ -3371,6 +3371,7 @@
           <div class="sk-tab" :class="{on: skTab==='cli'}" @click="skTab='cli'">🧩 自定义 CLI</div>
           <div class="sk-tab" :class="{on: skTab==='mcp'}" @click="skTab='mcp'">🔌 MCP 服务</div>
           <div class="sk-tab" :class="{on: skTab==='api'}" @click="skTab='api'">🔗 API 工具</div>
+          <div class="sk-tab" :class="{on: skTab==='pool'}" @click="skTab='pool'">🛠 写工具池</div>
           <div class="sk-tab" :class="{on: skTab==='probe'}" @click="skTab='probe'">🧪 工具池测评</div>
         </div>
 
@@ -3475,6 +3476,44 @@
                   </div>
                 </template>
               </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- ========== ⑦ 写工具池（06：归属管理 + 授权入口说明） ========== -->
+        <template v-if="skTab==='pool'">
+          <div class="sk-card">
+            <h3>🛠 写工具池（{{ poolData.write_count }} 条写池能力 · {{ poolData.readonly_count }} 条只读池）</h3>
+            <div class="sk-tip">
+              归属只由你设定，默认<b>只读池</b>。归到<b>写池</b>的工具<b>不进路由、不进工具池测评</b>，
+              只能在你回到「AI 助手」输入框敲 <b>/</b>（或点输入框左侧的列表按钮）选中后唤醒 —— 一次授权只对这一轮生效。
+              <br>★ 已被你<b>确认过</b>的只读能力永远留在只读池里（入池凭据是「你确认过」，不是初始识别结果）。
+            </div>
+            <div class="sk-tip" style="margin-top:6px">
+              本轮「/」三组上限：技能 {{ poolData.caps.skills }} · 写工具集 {{ poolData.caps.write_sets }} · workflow {{ poolData.caps.workflows }}
+              —— 到「设置 → 📁 工作目录与「/」唤起」里调整（上限 7）。
+            </div>
+          </div>
+          <div class="sk-card">
+            <h3>📚 已配置的来源与归属（{{ poolSources.length }}）</h3>
+            <div class="sk-empty" v-if="!poolSources.length">还没有配置任何 CLI / API / MCP 来源。</div>
+            <div class="sk-item pool-row" v-for="s in poolSources" :key="'pl'+s.kind+s.id">
+              <div class="n">{{ s.name }}
+                <span class="wd-badge" v-if="s.pool === 'write'">写池</span>
+                <span class="wd-badge" v-else>只读池</span>
+                <span class="wd-badge cred" v-if="!s.live">未接入</span>
+              </div>
+              <div class="d">{{ s.kind }} · {{ s.ref }}<template v-if="s.cmds"> · 只读命令 {{ s.cmds }} 条</template><template v-if="s.write_cmds"> · 写命令 {{ s.write_cmds }} 条</template></div>
+              <div class="sk-row" style="margin-top:6px">
+                <button class="mini-btn" :class="{act: s.pool !== 'write'}" :disabled="s.pool !== 'write'"
+                        @click="setPool(s, 'readonly')">归到只读池</button>
+                <button class="mini-btn" :class="{act: s.pool === 'write'}" :disabled="s.pool === 'write'"
+                        @click="setPool(s, 'write')">归到写池</button>
+              </div>
+            </div>
+            <div class="sk-tip" style="margin-top:8px">
+              说明：归到写池<b>不等于</b>已授权 —— 每次要用都得在输入框用「/」选中它（这是设计，不是限制）。
+              写CLI 的"允许的写子命令"清单在「自定义 CLI」页填；没填写清单的写池 CLI，写操作仍会被拒绝。
             </div>
           </div>
         </template>
@@ -7012,12 +7051,47 @@ createApp({
     }
     function wfUnpick(name) { wfPicked.value = wfPicked.value.filter(n => n !== name); }
 
+    // ★ 06：写工具池面板的状态。默认值必须**字段齐全**（模板首屏就读 poolData.write_count，
+    //   缺字段会让模板求值抛错、整页白屏 —— 04 期真机客户端踩过同一坑）。声明早于 resetAccountState。
+    const poolData = ref({ write_count: 0, readonly_count: 0, write_sets: [], sources: [],
+                           caps: { skills: 5, write_sets: 5, workflows: 5 } });
+    const poolSources = ref([]);
+
+    async function loadPoolPanel() {
+      try {
+        const r = await fetch('/api/pool/summary?token=' + encodeURIComponent(token.value));
+        if (r.status === 401) { forceLogout('登录已失效，请重新登录'); return; }
+        if (!r.ok) return;
+        const d = await r.json();
+        poolData.value = d || poolData.value;
+        poolSources.value = (d && d.sources) || [];
+      } catch (e) { /* 取不到不该挡住页面其它部分 */ }
+    }
+    async function setPool(s, pool) {
+      if (s.pool === pool) return;
+      const tip = pool === 'write'
+        ? ('把「' + s.name + '」归到写池？\n\n归到写池后它不再进路由、也不进工具池测评；' +
+           '每次要用都得在输入框用「/」选中它（本轮有效）。')
+        : ('把「' + s.name + '」归回只读池？\n\n它将重新进路由池、可被纯对话唤起。');
+      if (!confirm(tip)) return;
+      const r = await api('POST', '/api/pool/set?token=' + encodeURIComponent(token.value),
+                          { kind: s.kind, ident: String(s.id), pool: pool });
+      if (r && r.ok) {
+        showToast('已归到' + (pool === 'write' ? '写池' : '只读池') + '：' + s.name);
+        await loadPoolPanel();
+        await loadPickData();          // 「/」第二组的候选跟着变
+      }
+    }
+
     function resetAccountState() {
       // ★ 06：工作目录面板也按账号取数，切账号必须一起清（与技能/工具同一批门闩问题）
       wdList.value = []; wdPath.value = ''; wdEntries.value = []; wdMsg.value = '';
       wdErr.value = ''; wdPanel.value = ''; wdFile.value = null; wdTrash.value = [];
       wdRisk.value = null; wdNew.value = { name: '', path: '' };
       wsPicked.value = []; wfPicked.value = []; wsSets.value = []; wfSets.value = [];   // 06：「/」另两组
+      poolData.value = { write_count: 0, readonly_count: 0, write_sets: [], sources: [],
+                         caps: { skills: 5, write_sets: 5, workflows: 5 } };
+      poolSources.value = [];
       resetPriceState();
       // ① 门闩（让页签下次访问时重新拉取）
       cliLoaded.value = false;
@@ -7674,6 +7748,7 @@ createApp({
       if (skTab.value === 'shell') { shLoadAllowed(); return; }
       if (skTab.value === 'cli') { loadCliCatalog(force); return; }
       if (skTab.value === 'mcp' || skTab.value === 'api') { tsLoad(); return; }
+      if (skTab.value === 'pool') { loadPoolPanel(); return; }      // 06：写工具池面板（每次进都刷新）
       if (skTab.value === 'probe') { probeOpen(); return; }
     }
     watch(skTab, () => { loadSkillsTab(true); });
@@ -9287,6 +9362,9 @@ createApp({
         wsPicked,
         wsSets,
         wsUnpick,
+        poolData,
+        poolSources,
+        setPool,
 };
   }
 }).mount('#app');
