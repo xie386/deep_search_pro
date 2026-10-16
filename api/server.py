@@ -423,7 +423,8 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
                image_ids: list[str] | None = None,
                vision_capable: bool = False,
                probe: bool = False,
-               write_sets: list[str] | None = None) -> str:
+               write_sets: list[str] | None = None,
+               workflows: list[str] | None = None) -> str:
     """在工作线程里执行同步的 agent.invoke（M1 上下文工程化改造）。
 
     上下文装配：
@@ -548,6 +549,63 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
         monitor.report_thinking(f"（历史过长，已自动截断 {ctx.dropped_rounds} 轮旧对话）")
     if ctx.compressed:
         monitor.report_thinking("（历史过长，已自动压缩旧对话摘要）")
+
+    cfg = {"configurable": {"thread_id": thread_id}}     # ★ 必须在 workflow 块之前：步骤闭包会引用它
+    # 06：本轮经「/」选中了 workflow → 由引擎**代码逐步驱动**（一次只允许选一个，方案 §06 ③ I C3）。
+    #   每步都以"当前账号 + 本轮 thread"为上下文跑一次主 Agent；某步失败停在该步、不跳步。
+    _wf_names = [w.strip() for w in (workflows or []) if w and w.strip()]
+    if _wf_names and account_id is not None:
+        from api import workflows as _wfapi
+        from agent import workflow_runner as _wfr
+        _doc = _wfapi.wf_for_account(account_id, _wf_names[0])
+        if _doc is None:
+            monitor.report_thinking("（选中的 workflow 读不到或定义有问题，已按普通问答处理）")
+        else:
+            monitor.report_thinking("（workflow「%s」共 %d 步，开始逐步执行）"
+                                    % (_doc["name"], len(_doc["steps"])))
+
+            def _invoke_step(prompt: str, idx: int) -> str:
+                _c = build_request_context(
+                    thread_id, account_id, prompt,
+                    username=username, skills_text="", cli_brief=cli_brief,
+                    profile_signal="", sources=context_sources.collect(account_id, prompt),
+                ) if _USE_SOURCES else build_request_context(
+                    thread_id, account_id, prompt,
+                    soul_text=soul_text, memory_text=memory_text, username=username,
+                    skills_text="", cli_brief=cli_brief, profile_signal="",
+                )
+                _res, _s = _invoke_or_stream(agent, {"messages": _c.messages}, cfg, thread_id)
+                if not _s:
+                    from agent.thinking_capture import report_thinking_from_messages
+                    report_thinking_from_messages(_res["messages"], monitor.report_thinking)
+                # 与主链路同款取答案（处理"模型把正文写进思考字段"的偶发，见 640 行）
+                return answer_text.restore_answer(_res["messages"])[0]
+
+            def _on_wf_event(kind: str, payload: dict) -> None:
+                if kind == "step_start":
+                    monitor.report_tool("workflow_step", {"第 %d/%d 步" % (payload.get("index", 0),
+                                                                          payload.get("total", 0)):
+                                                          payload.get("title", "")})
+                elif kind == "step_done":
+                    monitor.report_thinking("（第 %d/%d 步完成：%s）"
+                                            % (payload.get("index", 0), payload.get("total", 0),
+                                               payload.get("title", "")))
+                else:
+                    monitor.report_thinking("（第 %d/%d 步失败：%s）"
+                                            % (payload.get("index", 0), payload.get("total", 0),
+                                               payload.get("error", "")))
+                try:                              # 审计（独立 workflow 流；只记步骤与结果，不记正文）
+                    from utils import audit
+                    audit.write_event("workflow", kind, account_id=account_id, thread_id=thread_id,
+                                      name=_doc["name"], **{k: v for k, v in payload.items()
+                                                            if k in ("index", "total", "title", "chars")})
+                except Exception:                 # noqa: BLE001
+                    pass
+
+            _wf_res = _wfr.run_workflow(_doc, _invoke_step, on_event=_on_wf_event)
+            monitor.report_thinking("（workflow 结束：%s）" % ("全部完成" if _wf_res["ok"] else
+                                                              "停在第 %s 步" % _wf_res["failed_at"]))
+            return _wf_res["answer"]
 
     cfg = {"configurable": {"thread_id": thread_id}}
     # 用户强制中断（v2.0 聊天界面优化）：登记本轮为可中断运行；中断标志由
@@ -771,6 +829,7 @@ async def api_chat(
     # M4a：技能名列表（一次性，仅本轮生效；后端按账号读文件，越权名会被静默跳过）
     skill_names = [s.strip() for s in (skills or "").split(",") if s.strip()]
     _ws_names = [s.strip() for s in (write_sets or "").split(",") if s.strip()]   # 06：写工具集授权名单
+    _wf_names = [s.strip() for s in (workflows or "").split(",") if s.strip()]    # 06：本轮选中的 workflow
     # ★ v3.1 视觉：解析本轮图片 id（最多 3 张 ✓）并**逐个校验归属**（越权/不存在/超量 → 400 人话 ✓）
     _image_ids = [x.strip() for x in (images or "").split(",") if x.strip()]
     # ★ v3.1：生效模型是否支持图片（无自定义配置 = 走 .env 默认模型 ✓ 项目默认 agnes 本身多模态 ✓）
@@ -807,7 +866,8 @@ async def api_chat(
                                          image_ids=_image_ids or None,
                                          vision_capable=_vision_ok,
                                          probe=bool(probe),
-                                         write_sets=_ws_names)      # 06：写工具集授权名单
+                                         write_sets=_ws_names,       # 06：写工具集授权名单
+                                         workflows=_wf_names)        # 06：本轮选中的 workflow
         try:
             after_memory = cust.memory_get(token).get("content", "")
             if after_memory != before_memory:

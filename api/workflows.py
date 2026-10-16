@@ -179,6 +179,28 @@ def wf_delete(token: str, name: str) -> dict:
     return {"ok": True}
 
 
+def wf_for_account(aid: int, name: str) -> dict | None:
+    """按 account_id 读一份 workflow 定义（引擎侧用；找不到/坏文件返回 None）。"""
+    from tools.schema_personal import get_personal_conn
+    conn = get_personal_conn()
+    try:
+        row = conn.execute("SELECT username FROM accounts WHERE id=?", (int(aid),)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return None
+    try:
+        p = _wf_path(row["username"], name)
+    except HTTPException:
+        return None
+    if not p.exists():
+        return None
+    try:
+        return validate_wf(p.read_text(encoding="utf-8"))
+    except HTTPException:
+        return None                             # 坏定义不该让整轮对话炸：交给调用侧如实说明
+
+
 def wf_template() -> str:
     """表单式编辑器的初始模板（前端「插入模板」用）。"""
     return ("name: 竞品官网取价\n"
