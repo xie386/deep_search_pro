@@ -169,3 +169,22 @@ def test_confirmed_readonly_survives_auto_pool_sync():
     import tools.capability_pool as cp
     row = _row(read_only=1, confirmed_at="2026-10-16 10:00:00")
     assert callable(getattr(cp, "sync_pool_for_source", None)) or True   # 实现后此路走真函数
+
+
+def test_authorized_entry_only_for_write_pool(monkeypatch):
+    """★ 2026-10-17 接线：自配 CLI 的写子命令只有"本轮被「/」选中的那条"才拿得到 write_rules。
+
+    `authorized_entry_for` 是 `shell_runtime.execute` 的入口：只读池不给、没接入不给、
+    不是写池不给 —— 给了才带着 `authorized=True` 与 write_rules（fall-closed 的反面）。
+    """
+    from tools import cli_registry as cr
+    base = {"id": 7, "name": "归档CLI", "bin": "arch", "state": "installed",
+            "rules": [["status"]], "write_rules": [["push"]], "agent_commands": [], "detected": {}}
+    monkeypatch.setattr(cr, "by_bin", lambda aid, b: dict(base, pool="readonly"))
+    assert cr.authorized_entry_for(3, "arch") is None                 # 只读池：不给（走 allowed_for_agent）
+    monkeypatch.setattr(cr, "by_bin", lambda aid, b: dict(base, pool="write", state="none"))
+    assert cr.authorized_entry_for(3, "arch") is None                 # 没接入：不给
+    monkeypatch.setattr(cr, "by_bin", lambda aid, b: dict(base, pool="write"))
+    e = cr.authorized_entry_for(3, "arch")
+    assert e and e["authorized"] is True and e["write_rules"] == [["push"]]
+    assert cr.authorized_entry_for(None, "arch") is None and cr.authorized_entry_for(3, "") is None

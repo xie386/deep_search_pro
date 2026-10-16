@@ -176,8 +176,11 @@ def test_tool_registered_at_both_assembly_points():
         assert "workdir_create" in blk and "workdir_delete" in blk, "06 写工具集两个装配点都要挂"
     mw_blocks = _re.findall(r"middleware=\[(.*?)\]", s, _re.S)
     for blk in mw_blocks:
-        assert "UsageCounterMiddleware" in blk and "WriteGateMiddleware" in blk, \
-            "06 写工具运行期闸两个装配点都要挂"
+        assert "ToolExclusionMiddleware" in blk and "UsageCounterMiddleware" in blk, \
+            "两个装配点的中间件栈都要带：排除内置文件系统工具 + 用量计数"
+        # ★ 2026-10-17 用户裁定：内置写工具**不过闸**（否则「/」第二组只列自配来源、它两条路都不通），
+        #   运行期闸已删 —— 这里反过来钉住"不要再把它挂回来"。
+        assert "WriteGateMiddleware" not in blk, "写工具运行期闸已按 2026-10-17 裁定删除，不得再挂"
     assert "record_price" in open(os.path.join(ROOT, "tools", "price_tool.py"), encoding="utf-8").read()
 
 

@@ -497,6 +497,27 @@ def by_bin(account_id: int | None, bin_name: str) -> dict | None:
     return None
 
 
+def authorized_entry_for(account_id: int | None, bin_name: str) -> dict | None:
+    """「/」授权后的**写池** CLI 运行期条目（含 write_rules），供 `shell_runtime.execute` 放行。
+
+    ★ 只认写池 + 已接入的 CLI，其余一律 None（fail closed）。
+    返回条目带 `authorized=True`，调用方**据此**决定是否把 `write_rules` 交给 `readonly_verdict`
+    —— 未授权时那一步不传，行为与改造前逐字一致（写子命令一律拒绝）。
+    """
+    if not account_id or not bin_name:
+        return None
+    c = by_bin(account_id, bin_name)
+    if not c or (c.get("pool") or "readonly") != "write":
+        return None
+    if c["state"] not in LIVE_STATES:
+        return None
+    return {"cli_id": c["id"], "name": c["name"], "state": c["state"],
+            "readonly": [list(t) for t in c["rules"]],
+            "write_rules": [list(t) for t in c["write_rules"]],
+            "agent_commands": c["agent_commands"], "detected": c["detected"],
+            "max_runtime": 30, "authorized": True}
+
+
 # ---------------------------------------------------------------- 给 Agent 的常驻简报
 # 简报聚合预算：M5 起能力描述较长，3~4 个带描述的 CLI 要能整体放下；
 # 超出预算的 CLI **降级成紧凑行，绝不整块消失**（工具从提示词里隐身 = 用户配了也白配）。

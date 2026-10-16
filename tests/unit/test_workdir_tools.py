@@ -45,55 +45,43 @@ def _call(tool, **kw):
     return tool.invoke(kw)
 
 
-# ------------------------------------------------------------ 运行期闸
-def _req(name, tcid="call_1"):
-    class _R:
-        tool_call = {"name": name, "id": tcid, "args": {}}
-        def override(self, **kw):  # noqa: D102
-            return self
-    return _R()
+# ------------------------------------------------------- 授权口径（2026-10-17 用户裁定）
+def test_builtin_write_tools_need_no_authorization(monkeypatch, tmp_path):
+    """★ 内置写工具**不需要**「/」授权：纯文字提问就该能用。
+
+    背景（用户 2026-10-17 报障）：原先内置写工具被运行期闸拦住，而「/」第二组只列**自配来源**、
+    根本没有内置那一项 → 两条路都不通 → 对没配写池来源的账号等于完全不可用。
+    现在内置写工具不过闸；该管的约束仍在别处：保护名单 fail-closed、凭据红线、路径逃逸、
+    删除只进回收站（见下面的用例）。
+    """
+    from utils import write_auth
+    write_auth.clear()
+    assert not write_auth.authorized()                      # 本轮没有任何授权
+    wt, g, wd = _setup(monkeypatch, tmp_path)
+    _call(wt.workdir_create, path="没授权也能建.md", content="hello")     # 不拒、不抛
+    assert (wd / "没授权也能建.md").read_text(encoding="utf-8") == "hello"
+    _call(wt.workdir_delete, path="没授权也能建.md")
+    assert not (wd / "没授权也能建.md").exists()             # 删除生效（且进的是回收站）
 
 
-def test_gate_denies_write_without_slash_authorization(monkeypatch):
-    from agent import write_gate as wg
-    wg.clear()
-    asked = {"n": 0}
-    def handler(_r):
-        asked["n"] += 1
-        return "SHOULD NOT RUN"
-    out = wg.WriteGateMiddleware().wrap_tool_call(_req("workdir_create"), handler)
-    assert asked["n"] == 0                                     # ★ 未授权 → handler 根本没被调用
-    assert getattr(out, "status", "") == "error"
-    assert "未授权改文件" in out.content and "「/」" in out.content
+def test_write_auth_record_semantics():
+    """授权记录本体（`utils/write_auth`）：set / clear 与"名字或引用"两种匹配。"""
+    from utils import write_auth
+    write_auth.clear()
+    assert write_auth.authorized() == frozenset() and not write_auth.is_authorized("arch")
+    write_auth.set_selected(["归档CLI", "arch", "", None])
+    assert write_auth.is_authorized("归档CLI") and write_auth.is_authorized("arch")
+    assert not write_auth.is_authorized("别的CLI") and not write_auth.is_authorized("")
+    write_auth.clear()
+    assert not write_auth.is_authorized("arch")
 
 
-def test_gate_allows_when_authorized(monkeypatch):
-    from agent import write_gate as wg
-    wg.set_selected(["写工具集A"])
-    try:
-        out = wg.WriteGateMiddleware().wrap_tool_call(_req("workdir_edit"), lambda r: "OK")
-        assert out == "OK"
-    finally:
-        wg.clear()
-
-
-def test_gate_lets_read_tools_through(monkeypatch):
-    from agent import write_gate as wg
-    wg.clear()
-    for name in ("workdir_list", "workdir_read"):
-        assert wg.WriteGateMiddleware().wrap_tool_call(_req(name), lambda r: "OK") == "OK"
-
-
-def test_gate_async_path_too(monkeypatch):
-    import asyncio
-    from agent import write_gate as wg
-    wg.clear()
-    async def handler(_r):
-        return "SHOULD NOT RUN"
-    async def run():
-        return await wg.WriteGateMiddleware().awrap_tool_call(_req("workdir_delete"), handler)
-    out = asyncio.run(run())
-    assert getattr(out, "status", "") == "error"
+def test_write_gate_module_is_gone():
+    """旧运行期闸模块已删除 —— 万一有人再 import，这里立刻炸出来（防悄悄回退口径）。"""
+    import importlib
+    import pytest as _pytest
+    with _pytest.raises(ModuleNotFoundError):
+        importlib.import_module("agent.write_gate")
 
 
 # ------------------------------------------------------------ 工具行为

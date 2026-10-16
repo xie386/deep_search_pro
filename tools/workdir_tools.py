@@ -5,11 +5,15 @@
   它在 `wrap_model_call` 里做 `[t for t in request.tools if name not in excluded]` —— **按名字**剥掉
   框架内置文件系统工具，而名单里已经有 `read_file` 与 `edit_file`。同名会被一并剥掉、模型根本看不到。
 
-★ **写操作三关**（缺一不可）：
+★ **写操作两关**（缺一不可）：
   1. 路径关：`workdir_guard.resolve_in_workdir`（拒 `..` / 绝对路径逃逸 / UNC）；
-  2. 门禁关：`workdir_guard.assert_writable`（保护名单 fail-closed、名单自身、`agents_docs` 禁区、凭据红线）；
-  3. 授权关：`agent/write_gate.py` 的运行期闸 —— **未经「/」显式选中写工具集，本轮一律拒绝执行**。
+  2. 门禁关：`workdir_guard.assert_writable`（保护名单 fail-closed、`agents_docs` 禁区、凭据红线）。
   另加体积闸：单次写入/读取上限 `WORKDIR_MAX_WRITE_MB`（设置项，默认 1MB）。
+
+★ **没有"授权关"**（用户 2026-10-17 裁定，见 `Verdict/06` 对裁定 7 的修订）：内置写工具
+  **不需要「/」授权** —— 纯文字提问即可用。原先的运行期闸只拦内置工具、而「/」第二组又只列
+  **自配来源**，导致内置写工具两条路都不通、对没配写池来源的账号完全不可用。现在闸已删除；
+  「/」授权名单只用于**自配来源**的写能力（CLI 写子命令，见 `tools/_runtime/shell_runtime.execute`）。
 
 归属：`get_owner_context()` → account_id → 工作目录（`workdir_store.active`，默认账号沙箱）。
 """

@@ -63,7 +63,6 @@ from tools.workdir_tools import (workdir_list, workdir_read, workdir_create,
 from api import workdir_api as _wdapi   # 06：工作目录接口层（前端文件管理器的服务端）
 from api import write_pool as _wpool       # 06：自配写工具池（只读池/写池）
 from api import workflows as _wf_req       # 06：workflows 定义（存放 + 校验 + 接口）
-from agent.write_gate import WriteGateMiddleware
 from tools._runtime import shell_runtime as shell_runtime  # M4b：CLI 面板 /api/shell/* 路由用
 from tools import cli_registry as cli_reg  # M4c：第三方 CLI 接入登记（注册表 + 本机检测 + 状态）
 from api.account import LoginReq, RegisterReq, login, logout, register, get_session
@@ -260,9 +259,8 @@ AGENT = create_deep_agent(
            # 06：工作目录写工具集（★ 名字带 workdir_ 前缀，避免被下面的 _ToolExclusionMiddleware 按名剥掉）
            workdir_list, workdir_read, workdir_create, workdir_edit, workdir_delete],
     middleware=[_ToolExclusionMiddleware(excluded=_EXCLUDED_FS_TOOLS),
-                    usage_counter.UsageCounterMiddleware(),   # M4-3：用量计数（框架级，C1）
-                    # 06：写工具运行期闸（置于排除中间件之后，保证写工具确实挂到了模型面前）
-                    WriteGateMiddleware()],   # 去除deepagents内置的filesystem工具，只保留项目自定
+                    usage_counter.UsageCounterMiddleware()],  # M4-3：用量计数（框架级，C1）
+                    # 06（2026-10-17 用户裁定）：内置写工具**不过闸** —— 纯文字提问即可用。
     # M1：不再用 MemorySaver 承载消息历史（进程重启即丢、无界增长）。
     # 对话历史由 SQLite 持久化（agent/conversation_store.py），每次 invoke 显式传入完整上下文。
 )
@@ -298,11 +296,10 @@ def _build_custom_agent(provider: dict):
         subagents=[network_search_agent, db_agent, personal_agent],
         tools=[read_agent_doc, write_agent_doc, list_agent_docs, query_kb, run_shell_command, invoke_tool,
            update_user_profile, record_price,
-           # 06：工作目录写工具集 + 运行期闸 —— ★ 与模块级 AGENT 必须**同款**（M3/M4 老坑）
+           # 06：工作目录写工具集 —— ★ 与模块级 AGENT 必须**同款**（M3/M4 老坑）
            workdir_list, workdir_read, workdir_create, workdir_edit, workdir_delete],
         middleware=[_ToolExclusionMiddleware(excluded=_EXCLUDED_FS_TOOLS),
-                    usage_counter.UsageCounterMiddleware(),   # M4-3：用量计数（框架级，C1）
-                    WriteGateMiddleware()],                   # 06：写工具运行期闸
+                    usage_counter.UsageCounterMiddleware()],  # M4-3：用量计数（框架级，C1）
     )
 
 
@@ -439,14 +436,16 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
     if account_id is not None:
         set_owner_context(account_id)  # 数据归属权：Agent 只能读到该用户的数据
     try:
-        # 06：写工具运行期闸的授权名单（contextvar，随本轮任务传播）。
-        # ★ 只认**真实归到写池的来源**：前端只列写池，但接口层不该凭"请求里塞个名字"就开闸
-        #   （纵深防御：能改 token 的人本可绕过一切，但闸的语义要自洽 —— 授权的是"某个写工具集"，
+        # 06：本轮经「/」授权的**自配写工具集**名单（contextvar，随本轮任务传播）。
+        # ★ 用户 2026-10-17 裁定后，内置写工具已不过闸；这份名单只用于**自配来源的写能力**
+        #   （CLI 的写子命令放行，见 tools/_runtime/shell_runtime.execute）。
+        # ★ 只认**真实归到写池的来源**：前端只列写池，但接口层不该凭"请求里塞个名字"就放行
+        #   （纵深防御：能改 token 的人本可绕过一切，但语义要自洽 —— 授权的是"某个写工具集"，
         #   不是"随便一个字符串"）。对不上就一个都不放行。
         #   ⚠️ 2026-10-16 真机抓到：这里原来写成 `write_sets`（api_chat 的形参名），而本函数拿不到它 →
         #      NameError → **每一轮对话都 500**。单元测试不跑对话所以全绿，只有真机调用才会暴露。
         #      教训：动 `_run_agent` 这条链路，必须真跑一轮对话才算验证过（已写进 tests/README 的纪律）。
-        from agent.write_gate import set_selected as _set_writes2
+        from utils.write_auth import set_selected as _set_writes2
         from api import write_pool as _wpool_chk
         _want = [s.strip() for s in (write_sets or []) if s and s.strip()]
         if _want and account_id is not None:
@@ -482,8 +481,9 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
         except Exception as e:
             print(f"[M4a] 技能读取失败（忽略）: {type(e).__name__}: {e}")
     # 06：「/」第二组（自配写工具集）的授权说明书 —— 与技能同一段文本一同注入（未选中=空串，零影响）。
-    #   ★ 提示词只是"告诉模型能用什么"；**真正拦人的是运行期闸**（agent/write_gate.py），
-    #     它认的是本轮 set_selected() 里那份名单，与这里的文本无关（模型绕不过代码闸）。
+    #   ★ 这份名单的**生产用途**在执行期：`shell_runtime.execute` 只对"本轮被选中的那条"自配 CLI
+    #     传 write_rules（写子命令放行）；提示词这段只是"告诉模型能用什么"。
+    #     （2026-10-17 裁定 11 前，内置写工具也过闸；现内置写工具不过闸、纯文字即可用。）
     # ⚠️ write_sets 已是 list（_run_agent 的形参），别再 .split —— 改类型后漏改这处会让每次对话 500
     _ws_names = [s.strip() for s in (write_sets or []) if s and s.strip()]
     if account_id is not None and _ws_names:
@@ -819,7 +819,7 @@ async def api_chat(
     skills: str = Query("", description="M4a：本轮启用的技能名，逗号分隔（如 '竞品对比,来源标注'）；空=不用技能"),
     images: str = Query("", description="v3.1 视觉：本轮贴的图 image_id，逗号分隔（最多 3 张）；空=纯文字"),
     probe: str = Query("", description="内部（测评用）：非空=本轮来自 03 路由质量测评 → 强制关闭决策模型精排"),
-    write_sets: str = Query("", description="06：本轮经「/」授权的写工具集名，逗号分隔；空=未授权（写工具不可用）"),
+    write_sets: str = Query("", description="06：本轮经「/」授权的**自配**写工具集名，逗号分隔；空=未授权（内置写工具不受影响，见裁定 11）"),
     workflows: str = Query("", description="06：本轮经「/」选中的 workflow 名，逗号分隔；空=不跑工作流"),
 ):
     sess = get_session(token)  # 校验登录，无效抛 401

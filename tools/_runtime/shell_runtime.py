@@ -440,6 +440,15 @@ def execute(command: str, args: list[str] | None = None, timeout: int | None = N
     sandbox = active_workdir(username, account_id)   # 06：跟随当前启用工作目录
     meta = ALLOWED_COMMANDS.get(command)
     dyn = None if meta is not None else cli_registry.allowed_for_agent(account_id).get(command)
+    # ★ 06（用户 2026-10-17 裁定）：写池 CLI 被 allowed_for_agent 排除在外（不进路由池），
+    #   但它若**本轮被「/」显式选中**，就要能跑 —— 且只放行它自己声明的写子命令（见下面 verdict 处）。
+    if dyn is None and meta is None:
+        try:
+            from utils import write_auth
+            if write_auth.is_authorized(command):
+                dyn = cli_registry.authorized_entry_for(account_id, command)
+        except Exception:                   # noqa: BLE001 —— 授权记录读不到 = 未授权
+            dyn = None
     if dyn is None and meta is None and adhoc and command in adhoc:
         dyn = {"readonly": adhoc[command], "adhoc": True}
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -462,7 +471,10 @@ def execute(command: str, args: list[str] | None = None, timeout: int | None = N
     try:
         _guard_paths(args, sandbox)
         if dyn is not None:
-            ok, why = cli_registry.readonly_verdict(args, dyn["readonly"])
+            # write_rules 只对**本轮被「/」授权的那一条**传下去；其余照旧 fail-closed。
+            ok, why = cli_registry.readonly_verdict(
+                args, dyn["readonly"],
+                write_rules=(dyn.get("write_rules") or None) if dyn.get("authorized") else None)
             if not ok:
                 raise ShellRejected(f"第三方 CLI `{command}`：{why}")
         elif command == "git":
