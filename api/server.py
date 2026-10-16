@@ -421,7 +421,8 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
                skill_names: list[str] | None = None,
                image_ids: list[str] | None = None,
                vision_capable: bool = False,
-               probe: bool = False) -> str:
+               probe: bool = False,
+               write_sets: list[str] | None = None) -> str:
     """在工作线程里执行同步的 agent.invoke（M1 上下文工程化改造）。
 
     上下文装配：
@@ -435,9 +436,25 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
     set_thread_context(thread_id)  # 让 monitor 知道本轮进度推给哪个 WS
     if account_id is not None:
         set_owner_context(account_id)  # 数据归属权：Agent 只能读到该用户的数据
-    try:                                  # 06：写工具运行期闸的授权名单（contextvar，随本轮任务传播）
+    try:
+        # 06：写工具运行期闸的授权名单（contextvar，随本轮任务传播）。
+        # ★ 只认**真实归到写池的来源**：前端只列写池，但接口层不该凭"请求里塞个名字"就开闸
+        #   （纵深防御：能改 token 的人本可绕过一切，但闸的语义要自洽 —— 授权的是"某个写工具集"，
+        #   不是"随便一个字符串"）。对不上就一个都不放行。
+        #   ⚠️ 2026-10-16 真机抓到：这里原来写成 `write_sets`（api_chat 的形参名），而本函数拿不到它 →
+        #      NameError → **每一轮对话都 500**。单元测试不跑对话所以全绿，只有真机调用才会暴露。
+        #      教训：动 `_run_agent` 这条链路，必须真跑一轮对话才算验证过（已写进 tests/README 的纪律）。
         from agent.write_gate import set_selected as _set_writes2
-        _set_writes2([s.strip() for s in (write_sets or "").split(",") if s.strip()])
+        from api import write_pool as _wpool_chk
+        _want = [s.strip() for s in (write_sets or []) if s and s.strip()]
+        if _want and account_id is not None:
+            _ok = set()
+            for _s in _wpool_chk.write_sets(account_id):
+                if _s["name"] in _want or _s["ref"] in _want:
+                    _ok.add(_s["name"])
+            _set_writes2(sorted(_ok))
+        else:
+            _set_writes2([])
     except Exception:                     # noqa: BLE001
         pass
 
@@ -465,7 +482,8 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
     # 06：「/」第二组（自配写工具集）的授权说明书 —— 与技能同一段文本一同注入（未选中=空串，零影响）。
     #   ★ 提示词只是"告诉模型能用什么"；**真正拦人的是运行期闸**（agent/write_gate.py），
     #     它认的是本轮 set_selected() 里那份名单，与这里的文本无关（模型绕不过代码闸）。
-    _ws_names = [s.strip() for s in (write_sets or "").split(",") if s.strip()]
+    # ⚠️ write_sets 已是 list（_run_agent 的形参），别再 .split —— 改类型后漏改这处会让每次对话 500
+    _ws_names = [s.strip() for s in (write_sets or []) if s and s.strip()]
     if account_id is not None and _ws_names:
         try:
             from api import write_pool as _wpool
@@ -751,6 +769,7 @@ async def api_chat(
     from agent import conversation_store as cs
     # M4a：技能名列表（一次性，仅本轮生效；后端按账号读文件，越权名会被静默跳过）
     skill_names = [s.strip() for s in (skills or "").split(",") if s.strip()]
+    _ws_names = [s.strip() for s in (write_sets or "").split(",") if s.strip()]   # 06：写工具集授权名单
     # ★ v3.1 视觉：解析本轮图片 id（最多 3 张 ✓）并**逐个校验归属**（越权/不存在/超量 → 400 人话 ✓）
     _image_ids = [x.strip() for x in (images or "").split(",") if x.strip()]
     # ★ v3.1：生效模型是否支持图片（无自定义配置 = 走 .env 默认模型 ✓ 项目默认 agnes 本身多模态 ✓）
@@ -783,10 +802,11 @@ async def api_chat(
         # 画像变更通知：记录调用前的 MEMORY.md 内容，回复末尾对比提示
         before_memory = cust.memory_get(token).get("content", "")
         answer = await asyncio.to_thread(_run_agent, question, thread_id,
-                                        sess.get("account_id"), skill_names,
-                                        image_ids=_image_ids or None,
-                                        vision_capable=_vision_ok,
-                                        probe=bool(probe))
+                                         sess.get("account_id"), skill_names,
+                                         image_ids=_image_ids or None,
+                                         vision_capable=_vision_ok,
+                                         probe=bool(probe),
+                                         write_sets=_ws_names)      # 06：写工具集授权名单
         try:
             after_memory = cust.memory_get(token).get("content", "")
             if after_memory != before_memory:

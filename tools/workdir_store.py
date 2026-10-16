@@ -66,6 +66,7 @@ def active(account_id: int | None, username: str | None = None) -> tuple[Path, d
     """
     fallback = sandbox_dir(username)
     if not account_id:
+        seed_protect(fallback)              # 无账号也要保证名单在位（否则写路径必撞 fail-closed）
         return fallback, None
     try:
         conn = get_personal_conn()
@@ -76,13 +77,22 @@ def active(account_id: int | None, username: str | None = None) -> tuple[Path, d
         finally:
             conn.close()
         if not row:
+            seed_protect(fallback)          # 首次落地时补种保护名单（见下）
             return fallback, None
         p = Path(row["path"])
         if not p.is_dir():
+            seed_protect(fallback)
             return fallback, None
+        seed_protect(p)                     # ★ 真机抓到：只在 ensure_default（打开过文件管理器）时播种，
+        #   纯聊天用户从没开过 → 第一次写入必然撞"名单读不到 → fail-closed"（决策对、体验死路）。
+        #   这里补成"**缺失才补种**"：名单读不到不再是死路；而"存在但解析失败"依旧 fail-closed（真异常）。
         return p, {"id": row["id"], "name": row["name"], "path": row["path"],
                    "is_default": bool(row["is_default"])}
     except Exception:                       # noqa: BLE001 —— 工作目录解析失败绝不能中断对话
+        try:
+            seed_protect(fallback)
+        except Exception:                   # noqa: BLE001
+            pass
         return fallback, None
 
 

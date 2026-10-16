@@ -127,6 +127,28 @@ def test_recycle_target_is_allowed(tmp_path):
     assert g.assert_writable(tgt, wd) is None
 
 
+def test_missing_protect_list_is_seeded_by_active(monkeypatch, tmp_path):
+    """★ 真机抓到：保护名单缺失不该是死路 —— active() 会补种（缺失才种）。"""
+    from tools import workdir_guard as g, workdir_store as st, schema_personal as sp
+    sb = tmp_path / "sb"; sb.mkdir()
+    monkeypatch.setattr(st, "sandbox_dir", lambda name=None: sb)
+    p, _ = st.active(None, "u")                      # account_id 为空 → 走回落分支
+    assert p == sb and (sb / g.PROTECT_FILE).exists(), "首次落地应补种保护名单"
+    # 补种后写普通文件放行、写名单本身仍拒绝
+    assert g.assert_writable(sb / "a.md", sb) is None
+    assert "永远不可" in g.assert_writable(sb / g.PROTECT_FILE, sb)
+
+
+def test_unparsable_protect_list_still_fail_closed(tmp_path):
+    """但"存在却解析不了"必须继续 fail-closed（真异常，不能被补种掩盖）。"""
+    from tools import workdir_guard as g
+    wd = tmp_path / "wd"; wd.mkdir()
+    (wd / g.PROTECT_FILE).write_bytes(b"\xff\xfe\xff\xfe")     # 非 UTF-8 → 读不了
+    assert g.parse_protect(wd) is None
+    r = g.assert_writable(wd / "a.md", wd)
+    assert r and "fail-closed" in r
+
+
 def test_normal_file_passes(tmp_path):
     from tools import workdir_guard as g
     wd = _mk_workdir(tmp_path)
