@@ -1089,6 +1089,11 @@
     .skill-menu .mi.on { background: rgba(84,170,105,.35); }
     .skill-menu .mi .sub { color: var(--muted); font-size: 11px; flex-shrink: 0; }
     .skill-menu .mi.dis { opacity: .45; }
+    /* ★ 06：菜单分组标题 + 写工具集 / workflow 的已选药丸（与技能区分色） */
+    .skill-menu .mi.grp { font-size: 11px; color: var(--muted); background: rgba(255,255,255,.04);
+                          cursor: default; letter-spacing: .2px; }
+    .skill-pill.ws { background: rgba(249,168,37,.28); border-color: rgba(249,168,37,.6); color: #ffe8c2; }
+    .skill-pill.wf { background: rgba(129,140,248,.28); border-color: rgba(129,140,248,.6); color: #e0e7ff; }
 
     /* ---- 报告视图（M4）---- */
     .reports-wrap { padding: 24px; max-width: 900px; margin: 0 auto; width:100%; overflow-y:auto; }
@@ -2913,7 +2918,9 @@
           </div>
           <div class="input-area">
             <!-- M4a：敲「/」唤出技能目录（↑↓ 选择，Enter/Tab 选中，Esc 关闭） -->
+            <!-- ★ 06：一个菜单三组 —— 技能（可键盘）/ 自配写工具集（点击选中，写能力必须显式授权）/ workflow -->
             <div class="skill-menu" v-if="skMenuOpen">
+              <div class="mi grp">🧩 技能（{{ skPicked.length }}/{{ pickCaps.skills }}）</div>
               <div class="mi" v-for="(s, i) in skMenuList" :key="s.name"
                    :class="{ on: i === skMenuIdx, dis: skPicked.indexOf(s.name) >= 0 }"
                    @click="skillPick(s.name)" @mouseenter="skMenuIdx = i">
@@ -2924,11 +2931,33 @@
                 <span class="sub" v-if="!skills.length">还没有技能 → 去「🧩 技能与工具」新建，或点「🎁 一键创建示例技能」</span>
                 <span class="sub" v-else>没有匹配「{{ skFilter }}」的技能</span>
               </div>
+              <div class="mi grp">🛠 自配写工具集（{{ wsPicked.length }}/{{ pickCaps.write_sets }}）· 选中即授权本轮改文件</div>
+              <div class="mi" v-for="s in wsSets" :key="'ws'+s.kind+s.id"
+                   :class="{ dis: wsPicked.indexOf(s.name) >= 0 }" @click="wsPick(s.name)">
+                <span>🛠 {{ s.name }}<span v-if="wsPicked.indexOf(s.name) >= 0"> · 已选</span></span>
+                <span class="sub">{{ s.ref }}</span>
+              </div>
+              <div class="mi" v-if="!wsSets.length">
+                <span class="sub">还没有写工具集 → 去「🧩 技能与工具」把某条 CLI / API / MCP 归属设为「写池」</span>
+              </div>
+              <div class="mi grp">⚙️ workflow（{{ wfPicked.length }}/{{ pickCaps.workflows }}）</div>
+              <div class="mi" v-for="s in wfSets" :key="'wf'+s.name"
+                   :class="{ dis: wfPicked.indexOf(s.name) >= 0 }" @click="wfPick(s.name)">
+                <span>⚙️ {{ s.name }}<span v-if="wfPicked.indexOf(s.name) >= 0"> · 已选</span></span>
+                <span class="sub">{{ s.desc || '' }}</span>
+              </div>
+              <div class="mi" v-if="!wfSets.length">
+                <span class="sub">还没有 workflow（本大点第 6 步落地后这里会列出可选的流程）</span>
+              </div>
             </div>
-            <div class="skill-bar" v-if="skPicked.length || skMenuOpen">
-              <span class="skill-pill" v-for="n in skPicked" :key="n">🧩 {{ n }}<span class="x" @click="skillUnpick(n)" title="移除">×</span></span>
-              <span class="skill-hint" v-if="skPicked.length">本轮启用 {{ skPicked.length }}/5 · 发送后自动清空 · 再敲 / 可继续添加</span>
-              <span class="skill-hint" v-else>输入技能名筛选，↑↓ 选择 · Enter 选中 · Esc 关闭</span>
+            <div class="skill-bar" v-if="skPicked.length || wsPicked.length || wfPicked.length || skMenuOpen">
+              <span class="skill-pill" v-for="n in skPicked" :key="'p'+n">🧩 {{ n }}<span class="x" @click="skillUnpick(n)" title="移除">✕</span></span>
+              <span class="skill-pill ws" v-for="n in wsPicked" :key="'w'+n">🛠 {{ n }}<span class="x" @click="wsUnpick(n)" title="取消本轮写授权">✕</span></span>
+              <span class="skill-pill wf" v-for="n in wfPicked" :key="'f'+n">⚙️ {{ n }}<span class="x" @click="wfUnpick(n)" title="移除">✕</span></span>
+              <span class="skill-hint" v-if="skPicked.length || wsPicked.length || wfPicked.length">
+                本轮：技能 {{ skPicked.length }} · 写工具集 {{ wsPicked.length }}{{ wsPicked.length ? '（已授权改文件）' : '' }} · workflow {{ wfPicked.length }} · 发送后自动清空
+              </span>
+              <span class="skill-hint" v-else>技能可输入名字筛选，↑↓ 选择 · Enter 选中 · 写工具集与 workflow 点击选中 · Esc 关闭</span>
             </div>
             <div class="chat-imgs" v-if="chatImages.length || chatImgErr || chatImgBusy">
               <div class="chat-img" v-for="(im, i) in chatImages" :key="im.id">
@@ -2951,7 +2980,7 @@
                 <div class="rec-bar"><i :style="{ width: recLevel + '%' }"></i></div>
                 <div class="rec-tip">{{ recCancel ? '已移出话筒 → 松手即取消' : '按住说话 · 松开转文字 · 移出取消' }}</div>
               </div>
-              <button class="wx-round" type="button" @click="soonHint('语音输入')" title="语音输入（后续版本接入）">
+              <button class="wx-round" type="button" @click="togglePickMenu()" title="展开本轮可用列表：技能 / 自配写工具集 / workflow">
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
                      stroke-width="1.7" stroke-linecap="round"><path d="M4 10v4M8 6.5v11M12 4v16M16 6.5v11M20 10v4"/></svg>
               </button>
@@ -5691,6 +5720,7 @@ createApp({
         loadReports(); loadSubs(); loadProviders(); loadSouls(); loadMemory(); loadVoicePacks();
         loadSessions();  // M1 会话列表
         loadWorkdirs();  // ★ 06：工作目录面板（按账号）
+        loadPickData();  // ★ 06：「/」三组的候选与上限
         loadDecRouter();  // 大点 02：决策模型精排开关（账号级）
         loadKbStatus();  // M3 知识库
         restoreBg();  // 登录后恢复该账号背景
@@ -6946,11 +6976,48 @@ createApp({
     const wdRisk = ref(null);
     const wdNew = ref({ name: '', path: '' });
 
+    // ★ 06：「/」菜单另外两组的状态（技能那组沿用 skPicked）。声明须早于 resetAccountState。
+    const wsPicked = ref([]);       // 本轮授权的自配写工具集（写能力必须显式授权，发送后清空）
+    const wfPicked = ref([]);       // 本轮选中的 workflow（第 6 步落地后有内容）
+    const wsSets = ref([]);         // 可选的写工具集（来自 /api/pool/summary，写池来源）
+    const wfSets = ref([]);         // 可选的 workflow
+    const pickCaps = ref({ skills: 5, write_sets: 5, workflows: 5 });   // 三组单轮上限（设置模块可调）
+
+    async function loadPickData() {
+      try {
+        const r = await fetch('/api/pool/summary?token=' + encodeURIComponent(token.value));
+        if (r.status === 401) { forceLogout('登录已失效，请重新登录'); return; }
+        if (!r.ok) return;
+        const d = await r.json();
+        wsSets.value = d.write_sets || [];
+        wfSets.value = d.workflows || [];            // 第 6 步提供；现在为空
+        if (d.caps) pickCaps.value = d.caps;
+      } catch (e) { /* 写池信息取不到不该挡住聊天 */ }
+    }
+    function togglePickMenu() { skMenuOpen.value = !skMenuOpen.value; skMenuIdx.value = 0; skFilter.value = ''; }
+    function wsPick(name) {
+      if (wsPicked.value.indexOf(name) >= 0) { wsPicked.value = wsPicked.value.filter(n => n !== name); return; }
+      if (wsPicked.value.length >= pickCaps.value.write_sets) {
+        showToast('单轮最多授权 ' + pickCaps.value.write_sets + ' 个写工具集', true); return;
+      }
+      wsPicked.value.push(name);
+    }
+    function wsUnpick(name) { wsPicked.value = wsPicked.value.filter(n => n !== name); }
+    function wfPick(name) {
+      if (wfPicked.value.indexOf(name) >= 0) { wfPicked.value = wfPicked.value.filter(n => n !== name); return; }
+      if (wfPicked.value.length >= pickCaps.value.workflows) {
+        showToast('单轮最多选 ' + pickCaps.value.workflows + ' 个 workflow', true); return;
+      }
+      wfPicked.value.push(name);
+    }
+    function wfUnpick(name) { wfPicked.value = wfPicked.value.filter(n => n !== name); }
+
     function resetAccountState() {
       // ★ 06：工作目录面板也按账号取数，切账号必须一起清（与技能/工具同一批门闩问题）
       wdList.value = []; wdPath.value = ''; wdEntries.value = []; wdMsg.value = '';
       wdErr.value = ''; wdPanel.value = ''; wdFile.value = null; wdTrash.value = [];
       wdRisk.value = null; wdNew.value = { name: '', path: '' };
+      wsPicked.value = []; wfPicked.value = []; wsSets.value = []; wfSets.value = [];   // 06：「/」另两组
       resetPriceState();
       // ① 门闩（让页签下次访问时重新拉取）
       cliLoaded.value = false;
@@ -8433,6 +8500,9 @@ createApp({
       // M4a：技能「本轮一次性」——发送即消费掉选择，同时记一份在气泡上供追溯
       const usedSkills = skPicked.value.slice();
       skPicked.value = [];
+      // ★ 06：「/」另外两组同样"本轮一次性"——写工具集的授权**发送即消费**（不在下一轮继续有效）
+      const usedWs = wsPicked.value.slice(); wsPicked.value = [];
+      const usedWf = wfPicked.value.slice(); wfPicked.value = [];
       // ★ v3.1：气泡带上本轮贴的图（对象 URL 交给气泡持有 ✓ 清理时**不 revoke** ✓ 否则缩略图会变空 ✗）
       const _bubbleImgs = chatImages.value.map(function (x) { return { url: x.url, name: x.name }; });
       messages.value.push({ role: 'user', text: q, skills: usedSkills, imgs: _bubbleImgs });
@@ -8447,6 +8517,9 @@ createApp({
         let url = '/api/chat?token=' + encodeURIComponent(token.value) + '&question=' + encodeURIComponent(q);
         if (activeThread.value) url += '&thread_id=' + encodeURIComponent(activeThread.value);
         if (usedSkills.length) url += '&skills=' + encodeURIComponent(usedSkills.join(','));
+        // ★ 06：写工具集的授权名必须随请求走 —— 后端据此 (a) 生成说明书 (b) 设置运行期闸的放行名单
+        if (usedWs.length) url += '&write_sets=' + encodeURIComponent(usedWs.join(','));
+        if (usedWf.length) url += '&workflows=' + encodeURIComponent(usedWf.join(','));
         // ★ v3.1 视觉：本轮贴的图（后端已校验归属 ✓ 这里只传 id ✓ 顺序即展示顺序 ✓）
         const _imgIds = chatImages.value.map(function (x) { return x.id; });
         if (_imgIds.length) url += '&images=' + encodeURIComponent(_imgIds.join(','));
@@ -8611,7 +8684,7 @@ createApp({
       if (token.value) {
         if (await verifySession()) {
           connectWS(); loadReports(); loadSubs(); loadMyData(); loadProviders(); loadSouls(); loadMemory();
-          loadVoicePacks(); loadSessions(); loadKbStatus(); loadSkills(); loadAsrStatus(); loadWorkdirs();  // ★ 06 loadDecRouter();
+          loadVoicePacks(); loadSessions(); loadKbStatus(); loadSkills(); loadAsrStatus(); loadWorkdirs(); loadPickData();  // ★ 06 loadDecRouter();
         }
       }
       wxStart();
@@ -9204,6 +9277,16 @@ createApp({
         wdTrash,
         wdTrashTtl,
         wdUp,
+        pickCaps,
+        togglePickMenu,
+        wfPick,
+        wfPicked,
+        wfSets,
+        wfUnpick,
+        wsPick,
+        wsPicked,
+        wsSets,
+        wsUnpick,
 };
   }
 }).mount('#app');

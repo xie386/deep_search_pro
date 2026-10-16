@@ -61,6 +61,7 @@ from tools.shell_executor import run_shell_command  # M4b：CLI 沙箱命令工�
 from tools.workdir_tools import (workdir_list, workdir_read, workdir_create,
                                  workdir_edit, workdir_delete)
 from api import workdir_api as _wdapi   # 06：工作目录接口层（前端文件管理器的服务端）
+from api import write_pool as _wpool       # 06：自配写工具池（只读池/写池）
 from agent.write_gate import WriteGateMiddleware
 from tools._runtime import shell_runtime as shell_runtime  # M4b：CLI 面板 /api/shell/* 路由用
 from tools import cli_registry as cli_reg  # M4c：第三方 CLI 接入登记（注册表 + 本机检测 + 状态）
@@ -434,6 +435,11 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
     set_thread_context(thread_id)  # 让 monitor 知道本轮进度推给哪个 WS
     if account_id is not None:
         set_owner_context(account_id)  # 数据归属权：Agent 只能读到该用户的数据
+    try:                                  # 06：写工具运行期闸的授权名单（contextvar，随本轮任务传播）
+        from agent.write_gate import set_selected as _set_writes2
+        _set_writes2([s.strip() for s in (write_sets or "").split(",") if s.strip()])
+    except Exception:                     # noqa: BLE001
+        pass
 
     agent = _get_agent_for(account_id)
 
@@ -456,6 +462,18 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
             skills_text = cust.get_skills_text(account_id, skill_names)
         except Exception as e:
             print(f"[M4a] 技能读取失败（忽略）: {type(e).__name__}: {e}")
+    # 06：「/」第二组（自配写工具集）的授权说明书 —— 与技能同一段文本一同注入（未选中=空串，零影响）。
+    #   ★ 提示词只是"告诉模型能用什么"；**真正拦人的是运行期闸**（agent/write_gate.py），
+    #     它认的是本轮 set_selected() 里那份名单，与这里的文本无关（模型绕不过代码闸）。
+    _ws_names = [s.strip() for s in (write_sets or "").split(",") if s.strip()]
+    if account_id is not None and _ws_names:
+        try:
+            from api import write_pool as _wpool
+            _ws_text = _wpool.compose_write_sets_text(account_id, _ws_names)
+            if _ws_text:
+                skills_text = ("%s\n\n%s" % (skills_text, _ws_text)).strip()
+        except Exception as _e:              # noqa: BLE001
+            print("[06] 写工具集说明书拼装失败（忽略）:", _e)
     # M4c：用户自配 CLI 的可用清单——由 server 层取好传入（装配管线不 import api.*）。
     # 目的是消除「配好了却自称没有」的幻觉；没配 CLI 时是空串，零开销。
     # M5b：改由 `tool_router` 决定注入内容——工具少（≤4）时与 M5a 逐字一致（快路径）；
@@ -724,6 +742,8 @@ async def api_chat(
     skills: str = Query("", description="M4a：本轮启用的技能名，逗号分隔（如 '竞品对比,来源标注'）；空=不用技能"),
     images: str = Query("", description="v3.1 视觉：本轮贴的图 image_id，逗号分隔（最多 3 张）；空=纯文字"),
     probe: str = Query("", description="内部（测评用）：非空=本轮来自 03 路由质量测评 → 强制关闭决策模型精排"),
+    write_sets: str = Query("", description="06：本轮经「/」授权的写工具集名，逗号分隔；空=未授权（写工具不可用）"),
+    workflows: str = Query("", description="06：本轮经「/」选中的 workflow 名，逗号分隔；空=不跑工作流"),
 ):
     sess = get_session(token)  # 校验登录，无效抛 401
     # 会话存储在本函数多处要用（含 v1.0 兼容路径下的 last_msg_id），提到函数顶部
@@ -1874,6 +1894,23 @@ async def skill_save(req: cust.SkillReq, token: str = Query(...)):
 @app.post("/api/skills/delete", summary="删除技能")
 async def skill_delete(req: cust.SkillReq, token: str = Query(...)):
     return cust.skill_delete(token, req.name)
+
+
+# ----------------------------- 自配写工具池（06） -----------------------------
+# 口径（Verdict/06 裁定 6）：归属**只由用户显式设定**，默认只读池；写池不进路由、不进 03 测评，
+# 只能被输入框「/」选中后唤醒。入池凭据始终是"用户确认过"，与初始识别结果无关。
+@app.get("/api/pool/summary", summary="两池概览 + 写工具集候选 + 「/」三组上限")
+async def pool_summary_api(token: str = Query(...)):
+    from api import write_pool as _wpool
+    from api.customize import _require_account_id
+    return _wpool.summary(_require_account_id(token))
+
+
+@app.post("/api/pool/set", summary="设置某条来源的池归属（cli / api / mcp）")
+async def pool_set_api(req: _wpool.PoolReq, token: str = Query(...)):
+    from api import write_pool as _wpool
+    from api.customize import _require_account_id
+    return _wpool.set_pool(_require_account_id(token), req.kind, req.ident, req.pool)
 
 
 # ----------------------------- 工作目录（06：前端文件管理器） -----------------------------
