@@ -60,6 +60,7 @@ from tools.shell_executor import run_shell_command  # M4b：CLI 沙箱命令工�
 # 06：工作目录写工具集（作用于当前启用工作目录）+ 写工具运行期闸（未授权不改文件）
 from tools.workdir_tools import (workdir_list, workdir_read, workdir_create,
                                  workdir_edit, workdir_delete)
+from api import workdir_api as _wdapi   # 06：工作目录接口层（前端文件管理器的服务端）
 from agent.write_gate import WriteGateMiddleware
 from tools._runtime import shell_runtime as shell_runtime  # M4b：CLI 面板 /api/shell/* 路由用
 from tools import cli_registry as cli_reg  # M4c：第三方 CLI 接入登记（注册表 + 本机检测 + 状态）
@@ -1873,6 +1874,69 @@ async def skill_save(req: cust.SkillReq, token: str = Query(...)):
 @app.post("/api/skills/delete", summary="删除技能")
 async def skill_delete(req: cust.SkillReq, token: str = Query(...)):
     return cust.skill_delete(token, req.name)
+
+
+# ----------------------------- 工作目录（06：前端文件管理器） -----------------------------
+# 与 Agent 侧写工具**同一套门禁**（workdir_guard）：路径隔离、保护名单 fail-closed、
+# 凭据连读都拒、agents_docs 拒；删除一律进 .回收站/ 软删；不做上传。
+@app.get("/api/workdir/list", summary="列出我的工作目录（含启用项）")
+async def wd_list(token: str = Query(...)):
+    return _wdapi.list_(token)
+
+
+@app.post("/api/workdir/switch", summary="切换启用某个工作目录")
+async def wd_switch(req: _wdapi.IdReq, token: str = Query(...)):
+    return _wdapi.switch_(token, req)
+
+
+@app.post("/api/workdir/add", summary="新增外部真实目录（需 confirm=true 二次确认）")
+async def wd_add(req: _wdapi.AddReq, token: str = Query(...)):
+    return _wdapi.add_(token, req)
+
+
+@app.post("/api/workdir/remove", summary="移除工作目录条目（主页不可删；不动磁盘目录）")
+async def wd_remove(req: _wdapi.IdReq, token: str = Query(...)):
+    return _wdapi.remove_(token, req)
+
+
+@app.get("/api/workdir/tree", summary="列出某一层目录（前端逐级展开）")
+async def wd_tree(token: str = Query(...), subdir: str = Query("")):
+    return _wdapi.tree(token, subdir)
+
+
+@app.get("/api/workdir/read", summary="读取文件（可编辑 / 只读预览 / 仅下载三档）")
+async def wd_read(token: str = Query(...), path: str = Query(...)):
+    return _wdapi.read_(token, path)
+
+
+@app.get("/api/workdir/download", summary="下载文件（PDF 等不可预览类型）")
+async def wd_download(token: str = Query(...), path: str = Query(...)):
+    return _wdapi.download(token, path)
+
+
+@app.post("/api/workdir/write", summary="保存文件（带 mtime 冲突检测，不一致回 409）")
+async def wd_write(req: _wdapi.WriteReq, token: str = Query(...)):
+    return _wdapi.write_(token, req)
+
+
+@app.post("/api/workdir/create", summary="新建文件（已存在回 409）")
+async def wd_create(req: _wdapi.CreateReq, token: str = Query(...)):
+    return _wdapi.create_(token, req)
+
+
+@app.post("/api/workdir/delete", summary="删除（进回收站，可还原）")
+async def wd_delete(req: _wdapi.PathReq, token: str = Query(...)):
+    return _wdapi.delete_(token, req)
+
+
+@app.post("/api/workdir/rename", summary="重命名 / 移动（源与目标都过门禁）")
+async def wd_rename(req: _wdapi.RenameReq, token: str = Query(...)):
+    return _wdapi.rename_(token, req)
+
+
+@app.post("/api/workdir/trash", summary="回收站：list / restore / purge")
+async def wd_trash(req: _wdapi.TrashReq, token: str = Query(...)):
+    return _wdapi.trash_(token, req)
 
 # ----------------------------- M4b：CLI 面板（白名单沙箱执行） -----------------------------
 @app.get("/api/shell/allowed", summary="CLI 面板：白名单命令 + 沙箱目录")

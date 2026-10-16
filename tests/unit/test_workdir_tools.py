@@ -123,8 +123,9 @@ def test_delete_goes_to_recycle_not_gone(monkeypatch, tmp_path):
     _call(wt.workdir_create, path="c.md", content="x")
     assert "已移入回收站" in _call(wt.workdir_delete, path="c.md")
     assert not (wd / "c.md").exists()
-    trash = list((wd / g.RECYCLE_DIR).iterdir())
-    assert len(trash) == 1 and trash[0].read_text(encoding="utf-8") == "x"   # 可还原
+    items = g.trash_entries(wd)                       # 用正式 API 取（回收站里另有 _index.json）
+    assert len(items) == 1 and items[0]["orig"] == "c.md" and items[0]["rel"] == "c.md"
+    assert (wd / g.RECYCLE_DIR / items[0]["name"]).read_text(encoding="utf-8") == "x"   # 可还原
 
 
 # ------------------------------------------------------------ 门禁交互

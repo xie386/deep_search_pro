@@ -196,19 +196,125 @@ def resolve_in_workdir(raw: str, workdir: Path | str) -> Path:
 
 
 # ---------------------------------------------------------------- 回收站
+INDEX_FILE = "_index.json"
+
+
+def _trash_dir(workdir: Path | str) -> Path:
+    return Path(workdir) / RECYCLE_DIR
+
+
+def _load_index(trash: Path) -> dict:
+    """回收站索引：记下每个条目**原在工作目录里的相对路径**（删自子目录也能原位还原）。"""
+    try:
+        import json
+        raw = (trash / INDEX_FILE).read_text(encoding="utf-8")
+        d = json.loads(raw)
+        return d if isinstance(d, dict) else {}
+    except Exception:                       # noqa: BLE001 —— 索引坏了不阻断删除
+        return {}
+
+
+def _save_index(trash: Path, d: dict) -> None:
+    try:
+        import json
+        trash.mkdir(parents=True, exist_ok=True)
+        (trash / INDEX_FILE).write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def recycle(workdir: Path | str, target: Path | str) -> Path:
-    """软删：移入 `.回收站/{时间戳}_{原名}`，返回落点。"""
+    """软删：移入 `.回收站/{时间戳}_{原名}` 并在索引里记下原相对路径，返回落点。"""
     wd = Path(workdir)
-    trash = wd / RECYCLE_DIR
+    trash = _trash_dir(wd)
     trash.mkdir(parents=True, exist_ok=True)
     src = Path(target)
-    dst = trash / ("%s_%s" % (time.strftime("%Y%m%d_%H%M%S"), src.name))
+    try:
+        rel = src.resolve().relative_to(wd.resolve()).as_posix()
+    except ValueError:
+        rel = src.name
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    dst = trash / ("%s_%s" % (ts, src.name))
     n = 1
     while dst.exists():
-        dst = trash / ("%s_%s(%d)" % (time.strftime("%Y%m%d_%H%M%S"), src.name, n))
+        dst = trash / ("%s_%s(%d)" % (ts, src.name, n))
         n += 1
     shutil.move(str(src), str(dst))
+    idx = _load_index(trash)
+    idx[dst.name] = {"rel": rel, "orig": src.name, "ts": ts,
+                     "is_dir": bool(dst.is_dir()), "deleted_at": int(time.time())}
+    _save_index(trash, idx)
     return dst
+
+
+def trash_entries(workdir: Path | str) -> list[dict]:
+    """回收站条目（新→旧）。索引缺失时按文件名反推，保证列表可用。"""
+    trash = _trash_dir(workdir)
+    if not trash.is_dir():
+        return []
+    idx = _load_index(trash)
+    out = []
+    for child in trash.iterdir():
+        if child.name == INDEX_FILE:
+            continue
+        meta = idx.get(child.name) or {}
+        try:
+            st = child.stat()
+        except OSError:
+            continue
+        out.append({"name": child.name, "rel": meta.get("rel") or child.name.split("_", 2)[-1],
+                    "orig": meta.get("orig") or child.name.split("_", 2)[-1],
+                    "is_dir": child.is_dir(), "size": 0 if child.is_dir() else st.st_size,
+                    "deleted_at": int(meta.get("deleted_at") or st.st_mtime)})
+    out.sort(key=lambda x: x["deleted_at"], reverse=True)
+    return out
+
+
+def trash_restore(workdir: Path | str, name: str, rel_target: str | None = None) -> Path:
+    """把回收站条目还原回工作目录（默认还原到原相对路径）。"""
+    wd = Path(workdir)
+    trash = _trash_dir(wd)
+    src = trash / Path(name).name                   # 只取文件名，防目录穿越
+    if not src.exists():
+        raise FileNotFoundError("回收站里没有条目：%s" % name)
+    idx = _load_index(trash)
+    meta = idx.get(src.name) or {}
+    rel = (rel_target or meta.get("rel") or meta.get("orig") or src.name).replace("\\", "/").lstrip("/")
+    dst = (wd / rel).resolve()
+    if dst != wd.resolve() and wd.resolve() not in dst.parents:
+        raise ValueError("还原目标逃出工作目录：%s" % rel)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if dst.exists():
+        stem, suf = dst.stem, dst.suffix
+        k = 1
+        while dst.exists():
+            dst = dst.parent / ("%s(还原%d)%s" % (stem, k, suf))
+            k += 1
+    shutil.move(str(src), str(dst))
+    idx.pop(src.name, None)
+    _save_index(trash, idx)
+    return dst
+
+
+def trash_purge(workdir: Path | str, name: str | None = None) -> int:
+    """彻底删除：给 name 删单个，不给则清空回收站。返回删除条数。"""
+    trash = _trash_dir(workdir)
+    if not trash.is_dir():
+        return 0
+    idx = _load_index(trash)
+    targets = [trash / Path(name).name] if name else [c for c in trash.iterdir() if c.name != INDEX_FILE]
+    n = 0
+    for tgt in targets:
+        if not tgt.exists() or tgt.name == INDEX_FILE:
+            continue
+        try:
+            shutil.rmtree(tgt) if tgt.is_dir() else tgt.unlink()
+            idx.pop(tgt.name, None)
+            n += 1
+        except OSError:
+            continue
+    _save_index(trash, idx)
+    return n
 
 
 def purge_expired_trash(workdir: Path | str, ttl_days: int) -> int:
@@ -217,12 +323,17 @@ def purge_expired_trash(workdir: Path | str, ttl_days: int) -> int:
     if not trash.is_dir():
         return 0
     cutoff = time.time() - max(1, int(ttl_days)) * 86400
+    idx = _load_index(trash)
     n = 0
     for child in trash.iterdir():
+        if child.name == INDEX_FILE:
+            continue
         try:
             if child.stat().st_mtime < cutoff:
                 shutil.rmtree(child) if child.is_dir() else child.unlink()
+                idx.pop(child.name, None)
                 n += 1
         except OSError:
             continue
+    _save_index(trash, idx)
     return n
