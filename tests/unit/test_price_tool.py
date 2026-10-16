@@ -165,7 +165,19 @@ def test_same_price_same_day_says_already_recorded(acct):
 # ---------------------------------------------------------------- ④ 接线
 def test_tool_registered_at_both_assembly_points():
     s = open(os.path.join(ROOT, "api", "server.py"), encoding="utf-8").read().replace("\r\n", "\n")
-    assert s.count("update_user_profile, record_price],") == 2, "两个装配点都要挂（M3/M4 老坑）"
+    # ★ 2026-10-16（06）：原来这里数的是字面串 "update_user_profile, record_price]," —— 只要
+    #   工具清单改成多行就失效（是**格式**断言，不是**意图**断言）。改成校验意图：
+    #   每一个 create_deep_agent 的工具清单里都得有这些工具，且每个中间件栈都带写工具闸。
+    import re as _re
+    tool_blocks = _re.findall(r"tools=\[(.*?)\]", s, _re.S)
+    assert len(tool_blocks) == 2, "装配点数量变了？预期 2 个（模块级 AGENT + 按账号构建）"
+    for blk in tool_blocks:
+        assert "update_user_profile" in blk and "record_price" in blk, "两个装配点都要挂（M3/M4 老坑）"
+        assert "workdir_create" in blk and "workdir_delete" in blk, "06 写工具集两个装配点都要挂"
+    mw_blocks = _re.findall(r"middleware=\[(.*?)\]", s, _re.S)
+    for blk in mw_blocks:
+        assert "UsageCounterMiddleware" in blk and "WriteGateMiddleware" in blk, \
+            "06 写工具运行期闸两个装配点都要挂"
     assert "record_price" in open(os.path.join(ROOT, "tools", "price_tool.py"), encoding="utf-8").read()
 
 

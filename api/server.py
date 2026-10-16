@@ -57,6 +57,10 @@ from tools.profile_update import update_user_profile   # M3-5：结构化画像�
 from tools.price_tool import record_price   # M5-3：记价工具（模糊匹配，多候选让模型问用户）
 from tools.kb_tools import query_kb  # M3：个人知识库检索工具（fast 模式）
 from tools.shell_executor import run_shell_command  # M4b：CLI 沙箱命令工具（与 CLI 面板共用执行器）
+# 06：工作目录写工具集（作用于当前启用工作目录）+ 写工具运行期闸（未授权不改文件）
+from tools.workdir_tools import (workdir_list, workdir_read, workdir_create,
+                                 workdir_edit, workdir_delete)
+from agent.write_gate import WriteGateMiddleware
 from tools._runtime import shell_runtime as shell_runtime  # M4b：CLI 面板 /api/shell/* 路由用
 from tools import cli_registry as cli_reg  # M4c：第三方 CLI 接入登记（注册表 + 本机检测 + 状态）
 from api.account import LoginReq, RegisterReq, login, logout, register, get_session
@@ -249,9 +253,13 @@ AGENT = create_deep_agent(
     system_prompt=main_agent_content["system_prompt"],
     subagents=[network_search_agent, db_agent, personal_agent],
     tools=[read_agent_doc, write_agent_doc, list_agent_docs, query_kb, run_shell_command, invoke_tool,
-           update_user_profile, record_price],
+           update_user_profile, record_price,
+           # 06：工作目录写工具集（★ 名字带 workdir_ 前缀，避免被下面的 _ToolExclusionMiddleware 按名剥掉）
+           workdir_list, workdir_read, workdir_create, workdir_edit, workdir_delete],
     middleware=[_ToolExclusionMiddleware(excluded=_EXCLUDED_FS_TOOLS),
-                    usage_counter.UsageCounterMiddleware()]   # M4-3：用量计数（框架级，C1）,#去除deepagents内置的filesystem工具，只保留项目自定义的
+                    usage_counter.UsageCounterMiddleware(),   # M4-3：用量计数（框架级，C1）
+                    # 06：写工具运行期闸（置于排除中间件之后，保证写工具确实挂到了模型面前）
+                    WriteGateMiddleware()],   # 去除deepagents内置的filesystem工具，只保留项目自定
     # M1：不再用 MemorySaver 承载消息历史（进程重启即丢、无界增长）。
     # 对话历史由 SQLite 持久化（agent/conversation_store.py），每次 invoke 显式传入完整上下文。
 )
@@ -286,9 +294,12 @@ def _build_custom_agent(provider: dict):
         system_prompt=sys_prompt,
         subagents=[network_search_agent, db_agent, personal_agent],
         tools=[read_agent_doc, write_agent_doc, list_agent_docs, query_kb, run_shell_command, invoke_tool,
-           update_user_profile, record_price],
+           update_user_profile, record_price,
+           # 06：工作目录写工具集 + 运行期闸 —— ★ 与模块级 AGENT 必须**同款**（M3/M4 老坑）
+           workdir_list, workdir_read, workdir_create, workdir_edit, workdir_delete],
         middleware=[_ToolExclusionMiddleware(excluded=_EXCLUDED_FS_TOOLS),
-                    usage_counter.UsageCounterMiddleware()]   # M4-3：用量计数（框架级，C1）,
+                    usage_counter.UsageCounterMiddleware(),   # M4-3：用量计数（框架级，C1）
+                    WriteGateMiddleware()],                   # 06：写工具运行期闸
     )
 
 

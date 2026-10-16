@@ -27,14 +27,16 @@ KIND_SHELL = "shell"
 KIND_API = "api"
 KIND_MCP = "mcp"
 KIND_MODEL = "model"     # ★ M6c-3：模型调用（每次一条；不花外部检索额度）
+KIND_WRITE = "write"     # ★ 06：工作目录写工具（create/edit/delete —— 会改动用户文件）
 
-KINDS = (KIND_INTERNAL, KIND_RETRIEVAL_EXTERNAL, KIND_SHELL, KIND_API, KIND_MCP)
+KINDS = (KIND_INTERNAL, KIND_RETRIEVAL_EXTERNAL, KIND_SHELL, KIND_API, KIND_MCP, KIND_WRITE)
 KIND_LABELS = {
     KIND_INTERNAL: "内部工具",
     KIND_RETRIEVAL_EXTERNAL: "外部检索",
     KIND_SHELL: "命令行",
     KIND_API: "API 工具",
     KIND_MCP: "MCP 工具",
+    KIND_WRITE: "工作目录写操作",
 }
 # ★ 只有这一类花外部检索额度（M4 的核心诉求：回答"这次为什么烧了额度"）
 COST_KINDS = (KIND_RETRIEVAL_EXTERNAL,)
@@ -60,6 +62,13 @@ _EXACT = {
     "list_agent_docs": KIND_INTERNAL,
     "update_user_profile": KIND_INTERNAL,
     "run_shell_command": KIND_SHELL,
+    # 06 工作目录写工具：list/read 是只读（进 internal），三个改文件的单列 write，
+    #    让「用量」页能把"改动用户文件"这件事单独看出来。
+    "workdir_list": KIND_INTERNAL,
+    "workdir_read": KIND_INTERNAL,
+    "workdir_create": KIND_WRITE,
+    "workdir_edit": KIND_WRITE,
+    "workdir_delete": KIND_WRITE,
 }
 EXTRA_TOOL_KINDS: dict = {}
 
