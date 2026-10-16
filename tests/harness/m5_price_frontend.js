@@ -77,7 +77,15 @@ ok('工作台多一张"待看价格提醒"卡', /stat-card c6/.test(tpl) && /待
 ok('价格数据带账号戳记（加载时记下属于谁）', /d\._account = username\.value/.test(js), '否则无法判断陈旧数据');
 ok('★ 模板按账号守卫（不是当前账号的数据不渲染）', /priceSummary\._account === username/.test(html), '这是越界的那道闸');
 ok('★ 有 resetPriceState() 清理函数', /function resetPriceState\(\)/.test(js));
-ok('★ 注销/失效时清空价格缓存', /password\.value = '';[\s\S]{0,160}resetPriceState\(\)/.test(js), '切换账号后不能残留');
+// ★ 2026-10-16：原来只认「注销站点 160 字内直接出现 resetPriceState()」这一种形状。
+//   账号串味修复把清缓存统一收进 resetAccountState()（它内部第一件事就是 resetPriceState()），
+//   于是这条断言变为**钉旧形状**。改成两段式**意图**断言（比原来更强）：
+//   ① 注销/失效站点必须走到清缓存入口（直接调 resetPriceState 或调 resetAccountState）；
+//   ② resetAccountState 的**函数体内**必须真的调用 resetPriceState()（内部调用被删照样红）。
+const _logoutClears = /password\.value = '';[\s\S]{0,200}(resetAccountState|resetPriceState)\(\)/.test(js);
+const _resetBody = (js.match(/function resetAccountState\(\) \{([\s\S]*?)\n    \}/) || ['', ''])[1];
+ok('★ 注销/失效时清空价格缓存', _logoutClears && /resetPriceState\(\)/.test(_resetBody),
+   '切换账号后不能残留（注销站点=' + _logoutClears + ' 复位函数内调用=' + /resetPriceState\(\)/.test(_resetBody) + '）');
 ok('★ 登录后先清空再按新账号加载', /username\.value = u;[\s\S]{0,160}resetPriceState\(\)/.test(js), '登录要先清干净');
 ok('★ 进入 AI 页即按当前账号刷新', /if \(v === 'chat'\) \{ nextTick\(scrollToBottom\); loadPriceSummary\(\);/.test(js));
 ok('卡底色不透明（背景图下可读）', /\.price-card \{[^}]*background: #14181f/.test(html));
