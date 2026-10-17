@@ -244,3 +244,23 @@ def test_query_inside_url_template_is_merged_not_dropped():
     # 模型显式给的值优先于模板里的固定值
     spec2 = _spec(url_template="/a?cc=us", bindings=[{"name": "cc", "location": "query", "required": False}])
     assert drv.build_request(_cfg(), spec2, {"cc": "cn"})["params"]["cc"] == "cn"
+
+
+# ---------------------------------------------- 图片类返回（2026-10-18 用户提出）
+def test_image_response_returns_blob_not_mangled_text():
+    """图片不能按文本解码（会乱码）—— 驱动要原样带回字节 + ctype，供上层落盘。"""
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+    out = drv.call(_cfg(), {"method": "GET", "url_template": "/img/{id}", "bindings": [
+        {"name": "id", "location": "path", "required": True}]},
+        {"id": "7"}, transport=_transport(png, ctype="image/png"))
+    assert out["ok"] is True and out["status"] == 200
+    assert out["blob"] == png and out["ctype"] == "image/png"
+    assert out["json"] is None
+    assert "[image image/png" in out["text"]
+    assert "\ufffd" not in out["text"]
+
+
+def test_json_response_has_no_blob():
+    out = drv.call(_cfg(), {"method": "GET", "url_template": "/v1/x", "bindings": []},
+                   {}, transport=_transport({"a": 1}))
+    assert out["ok"] and out["json"] == {"a": 1} and "blob" not in out

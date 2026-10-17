@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 
 from langchain_core.tools import tool
@@ -354,6 +355,33 @@ def readonly_verdict(source: str, cap: dict, args: dict) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------- 审计
+_IMG_EXT = {"image/png": ".png", "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/webp": ".webp",
+            "image/gif": ".gif", "image/svg+xml": ".svg", "image/bmp": ".bmp"}
+
+
+def _save_tool_image(account_id: int | None, ref: str, blob: bytes, ctype: str) -> str:
+    """把接口返回的图片落到**当前工作目录**的 `_tool_images/`，返回给模型看的说明 + 渲染标记。
+
+    ★ 2026-10-18（用户报障）：API 返回图片时，原来按文本解码 → 乱码，前端也显示不了。
+      现在：字节落盘（工作目录里能看见、能下载），正文带 `[[img:<相对路径>]]`，
+      前端把标记渲染成 `<img>`（走 `/api/workdir/download` 的鉴权通道，不新开接口）。
+    """
+    try:
+        from tools._runtime.shell_runtime import active_workdir
+        wd = active_workdir(None, account_id)
+        ext = _IMG_EXT.get((ctype or "").split(";")[0].strip().lower(), ".png")
+        stem = re.sub(r"[^A-Za-z0-9_.-]", "_", (ref or "image").split("/")[-1])[:40] or "image"
+        name = "%s_%s%s" % (stem, hashlib.sha1(blob).hexdigest()[:8], ext)
+        rel = "_tool_images/%s" % name
+        path = wd / "_tool_images" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(blob)
+        return ("🖼 接口返回了一张图片（%s，%d 字节），已存到工作目录 `%s`，前端会直接显示。\n"
+                "[[img:%s]]" % (ctype or "image", len(blob), rel, rel))
+    except Exception as e:                    # noqa: BLE001 —— 落盘失败只降级，不影响调用结果
+        return "🖼 接口返回了一张图片（%s，%d 字节），但落盘失败：%s" % (ctype or "image", len(blob), e)
+
+
 def _audit_invoke(*, uname, source, ref, args, ok, status=None, ms=None, chars=0,
                   rejected="", error="", read_only=True) -> None:
     """与 CLI 同一条 jsonl、同字段名（新增 source/ref/args_digest/read_only）。"""
@@ -451,6 +479,13 @@ def invoke(ref: str, args: dict | None = None, *, account_id: int | None = None,
                           read_only=bool(cap.get("read_only", 1)))
             return {"ok": False, "text": text, "source": src_kind, "ref": ref,
                     "status": out.get("status"), "ms": ms, "rejected": "%s_error" % src_kind}
+        blast = out.get("blob")
+        if blast:
+            # ★ 2026-10-18：图片类返回 → 落到工作目录 _tool_images/，正文里给一个 [[img:相对路径]] 标记；
+            #   前端把它渲染成图片（模型本身仍然只看到文本，行为与以前一致）。
+            _img = _save_tool_image(account_id, ref, blast, out.get("ctype") or "")
+            body = None
+            out = dict(out, text=_img)
         body = out.get("json")
         if body is None:
             txt = (out.get("text") or "").strip()

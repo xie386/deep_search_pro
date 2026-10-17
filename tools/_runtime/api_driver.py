@@ -203,13 +203,23 @@ def call(source_cfg: dict, spec: dict, args: dict, *, transport=None) -> dict:
                 truncated = len(raw) > req["max_bytes"]
                 if truncated:
                     raw = raw[: req["max_bytes"]]
+                ctype = (r.headers.get("content-type") or "").lower()
+                ok_ = 200 <= r.status_code < 300
+                if ctype.startswith("image/"):
+                    # ★ 2026-10-18（用户提出）：图片类返回不能按文本解码（会变乱码）。
+                    #   原样带回字节，由 capability_invoke 落到工作目录、再由前端渲染。
+                    return {"ok": ok_, "status": r.status_code,
+                            "text": "[image %s, %d bytes]" % (ctype, len(raw)),
+                            "json": None, "blob": raw, "ctype": ctype, "bytes": len(raw),
+                            "truncated": truncated, "elapsed_ms": int((time.time() - t0) * 1000),
+                            "location": r.headers.get("location"), "source": tag,
+                            "error": "" if ok_ else "HTTP %d（%s）" % (r.status_code, tag)}
                 enc = r.encoding or "utf-8"
                 try:
                     txt = raw.decode(enc, errors="replace")
                 except (LookupError, TypeError):
                     txt = raw.decode("utf-8", errors="replace")
                 data = None
-                ctype = (r.headers.get("content-type") or "").lower()
                 if "json" in ctype or txt.lstrip()[:1] in ("{", "["):
                     try:
                         data = json.loads(txt)

@@ -1268,6 +1268,8 @@
     .sec-title { font-size: 12px; color: #a8f0c0; letter-spacing: 1.5px; margin-bottom: 7px; font-weight: 700; }
     .sec-body { font-size: 13.5px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; color: #f0f7f2; }
     .sec-body strong { color: #ffe27a; }   /* 加粗关键词 -> 亮黄 */
+    .rich-img { display: block; max-width: 100%; margin: 10px 0; border-radius: 12px;
+                border: 1px solid rgba(124,192,137,.35); box-shadow: 0 6px 18px rgba(0,0,0,.35); }
     .sec-body a { color: #7dd3a8; }
     .sec-body li { color: #f0f7f2; }
     .sec-body table.mdt { color: #1d3a24; }  /* 表格内保持深字（白底） */
@@ -5578,6 +5580,13 @@ createApp({
     function renderRich(text) {
       if (!text) return '';
       let h = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      // ★ 2026-10-18：接口返回的图片 —— [[img:<工作目录相对路径>]] 渲染成真图
+      //   （走 /api/workdir/download 的鉴权通道，不新开接口）
+      h = h.replace(/\[\[img:([^\]]+)\]\]/g, function (_, p) {
+        const u = '/api/workdir/download?token=' + encodeURIComponent(token.value || '') +
+                  '&path=' + encodeURIComponent(p);
+        return '<img class="rich-img" src="' + u + '" alt="' + p + '" loading="lazy">';
+      });
       h = h.replace(/🔍\s*网络/g,'<span class="tag-net">🔍网络</span>')
            .replace(/🗄️?\s*数据库/g,'<span class="tag-db">🗄️数据库</span>')
            .replace(/📚\s*知识库/g,'<span class="tag-kb">📚知识库</span>')
