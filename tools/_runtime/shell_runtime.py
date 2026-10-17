@@ -152,9 +152,21 @@ def _looks_like_path(tok: str) -> bool:
     return bool(_PATH_EXT.search(tok))
 
 
-def _guard_paths(args: list[str], sandbox: Path) -> None:
-    """通用闸：所有像路径的参数都必须落在沙箱内（挡绝对路径 / ../ 逃逸）。"""
+#: 文档**内部**路径（officecli 这类工具的 XPath：`/`、`/slide[1]`、`/body/p[1]`、`/Sheet1/A1`）。
+#: ★ 2026-10-18 真机：`officecli add deck.pptx / --type slide` 的 `/` 被判成"路径逃逸沙箱" →
+#:   第三方 CLI 根本没法传文档路径。这类 token 不是磁盘路径，对**第三方 CLI**放行。
+_DOC_PATH_RE = re.compile(r"^/(?:[A-Za-z0-9_.\-]+(?:\[\d+\]|\[@[^\]]+\])?"
+                          r"(?:/[A-Za-z0-9_.\-]+(?:\[\d+\]|\[@[^\]]+\])?)*)?$")
+
+
+def _guard_paths(args: list[str], sandbox: Path, *, doc_paths: bool = False) -> None:
+    """通用闸：所有像路径的参数都必须落在沙箱内（挡绝对路径 / ../ 逃逸）。
+
+    `doc_paths=True`（仅第三方 CLI）：形如 `/slide[1]` 的**文档内路径**不按磁盘路径处理。
+    """
     for t in args:
+        if doc_paths and _DOC_PATH_RE.match(t or ""):
+            continue
         if _looks_like_path(t):
             _resolve_in_sandbox(t, sandbox)
 
@@ -476,7 +488,7 @@ def execute(command: str, args: list[str] | None = None, timeout: int | None = N
 
     # ---- 安全闸：先校验再执行，被拒不执行
     try:
-        _guard_paths(args, sandbox)
+        _guard_paths(args, sandbox, doc_paths=dyn is not None)
         if dyn is not None:
             # write_rules 只对**本轮被「/」授权的那一条**传下去；其余照旧 fail-closed。
             ok, why = cli_registry.readonly_verdict(

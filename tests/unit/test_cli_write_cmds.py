@@ -84,3 +84,37 @@ def test_write_pool_cli_readonly_still_runnable(monkeypatch, tmp_path):
     # 写子命令：没经「/」授权 → 被第三方 CLI 闸拒掉（不是"不在白名单"，而是"不允许执行"）
     w = sh.execute("rotool", ["set", "a.docx"], username="t_cli", account_id=11)
     assert w.get("ok") is False and "第三方 CLI" in (w.get("error") or ""), w
+
+
+def test_expand_selected_records_name_and_bin(monkeypatch, tmp_path):
+    """★ 2026-10-18 真机：只记显示名 → 执行期按 bin 判授权永远 False（选了 AgentOffice 跑不了 officecli）。"""
+    _db(monkeypatch, tmp_path)
+    from tools import cli_registry as reg
+    monkeypatch.setattr(reg, "_sync_pool", lambda *a, **k: None)
+    reg.save_cli(11, {"name": "AgentOffice", "bin": "officecli", "state": "authed",
+                      "readonly": "view", "write_cmds": "create"})
+    from api import write_pool as wp
+    got = wp.expand_selected(11, ["AgentOffice"])
+    assert "AgentOffice" in got and "officecli" in got, got
+
+
+def test_document_paths_not_treated_as_escape(monkeypatch, tmp_path):
+    """officecli 的 `/`、`/slide[1]` 是文档内路径，不是磁盘路径（原来被判"路径逃逸沙箱"）。"""
+    _db(monkeypatch, tmp_path)
+    from tools import cli_registry as reg
+    monkeypatch.setattr(reg, "_sync_pool", lambda *a, **k: None)
+    reg.save_cli(11, {"name": "假工具", "bin": "rotool", "state": "authed",
+                      "readonly": "view", "write_cmds": "add"})
+    from tools._runtime import shell_runtime as sh
+    from utils import write_auth
+    monkeypatch.setattr(sh, "active_workdir", lambda *a, **k: tmp_path)
+    monkeypatch.setattr(sh, "subprocess", sh.subprocess)   # 保持真实；rotool 不存在 → 走失败分支
+    write_auth.set_selected(["rotool"])
+    try:
+        r = sh.execute("rotool", ["add", "a.pptx", "/", "--type", "slide"],
+                       username="t_cli", account_id=11)
+    finally:
+        write_auth.set_selected([])
+    err = r.get("error") or ""
+    assert "路径逃逸" not in err, r
+    assert "不在只读清单" not in err and "第三方 CLI" not in err, r

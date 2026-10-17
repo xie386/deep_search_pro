@@ -470,15 +470,9 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
         #      教训：动 `_run_agent` 这条链路，必须真跑一轮对话才算验证过（已写进 tests/README 的纪律）。
         from utils.write_auth import set_selected as _set_writes2
         from api import write_pool as _wpool_chk
-        _want = [s.strip() for s in (write_sets or []) if s and s.strip()]
-        if _want and account_id is not None:
-            _ok = set()
-            for _s in _wpool_chk.write_sets(account_id):
-                if _s["name"] in _want or _s["ref"] in _want:
-                    _ok.add(_s["name"])
-            _set_writes2(sorted(_ok))
-        else:
-            _set_writes2([])
+        # ★ 2026-10-18 真机：这里原来只记**显示名**，而执行期按 **bin** 判授权 → 永远 False
+        #   （用户选了「AgentOffice」，跑 officecli 仍被拒）。改成名字与引用都记。
+        _set_writes2(_wpool_chk.expand_selected(account_id, write_sets))
     except Exception:                     # noqa: BLE001
         pass
 

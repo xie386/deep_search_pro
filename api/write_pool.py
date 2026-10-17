@@ -56,6 +56,24 @@ def write_sets(account_id: int | None) -> list[dict]:
     return out
 
 
+def expand_selected(account_id: int | None, names: list[str] | None) -> list[str]:
+    """把「/」选中的写工具集**名字**展开成 `名字 + 引用`（CLI 是 bin，API/MCP 是 slug）。
+
+    ★ 2026-10-18 真机：`shell_runtime` 判授权用的是 **bin**（`is_authorized("officecli")`），
+      而这里原来只记了**显示名**（"AgentOffice"）→ 永远 False → 用户明明在「/」里选中了，
+      执行期还是报「子命令不在只读清单内」。两个都记，按哪边判都命中。
+    """
+    want = [s.strip() for s in (names or []) if s and s.strip()]
+    if not want or not account_id:
+        return []
+    out = set()
+    for s in write_sets(account_id):
+        if s["name"] in want or s["ref"] in want:
+            out.add(s["name"])
+            out.add(s["ref"])
+    return sorted(out)
+
+
 def compose_write_sets_text(account_id: int | None, names: list[str] | None) -> str:
     """把本轮经「/」授权的写工具集编成一段说明书（拼在技能说明书后面注入）。
 
