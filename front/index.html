@@ -1433,6 +1433,13 @@
                 background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.10); }
     .col-fold:hover { color: var(--fg); background: rgba(255,255,255,.16); }
     .col-fold.left { left: 1px; }
+    /* ★ 06：本轮「/」唤醒记录 —— 用户气泡右下角的小标签（类别:名字） */
+    .pick-tags { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; margin-top: 6px; }
+    .pick-tag { font-size: 11px; line-height: 1.5; padding: 1px 7px; border-radius: 999px;
+                border: 1px solid rgba(255,255,255,.28); color: #e5e7eb; background: rgba(255,255,255,.10); }
+    .pick-tag.sk { border-color: rgba(84,170,105,.65); background: rgba(84,170,105,.22); }
+    .pick-tag.wf { border-color: rgba(129,140,248,.65); background: rgba(129,140,248,.22); }
+    .pick-tag.ws { border-color: rgba(245,197,66,.65); background: rgba(245,158,11,.22); }
     .col-fold.right { right: 1px; }
     .col-left.collapsed, .col-right.collapsed { flex: 0 0 0 !important; width: 0 !important;
                 min-width: 0 !important; max-width: 0 !important; padding: 0 !important;
@@ -2940,13 +2947,14 @@
                 </div>
               </div>
               <div v-else class="bubble">
-                <div class="skill-bar" v-if="m.skills && m.skills.length">
-                  <span class="skill-pill mini" v-for="n in m.skills" :key="n">🧩 {{ n }}</span>
-                </div>
                 <div class="bubble-imgs" v-if="m.imgs && m.imgs.length">
                   <img v-for="(im, ii) in m.imgs" :key="ii" :src="im.url" :alt="im.name" :title="im.name">
                 </div>
                 {{ m.text }}
+                <!-- ★ 2026-10-17：本轮「/」唤醒了什么 —— 类别:名字（右下角，刷新后仍在，随消息落库） -->
+                <div class="pick-tags" v-if="pickTags(m).length">
+                  <span class="pick-tag" :class="t.cls" v-for="(t, k) in pickTags(m)" :key="'pk'+k">{{ t.label }}</span>
+                </div>
               </div>
             </div>
             <div v-if="loading" class="loading-row">
@@ -7545,7 +7553,8 @@ createApp({
         const msgs = [];
         for (const m of items) {
           if (m.role === 'user') {
-            msgs.push({ role: 'user', text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content), msg_id: m.id });
+            msgs.push({ role: 'user', text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+                        msg_id: m.id, picks: (m.picks || null) });
           } else if (m.role === 'assistant') {
             let c = m.content;
             if (Array.isArray(c)) c = c.map(b => b.text || '').join('');
@@ -8760,7 +8769,9 @@ createApp({
       const usedWf = wfPicked.value.slice(); wfPicked.value = [];
       // ★ v3.1：气泡带上本轮贴的图（对象 URL 交给气泡持有 ✓ 清理时**不 revoke** ✓ 否则缩略图会变空 ✗）
       const _bubbleImgs = chatImages.value.map(function (x) { return { url: x.url, name: x.name }; });
-      messages.value.push({ role: 'user', text: q, skills: usedSkills, imgs: _bubbleImgs });
+      // 本轮「/」的三组选择 → 气泡标签 + 后端落库（后端从 write_sets/workflows/skills 参数自己再取一份）
+      const _picks = { skills: usedSkills.slice(), write_sets: usedWs.slice(), workflows: usedWf.slice() };
+      messages.value.push({ role: 'user', text: q, skills: usedSkills, imgs: _bubbleImgs, picks: _picks });
       loading.value = true;
       stopping.value = false;
       desktopStatus('正在回答…');      // 桌面版：托盘提示跟着回答进度（长回答不用盯窗口）
@@ -9089,6 +9100,21 @@ createApp({
       const r = await api('POST', wdTok('/api/workdir/trash'), { action: 'purge', name: it ? it.name : null });
       if (r) { wdMsg.value = '已彻底删除 ' + (r.purged || 0) + ' 项'; await wdLoadTrash(); }
     }
+    // ★ 2026-10-17：把本轮「/」的选择编成气泡右下角的小标签（类别:名字）。
+    //   数据来源：m.picks = {skills, write_sets, workflows}（后端随 user 消息落库，刷新后仍在）；
+    //   兼容旧气泡：只有 m.skills 时也画出来。
+    function pickTags(m) {
+      const out = [];
+      const p = (m && m.picks) || {};
+      (p.skills || []).forEach(function (n) { out.push({ cls: 'sk', label: '技能:' + n }); });
+      (p.workflows || []).forEach(function (n) { out.push({ cls: 'wf', label: 'workflow:' + n }); });
+      (p.write_sets || []).forEach(function (n) { out.push({ cls: 'ws', label: '自配写工具:' + n }); });
+      if (!out.length && m && m.skills && m.skills.length) {
+        m.skills.forEach(function (n) { out.push({ cls: 'sk', label: '技能:' + n }); });
+      }
+      return out;
+    }
+
     function wdClosePanel() { wdPanel.value = ''; wdFile.value = null; wdRisk.value = null; wdErr.value = ''; }
     function wdOpenAdd() { wdRisk.value = null; wdErr.value = ''; wdNew.value = { name: '', path: '' }; wdPanel.value = 'add'; }
     async function wdAddCheck() {
@@ -9724,6 +9750,7 @@ createApp({
         wfTpl,
         leftCollapsed,
         rightCollapsed,
+        pickTags,
 };
   }
 }).mount('#app');

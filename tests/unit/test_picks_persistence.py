@@ -1,0 +1,63 @@
+# -*- coding: utf-8 -*-
+"""「/」选择随消息落库 → 刷新后气泡标签还在（2026-10-17 用户提的标签需求）。
+
+为什么单独立：原来 user 消息的 `additional_kwargs` **不落库**（`message_to_dict` 只给 assistant 存），
+workflow 那一轮更是**提前 return 根本没存** → 刷新后既看不到"用过什么"，连回答都没了。
+"""
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(ROOT))
+
+
+def _fake_db(monkeypatch, tmp_path):
+    from tools import schema_personal as sp
+    monkeypatch.delenv("PERSONAL_DB_PATH", raising=False)
+    monkeypatch.setattr(sp, "DB_PATH", str(tmp_path / "t.db"))
+    assert sp.db_path() == str(tmp_path / "t.db")
+    sp.ensure_tables()
+    conn = sp.get_personal_conn()
+    conn.execute("INSERT INTO accounts (id, username, password_hash) VALUES (7,'t_picks','x')")
+    conn.commit(); conn.close()
+    return sp
+
+
+def test_picks_roundtrip(monkeypatch, tmp_path):
+    from langchain_core.messages import AIMessage
+    _fake_db(monkeypatch, tmp_path)
+    from agent import conversation_store as cs
+
+    picks = {"skills": ["竞品对比"], "write_sets": ["归档CLI"], "workflows": ["Steam降价比价与视频"]}
+    r = cs.save_turn(7, "th-picks", "请按这个工作流做一份报告",
+                     [AIMessage(content="已按 workflow 跑完 2 步。")], picks=picks)
+    assert r["ok"] is True
+
+    rows = cs.get_messages_plain(7, "th-picks")
+    user = [x for x in rows if x["role"] == "user"][0]
+    assert user["picks"] == picks, "user 消息必须带回本轮「/」的选择"
+    assert user["text" if "text" in user else "content"] == "请按这个工作流做一份报告"
+    assistant = [x for x in rows if x["role"] == "assistant"][0]
+    assert "picks" not in assistant
+
+
+def test_no_picks_still_works(monkeypatch, tmp_path):
+    from langchain_core.messages import AIMessage
+    _fake_db(monkeypatch, tmp_path)
+    from agent import conversation_store as cs
+    cs.save_turn(7, "th2", "普通问题", [AIMessage(content="普通回答")])
+    user = [x for x in cs.get_messages_plain(7, "th2") if x["role"] == "user"][0]
+    assert "picks" not in user
+
+
+def test_workflow_branch_saves_turn_before_returning():
+    """★ 2026-10-17 真机：workflow 分支**提前 return**，落库在它后面 → 这一轮根本没存。
+
+    这里静态钉住顺序：拿到 `_wf_res` 之后、`return` 之前，必须有 `cs.save_turn(... picks=_picks)`。
+    """
+    src = (ROOT / "api" / "server.py").read_text(encoding="utf-8")
+    i = src.index("_wf_res = _wfr.run_workflow(")
+    j = src.index("return _wf_ans", i)
+    seg = src[i:j]
+    assert "cs.save_turn(" in seg, "workflow 轮必须落库（否则刷新后回答与标签全没了）"
+    assert "picks=_picks" in seg, "落库时要带本轮「/」的选择（气泡标签靠它）"

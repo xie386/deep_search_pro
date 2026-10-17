@@ -73,6 +73,10 @@ def message_to_dict(m: BaseMessage) -> dict:
         """
         row["role"] = "user"
         row["content"] = json.dumps(m.content, ensure_ascii=False) if isinstance(m.content, (list, dict)) else m.content
+        # ★ 2026-10-17：user 消息也存 additional_kwargs —— 本轮「/」选了什么（技能/workflow/写工具集）
+        #   要随消息落库，刷新后气泡上的标签才还在（原来只给 assistant 存，标签一刷新就没了）。
+        _ak = m.additional_kwargs or {}
+        row["additional_kwargs"] = json.dumps(_ak, ensure_ascii=False) if _ak else None
     elif isinstance(m, SystemMessage):
         row["role"] = "system"
         row["content"] = m.content
@@ -233,6 +237,7 @@ def save_turn(
     user_msg: str,
     assistant_messages: list[BaseMessage],
     token_usage: int = 0,
+    picks: dict | None = None,
 ) -> bool:
     """保存一轮对话：user 提问（+自动标题）+ 该轮产生的 assistant/tool 消息。
 
@@ -265,6 +270,12 @@ def save_turn(
         # 写入 user 消息 + assistant 消息（同一轮 turn_index 递增）
         turn_base = _next_turn_index(conn, conversation_id)
         msgs = [HumanMessage(content=user_msg), *assistant_messages]
+        if picks:
+            # 本轮「/」的选择（{skills, write_sets, workflows}）→ 落在 user 消息的 additional_kwargs 里
+            try:
+                msgs[0].additional_kwargs = {**(msgs[0].additional_kwargs or {}), "picks": picks}
+            except Exception:                 # noqa: BLE001 —— 留档失败不许拖垮落库
+                pass
         last_assistant_msg_id = None
         for offset, m in enumerate(msgs):
             d = message_to_dict(m)
@@ -426,7 +437,8 @@ def get_messages_plain(account_id: int, thread_id: str) -> list[dict]:
         if conv is None:
             return []
         rows = conn.execute(
-            """SELECT id, turn_index, role, content, name, tool_call_id, tool_calls, created_at
+            """SELECT id, turn_index, role, content, name, tool_call_id, tool_calls,
+                      additional_kwargs, created_at
                FROM messages WHERE conversation_id=? ORDER BY turn_index ASC""",
             (conv["id"],),
         ).fetchall()
@@ -438,6 +450,15 @@ def get_messages_plain(account_id: int, thread_id: str) -> list[dict]:
                 try:
                     d["content"] = json.loads(d["content"])
                 except json.JSONDecodeError:
+                    pass
+            # ★ 2026-10-17：把本轮「/」的选择摆到顶层（前端气泡按它画标签）
+            _ak = d.pop("additional_kwargs", None)
+            if _ak:
+                try:
+                    _j = json.loads(_ak)
+                    if isinstance(_j, dict) and _j.get("picks"):
+                        d["picks"] = _j["picks"]
+                except (ValueError, TypeError):
                     pass
             result.append(d)
         return result

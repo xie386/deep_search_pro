@@ -82,3 +82,48 @@ def test_event_callback_errors_do_not_break_run():
 def test_empty_steps_document():
     r = wr.run_workflow({"name": "空流程", "steps": []}, lambda p, i: "x")
     assert r["ok"] is False and "没有可执行的步骤" in r["answer"]
+
+
+# ---------------------------------------------- 连接抖动：只重试瞬时错误（2026-10-17 真机）
+def test_transient_error_retries_once_and_succeeds():
+    """真机死因：第 1 步 `Connection error.`。抖动不是流程错 → 同一步重试一次。"""
+    calls = {"n": 0}
+    def invoke(prompt, i):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("Connection error.")
+        return "第一步的有效产出，足够长。"
+    doc = {"name": "T", "steps": [{"id": "a", "title": "第一步", "use": [], "output": "x"}]}
+    events = []
+    r = wr.run_workflow(doc, invoke, on_event=lambda k, p: events.append(k))
+    assert r["ok"] is True and calls["n"] == 2
+    assert "step_retry" in events and "step_failed" not in events
+
+
+def test_transient_error_still_fails_after_one_retry():
+    calls = {"n": 0}
+    def invoke(prompt, i):
+        calls["n"] += 1
+        raise RuntimeError("Connection error.")
+    doc = {"name": "T", "steps": [{"id": "a", "title": "第一步", "use": [], "output": "x"}]}
+    r = wr.run_workflow(doc, invoke)
+    assert r["ok"] is False and calls["n"] == 2 and r["failed_at"] == 1
+
+
+def test_real_error_is_not_retried():
+    """非瞬时错误（工具/参数/逻辑）绝不重试 —— 重试会掩盖真问题，也违背"停在该步"。"""
+    calls = {"n": 0}
+    def invoke(prompt, i):
+        calls["n"] += 1
+        raise ValueError("参数不对：缺 id")
+    doc = {"name": "T", "steps": [{"id": "a", "title": "第一步", "use": [], "output": "x"}]}
+    r = wr.run_workflow(doc, invoke)
+    assert r["ok"] is False and calls["n"] == 1 and r["failed_at"] == 1
+
+
+def test_is_transient_classifier():
+    assert wr.is_transient("Connection error.")
+    assert wr.is_transient("Read timed out")
+    assert wr.is_transient("HTTP 503 Service Unavailable")
+    assert not wr.is_transient("参数不对：缺 id")
+    assert not wr.is_transient("")

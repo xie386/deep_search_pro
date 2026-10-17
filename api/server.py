@@ -435,6 +435,10 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
     set_thread_context(thread_id)  # 让 monitor 知道本轮进度推给哪个 WS
     if account_id is not None:
         set_owner_context(account_id)  # 数据归属权：Agent 只能读到该用户的数据
+    # 本轮「/」选了什么（技能 / workflow / 自配写工具集）—— 随消息落库，前端据此在用户气泡上打标签
+    _picks = {"skills": [s for s in (skill_names or []) if s],
+              "write_sets": [s for s in (write_sets or []) if s],
+              "workflows": [s for s in (workflows or []) if s]}
     try:
         # 06：本轮经「/」授权的**自配写工具集**名单（contextvar，随本轮任务传播）。
         # ★ 用户 2026-10-17 裁定后，内置写工具已不过闸；这份名单只用于**自配来源的写能力**
@@ -574,6 +578,7 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
                     soul_text=soul_text, memory_text=memory_text, username=username,
                     skills_text="", cli_brief=cli_brief, profile_signal="",
                 )
+                # 瞬时错误的重试由引擎负责（agent/workflow_runner.py：同一步重试一次），这里只管取答案。
                 _res, _s = _invoke_or_stream(agent, {"messages": _c.messages}, cfg, thread_id)
                 if not _s:
                     from agent.thinking_capture import report_thinking_from_messages
@@ -586,6 +591,9 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
                     monitor.report_tool("workflow_step", {"第 %d/%d 步" % (payload.get("index", 0),
                                                                           payload.get("total", 0)):
                                                           payload.get("title", "")})
+                elif kind == "step_retry":
+                    monitor.report_thinking("（第 %d/%d 步连接抖动，已自动重试一次）"
+                                            % (payload.get("index", 0), payload.get("total", 0)))
                 elif kind == "step_done":
                     monitor.report_thinking("（第 %d/%d 步完成：%s）"
                                             % (payload.get("index", 0), payload.get("total", 0),
@@ -605,7 +613,21 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
             _wf_res = _wfr.run_workflow(_doc, _invoke_step, on_event=_on_wf_event)
             monitor.report_thinking("（workflow 结束：%s）" % ("全部完成" if _wf_res["ok"] else
                                                               "停在第 %s 步" % _wf_res["failed_at"]))
-            return _wf_res["answer"]
+            _wf_ans = _wf_res["answer"]
+            if not _wf_res["ok"]:
+                _err = str((_wf_res.get("steps") or [{}])[-1].get("error") or "")
+                if _wfr.is_transient(_err):
+                    _wf_ans += ("\n\n> 这一步是**模型/网络连接抖动**（%s），不是流程本身的问题 —— "
+                                "可以原样再发一次重跑。" % _err[:120])
+            # ★ 2026-10-17 真机报障：workflow 分支原来**提前 return**，`save_turn` 在它后面 →
+            #   这一轮根本没落库（刷新后连回答都没了，更别说"用过哪个 workflow"的痕迹）。
+            try:
+                from langchain_core.messages import AIMessage as _AIMsg
+                cs.save_turn(account_id, thread_id, question, [_AIMsg(content=_wf_ans)],
+                             picks=_picks)
+            except Exception as _e:           # noqa: BLE001
+                print(f"[06] workflow 轮落库失败（忽略）: {type(_e).__name__}: {_e}")
+            return _wf_ans
 
     cfg = {"configurable": {"thread_id": thread_id}}
     # 用户强制中断（v2.0 聊天界面优化）：登记本轮为可中断运行；中断标志由
@@ -681,7 +703,8 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
                 if um and um.get("total_tokens"):
                     tok_usage = um["total_tokens"]
                     break
-            _sr = cs.save_turn(account_id, thread_id, question, new_msgs, token_usage=tok_usage)
+            _sr = cs.save_turn(account_id, thread_id, question, new_msgs,
+                               token_usage=tok_usage, picks=_picks)
         except Exception as e:
             print(f"[M1] 会话持久化失败（忽略）: {type(e).__name__}: {e}")
 

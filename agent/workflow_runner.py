@@ -19,6 +19,17 @@ from typing import Callable
 
 MIN_STEP_OUT = 8          # 一步产出少于这么多字就视为"没干活"（防"我已完成"式空转）
 
+#: 连接抖动类的错误特征 —— **只对这类**在同一步重试一次；其它失败照旧停在该步（不掩盖真问题）
+TRANSIENT_HINTS = ("connection error", "connection reset", "connection aborted", "connection refused",
+                   "timeout", "timed out", "read timed out", "temporarily unavailable",
+                   "remote end closed", "incompleteread", "429", "500", "502", "503", "504")
+
+
+def is_transient(text) -> bool:
+    """这条错误像不像"模型/网络连接抖动"（可重试），而不是流程/工具本身的错。"""
+    t = str(text or "").lower()
+    return any(h in t for h in TRANSIENT_HINTS)
+
 
 def build_step_prompt(doc: dict, i: int, prev_out: str = "") -> str:
     """把第 i 步（0 基）编成**单步任务**提示。只描述这一步，不泄漏后续步骤。"""
@@ -64,7 +75,20 @@ def run_workflow(doc: dict, invoke: Callable[[str, int], str], *,
                 "status": "running", "output": "", "error": ""}
         emit("step_start", index=i + 1, total=len(steps), title=item["title"])
         try:
-            text = invoke(build_step_prompt(doc, i, prev), i) or ""
+            # ★ 2026-10-17 真机：第 1 步死在 `Connection error.`（模型/网络连接抖动），而裁定是
+            #   "失败停在该步"。抖动不是流程错 —— **只对这种瞬时错误**在同一步重试一次；
+            #   其它错误原样抛出、照旧停下，绝不借重试掩盖真问题。
+            _attempt = 0
+            while True:
+                try:
+                    text = invoke(build_step_prompt(doc, i, prev), i) or ""
+                    break
+                except Exception as _e:       # noqa: BLE001
+                    _attempt += 1
+                    if _attempt >= 2 or not is_transient(_e):
+                        raise
+                    emit("step_retry", index=i + 1, total=len(steps), title=item["title"],
+                         error=str(_e)[:120])
         except Exception as e:                # noqa: BLE001 —— 单步异常按"该步失败"处理
             item.update(status="failed", error="该步执行出错：%s" % e)
             out.append(item)
