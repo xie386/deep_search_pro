@@ -287,6 +287,7 @@ def build_request_context(
     cli_brief: str = "",
     profile_signal: str = "",        # M3-5：画像待更新信号（server 层算好传入）
     sources: "dict[str, str] | None" = None,   # M4-7：注册表收集到的源（None=老路径，逐字等价）
+    include_history: bool = True,             # ★ 06：workflow 每一步**不带历史**（见下方注释）
     config: ContextConfig | None = None,
     manager: ContextManager | None = None,
 ) -> ContextBundle:
@@ -318,7 +319,11 @@ def build_request_context(
     persona_msg = SystemMessage(content=dynamic_text) if dynamic_text else None
 
     # 2. 历史（SQLite 持久化）
-    history = conversation_store.get_history(account_id, thread_id)
+    # ★ 2026-10-17 真机（用户报「1 小时还停在第 3 步」）：workflow 每一步都重灌整条历史 →
+    #   提示词巨大（还会触发"历史过长自动压缩"），每步都慢。但工作流的状态本来就由**步骤链**
+    #   传递（上一步产出 → 下一步），历史毫无必要，还会把上一轮的死长回复带进来。
+    #   所以 workflow 步进时传 include_history=False：只留人格/画像/CLI 简报 + 本步提示。
+    history = conversation_store.get_history(account_id, thread_id) if include_history else []
 
     # 3. _apply_skills（M4a）：技能前缀 + 提问 → 实际用户文本
     final_user_msg = compose_user_prompt(new_user_msg, skills_text)

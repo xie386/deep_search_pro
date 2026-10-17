@@ -588,14 +588,13 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
                                     % (_doc["name"], len(_doc["steps"])))
 
             def _invoke_step(prompt: str, idx: int) -> str:
+                # ★ 2026-10-17：步骤上下文**最小化** —— 不带历史（状态由步骤链传）、不跑知识库源收集。
+                #   真机症状：10 步工作流跑 1 小时还停在第 3 步，每步都在重灌压缩过的旧历史。
                 _c = build_request_context(
-                    thread_id, account_id, prompt,
-                    username=username, skills_text="", cli_brief=cli_brief,
-                    profile_signal="", sources=context_sources.collect(account_id, prompt),
-                ) if _USE_SOURCES else build_request_context(
                     thread_id, account_id, prompt,
                     soul_text=soul_text, memory_text=memory_text, username=username,
                     skills_text="", cli_brief=cli_brief, profile_signal="",
+                    sources=None, include_history=False,
                 )
                 # 瞬时错误的重试由引擎负责（agent/workflow_runner.py：同一步重试一次），这里只管取答案。
                 # ★ 2026-10-17 真机：workflow 每步原来都走**流式**，10 步的逐字输出全灌进同一条

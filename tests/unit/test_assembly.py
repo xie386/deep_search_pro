@@ -121,3 +121,26 @@ def test_profile_signal_follows_memory_block():
     """待更新信号必须落在记忆块之后（模型先看到画像再看"该更新了"）。"""
     text = compose_dynamic_prompt("", _big_mem(), "xieky", "", profile_signal="【画像待更新】新增了 1 条兴趣。")
     assert text.index("【你的用户记忆画像】") < text.index("【画像待更新】")
+
+
+def test_workflow_steps_can_skip_history(monkeypatch):
+    """★ 2026-10-17 真机：workflow 每步都重灌整条历史 → 提示词巨大、每步都慢（1 小时还停在第 3 步）。
+
+    步进时必须能**不带历史**：状态由步骤链（prev_out）传递，历史纯属负担。
+    """
+    from agent import build_context as bc
+    from agent import conversation_store as cs
+    calls = {"n": 0}
+
+    def _count(*a, **k):
+        calls["n"] += 1
+        return []
+
+    monkeypatch.setattr(cs, "get_history", _count)
+    ctx = bc.build_request_context("th-nohist", 1, "第 2 步：抓 HN", include_history=False)
+    assert calls["n"] == 0, "include_history=False 时不该读历史"
+    assert ctx.history_len == 0
+
+    calls["n"] = 0
+    bc.build_request_context("th-hist", 1, "普通提问")
+    assert calls["n"] == 1, "默认行为不变（要读历史）"

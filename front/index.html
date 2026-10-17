@@ -5812,6 +5812,8 @@ createApp({
         if (p.message && p.message.indexOf('workflow_step') >= 0) {
           const m = p.message.match(/第 (\d+)\/(\d+) 步[：:]?\s*([^'\"}]*)/);
           if (m) {
+        // ★ 2026-10-17：新一步开始 → 清掉上一步的思考（原来只增不清，多步堆成一大坨）
+        thinkingText.value = '';
             const idx = Number(m[1]), total = Number(m[2]), title = (m[3] || '').trim();
             const prev = wfSteps.value.filter(s => s.idx !== idx && !(idx > 1 && s.status === 'run'));
             wfSteps.value = prev.map(s => s.idx < idx && s.status === 'run' ? { ...s, status: 'ok' } : s);
@@ -5820,7 +5822,9 @@ createApp({
         }
             if (p.event === 'thinking') {
               // 思考过程：追加到独立折叠区（小字灰色），不刷监控列表
-              thinkingText.value += (p.data && p.data.text) || '';
+              // 封顶 8000 字：单步内也不会无限堆（超了丢最旧的）
+              const _tx = (p.data && p.data.text) || '';
+              thinkingText.value = (thinkingText.value + _tx).slice(-8000);
               return;
             }
             const cls = p.event === 'tool_start' ? 'tool' : p.event === 'assistant_call' ? 'assistant' : p.event === 'task_result' ? 'task' : '';
