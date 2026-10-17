@@ -1,0 +1,39 @@
+{
+ "openapi": "3.0.0",
+ "info": {"title": "小小API · 黑丝图片", "version": "1"},
+ "servers": [{"url": "https://v2.xxapi.cn"}],
+ "paths": {
+  "/api/heisi": {
+   "get": {
+    "operationId": "heisiImage",
+    "summary": "随机返回一张黑丝图片地址",
+    "parameters": [
+     {
+      "name": "return",
+      "in": "query",
+      "required": false,
+      "description": "传 302 时直接 302 跳到图片地址；不传则返回 JSON",
+      "schema": {"type": "string", "enum": ["302"]}
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "code": {"type": "integer"},
+          "msg": {"type": "string"},
+          "data": {"type": "string", "description": "图片地址（http/https）"}
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ }
+}

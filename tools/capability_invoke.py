@@ -359,6 +359,70 @@ _IMG_EXT = {"image/png": ".png", "image/jpeg": ".jpg", "image/jpg": ".jpg", "ima
             "image/gif": ".gif", "image/svg+xml": ".svg", "image/bmp": ".bmp"}
 
 
+#: 正文里出现的图片地址（图片类 API 绝大多数返回 URL 而不是字节）
+_IMG_URL_RE = re.compile(r"https?://[^\s\"'<>()\[\]\\]+?\.(?:png|jpe?g|webp|gif|bmp|svg)"
+                         r"(?:\?[^\s\"'<>()\[\]\\]*)?", re.I)
+
+
+def _extract_image_urls(text: str, limit: int = 3) -> list[str]:
+    """从工具返回的正文里挑出图片地址（按出现顺序去重，最多 `limit` 个）。"""
+    out: list[str] = []
+    for m in _IMG_URL_RE.finditer(text or ""):
+        u = m.group(0)
+        if u not in out:
+            out.append(u)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _is_private_host(host: str) -> bool:
+    """SSRF 兜底：内网/回环/保留地址一律不下（来源级 `allow_private` 明确允许时除外）。"""
+    import ipaddress
+    import socket
+    h = (host or "").strip().lower()
+    if not h or h == "localhost" or h.endswith((".local", ".internal")):
+        return True
+    try:
+        infos = socket.getaddrinfo(h, None)
+    except Exception:  # noqa: BLE001 —— 解析不了就交给 httpx 去失败
+        return False
+    for _fam, _t, _p, _c, sa in infos:
+        try:
+            ip = ipaddress.ip_address(sa[0])
+        except Exception:  # noqa: BLE001
+            continue
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            return True
+    return False
+
+
+def _download_image(url: str, *, allow_private: bool = False,
+                    max_bytes: int = 5 * 1024 * 1024, timeout: float = 15.0):
+    """把图片地址下载下来，返回 `(bytes, ctype)`；任何异常/非图片/超限都返回 None。"""
+    import httpx
+    from urllib.parse import urlparse
+    try:
+        u = urlparse(url or "")
+        if u.scheme not in ("http", "https"):
+            return None
+        if not allow_private and _is_private_host(u.hostname or ""):
+            return None
+        with httpx.Client(timeout=timeout, follow_redirects=True) as cli:
+            r = cli.get(url)
+            if r.status_code // 100 != 2:
+                return None
+            ctype = (r.headers.get("content-type") or "").lower()
+            if not ctype.startswith("image/"):
+                return None
+            raw = r.content or b""
+            if not raw or len(raw) > max_bytes:
+                return None
+            return raw, ctype
+    except Exception:  # noqa: BLE001 —— 下载失败不该影响调用本身
+        return None
+
+
 def _save_tool_image(account_id: int | None, ref: str, blob: bytes, ctype: str) -> str:
     """把接口返回的图片落到**当前工作目录**的 `_tool_images/`，返回给模型看的说明 + 渲染标记。
 
@@ -494,6 +558,20 @@ def invoke(ref: str, args: dict | None = None, *, account_id: int | None = None,
             # douyinhot（52KB）：同样 6000 字符里能看到的条目从 5 条提到 6 条——**提升有限**，
             # 因为该接口的体积主要来自 `word_cover.url_list` 这类长 URL，不是缩进。
             txt = json.dumps(body, ensure_ascii=False, separators=(",", ":"))
+        # ★ 2026-10-18（用户提出）：图片类 API 大多返回**图片地址**而不是字节。
+        #   正文里出现图片 URL 就替用户下载、按图片落盘，并附 [[img:…]]（前端直接显示）。
+        #   最多 3 张、单张 ≤5MB、超时 15s；失败静默跳过（正文仍保留原链接）。
+        if not blast and src_kind in ("api", "mcp"):
+            try:
+                _marks = []
+                for _u in _extract_image_urls(txt):
+                    _got = _download_image(_u, allow_private=bool(cfg.get("allow_private")))
+                    if _got:
+                        _marks.append(_save_tool_image(account_id, ref, _got[0], _got[1]))
+                if _marks:
+                    txt = txt + "\n" + "\n".join(_marks)
+            except Exception:  # noqa: BLE001 —— 图片下载是锦上添花，绝不因此让调用失败
+                pass
         cut = False
         src_name = src.get("name") or src.get("slug")
         _page_hint = _paging_hint(schema)
