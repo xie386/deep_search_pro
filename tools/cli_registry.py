@@ -507,6 +507,23 @@ def allowed_for_agent(account_id: int | None) -> dict[str, dict]:
     return out
 
 
+def readonly_entry_for(account_id: int | None, bin_name: str) -> dict | None:
+    """**写池** CLI 的只读运行期条目（不含 write_rules）。
+
+    ★ 2026-10-18 真机：给 CLI 填了「写命令清单」→ 自动进写池 → `allowed_for_agent` 把整条 CLI 排除，
+      于是它的**只读**子命令在 CLI 面板里也跑不了（报「命令 'officecli' 不在白名单」）。
+      写池的语义是"不进路由、写能力要用「/」授权"，**不是"只读也不许跑"** —— 这里补上只读入口；
+      不带 `authorized`/`write_rules`，所以写子命令照旧被 `readonly_verdict` 拒绝。
+    """
+    c = by_bin(account_id, bin_name)
+    if not c or c["state"] not in LIVE_STATES or not c["rules"]:
+        return None
+    return {"cli_id": c["id"], "name": c["name"], "state": c["state"],
+            "readonly": [list(t) for t in c["rules"]],
+            "agent_commands": c["agent_commands"],
+            "detected": c["detected"], "max_runtime": 30}
+
+
 def by_bin(account_id: int | None, bin_name: str) -> dict | None:
     for c in list_clis(account_id):
         if c["bin"] == bin_name:

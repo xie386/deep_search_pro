@@ -59,3 +59,28 @@ def test_ability_draft_needs_at_least_one_list():
     with pytest.raises(HTTPException) as e:
         cust.cli_ability_generate("X", "xcli", "", docs_mode="help")
     assert "只读命令清单" in str(e.value.detail) and "写命令清单" in str(e.value.detail)
+
+
+def test_write_pool_cli_readonly_still_runnable(monkeypatch, tmp_path):
+    """★ 2026-10-18 真机：写池 CLI 连只读子命令都被拒（面板报「命令 'officecli' 不在白名单」）。
+
+    写池的正确语义：**不进路由、写能力要「/」授权**；只读查询照样能跑。
+    """
+    _db(monkeypatch, tmp_path)
+    from tools import cli_registry as reg
+    monkeypatch.setattr(reg, "_sync_pool", lambda *a, **k: None)
+    reg.save_cli(11, {"name": "假工具", "bin": "rotool", "state": "authed",
+                      "readonly": "view\nget", "write_cmds": "create\nset"})
+
+    assert "rotool" not in reg.allowed_for_agent(11), "写池不进路由池（这条不能破）"
+    e = reg.readonly_entry_for(11, "rotool")
+    assert e and [list(t) for t in e["readonly"]] == [["view"], ["get"]]
+    assert "write_rules" not in e and not e.get("authorized")
+
+    from tools._runtime import shell_runtime as sh
+    monkeypatch.setattr(sh, "active_workdir", lambda *a, **k: tmp_path)
+    r = sh.execute("rotool", ["view", "a.docx"], username="t_cli", account_id=11)
+    assert "不在白名单" not in (r.get("error") or ""), r
+    # 写子命令：没经「/」授权 → 被第三方 CLI 闸拒掉（不是"不在白名单"，而是"不允许执行"）
+    w = sh.execute("rotool", ["set", "a.docx"], username="t_cli", account_id=11)
+    assert w.get("ok") is False and "第三方 CLI" in (w.get("error") or ""), w

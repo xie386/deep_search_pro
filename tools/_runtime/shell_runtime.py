@@ -449,13 +449,20 @@ def execute(command: str, args: list[str] | None = None, timeout: int | None = N
                 dyn = cli_registry.authorized_entry_for(account_id, command)
         except Exception:                   # noqa: BLE001 —— 授权记录读不到 = 未授权
             dyn = None
+    # ★ 2026-10-18 真机：配了写命令清单的 CLI 会自动进写池 → 上面那条把整条 CLI 排除，
+    #   连**只读**子命令都跑不了（用户报「命令 'officecli' 不在白名单」）。写池只该管"写要不要授权"，
+    #   不该连读都不许 —— 落一层只读入口（不带 write_rules，写子命令照旧被拒）。
+    if dyn is None and meta is None:
+        dyn = cli_registry.readonly_entry_for(account_id, command)
     if dyn is None and meta is None and adhoc and command in adhoc:
         dyn = {"readonly": adhoc[command], "adhoc": True}
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
     uname = _safe_username(username)
 
     if meta is None and dyn is None:
-        live = sorted(cli_registry.allowed_for_agent(account_id))
+        live = sorted(set(cli_registry.allowed_for_agent(account_id))
+                      | {c["bin"] for c in cli_registry.list_clis(account_id)
+                         if c["state"] in cli_registry.LIVE_STATES and c["rules"]})
         hint = f"；已接入的第三方 CLI：{'/'.join(live)}" if live else ""
         msg = f"命令 '{command}' 不在白名单：{'/'.join(ALLOWED_COMMANDS)}{hint}"
         _audit({"ts": ts, "user": uname, "cmd": command, "args": args, "ok": False,
@@ -593,6 +600,13 @@ def allowed_commands(username: str | None = None, account_id: int | None = None)
     sandbox = active_workdir(username, account_id)   # 06：白名单清单里的 cwd 同步
     live = cli_registry.allowed_for_agent(account_id)
     third = []
+    # ★ 写池 CLI 的**只读**命令也要能在这里看到/试跑（写能力仍要「/」授权）
+    for c in cli_registry.list_clis(account_id):
+        if c["state"] in cli_registry.LIVE_STATES and c["rules"] and c["bin"] not in live:
+            live[c["bin"]] = {"cli_id": c["id"], "name": c["name"], "state": c["state"],
+                              "readonly": [list(t) for t in c["rules"]],
+                              "agent_commands": c["agent_commands"],
+                              "detected": c["detected"], "max_runtime": 30, "pool": "write"}
     for bin_name, info in sorted(live.items()):
         third.append({
             "name": bin_name,
