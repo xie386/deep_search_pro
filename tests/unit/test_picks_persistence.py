@@ -61,3 +61,13 @@ def test_workflow_branch_saves_turn_before_returning():
     seg = src[i:j]
     assert "cs.save_turn(" in seg, "workflow 轮必须落库（否则刷新后回答与标签全没了）"
     assert "picks=_picks" in seg, "落库时要带本轮「/」的选择（气泡标签靠它）"
+
+
+def test_error_branch_saves_turn_too():
+    """★ 2026-10-17 真机：500 那条分支原来**一条都不落库** → 报错会话一刷新就消失、没法溯源。"""
+    src = (ROOT / "api" / "server.py").read_text(encoding="utf-8")
+    i = src.index("except Exception as e:  # 不吞掉错误，给出可读信息")
+    j = src.index("raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR", i)
+    seg = src[i:j]
+    assert "cs.save_turn(" in seg, "报错轮要把提问+报错落库（否则刷新后消失）"
+    assert "picks=" in seg, "报错轮也要带本轮「/」的选择"

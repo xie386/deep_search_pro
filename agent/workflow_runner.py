@@ -21,8 +21,13 @@ MIN_STEP_OUT = 8          # 一步产出少于这么多字就视为"没干活"�
 
 #: 连接抖动类的错误特征 —— **只对这类**在同一步重试一次；其它失败照旧停在该步（不掩盖真问题）
 TRANSIENT_HINTS = ("connection error", "connection reset", "connection aborted", "connection refused",
+                   "connection closed", "peer closed", "broken pipe", "eof",
                    "timeout", "timed out", "read timed out", "temporarily unavailable",
-                   "remote end closed", "incompleteread", "429", "500", "502", "503", "504")
+                   "remote end closed", "incompleteread", "429", "500", "502", "503", "504",
+                   # ★ 中文口径也要认（真机报错就是中文的："连接时长过长被上游切断"）——
+                   #   只写英文特征等于不会触发重试（2026-10-17 踩到）。
+                   "连接时长过长", "被上游切断", "上游切断", "超时", "连接中断", "连接被重置",
+                   "连接已关闭", "远端关闭", "网络错误", "服务暂时不可用")
 
 
 def is_transient(text) -> bool:
@@ -46,7 +51,12 @@ def build_step_prompt(doc: dict, i: int, prev_out: str = "") -> str:
         parts.append("本步期望产出：%s" % s["output"])
     if prev_out:
         parts.append("上一步的产出（供你衔接，不要重复做）：\n%s" % prev_out.strip()[:2000])
-    parts.append("只完成这一步，给出本步结论即可；**不要**自行开始后面的步骤。")
+    # ★ 2026-10-17 真机：原句只写"不要自行开始后面的步骤"，模型理解成"等用户发话才继续"，
+    #   输出里出现"后面 6 步等老大发话再动"、甚至**反问**（而引擎没有中途对话机制，没人会回答）。
+    #   改成：说清"程序会自动接着跑"，并禁止等待式措辞与反问。
+    parts.append("只完成这一步并给出本步结论 —— **下一步由程序自动接着执行**，"
+                 "不需要征求我同意，也**不要**写「等你发话 / 等确认 / 是否继续」这类等待式措辞。")
+    parts.append("若信息不全：写清缺什么，并**按现有信息给出本步结论**；不要反问（这一步没有人会回答你）。")
     return "\n".join(parts)
 
 
@@ -115,11 +125,13 @@ def run_workflow(doc: dict, invoke: Callable[[str, int], str], *,
         answer = "已按 workflow「%s」跑完 %d 步：\n\n" % (name, len(steps)) + "\n\n".join(
             "%d. %s\n%s" % (i + 1, x["title"], x["output"]) for i, x in enumerate(out))
     elif failed_at:
-        done = [x for x in out if x["status"] == "ok"]
+        done = [(i + 1, x) for i, x in enumerate(out) if x["status"] == "ok"]
+        # ★ 2026-10-17：把已完成步骤的**产出摘要**一并写进回答 —— 否则刷新后只剩"停在第 6 步"，
+        #   前面几步查到了什么、比价结论是什么全都看不到（用户报障："没办法查数据溯源"）。
+        done_txt = "\n\n".join("%d. %s\n%s" % (n, x["title"], (x.get("output") or "").strip()[:300])
+                                for n, x in done) or "（无）"
         answer = ("workflow「%s」在第 %d/%d 步停下（%s）。\n\n已完成的步骤：\n%s\n\n未继续的原因：%s"
-                  % (name, failed_at, len(steps), out[-1]["title"],
-                     "\n".join("%d. %s" % (i + 1, x["title"]) for i, x in enumerate(done)) or "（无）",
-                     out[-1]["error"]))
+                  % (name, failed_at, len(steps), out[-1]["title"], done_txt, out[-1]["error"]))
     else:
         answer = "workflow「%s」没有可执行的步骤。" % name
     return {"ok": ok_all, "name": name, "steps": out, "answer": answer, "failed_at": failed_at}

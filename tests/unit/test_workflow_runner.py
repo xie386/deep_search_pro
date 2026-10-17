@@ -127,3 +127,17 @@ def test_is_transient_classifier():
     assert wr.is_transient("HTTP 503 Service Unavailable")
     assert not wr.is_transient("参数不对：缺 id")
     assert not wr.is_transient("")
+    # ★ 真机报错是中文的：只认英文特征等于不重试（2026-10-17 踩到）
+    assert wr.is_transient("连接时长过长被上游切断")
+    assert wr.is_transient("请求超时")
+
+
+def test_step_prompt_says_next_step_is_automatic():
+    """★ 2026-10-17 真机：原措辞让模型以为"等用户发话"，还反问 —— 引擎没有中途对话机制。
+
+    单步提示要明说"下一步由程序自动继续"，并禁止等待式措辞/反问。
+    """
+    p = wr.build_step_prompt(DOC, 0)
+    assert "自动接着执行" in p and "不要" in p and "等你发话" in p
+    assert "不要反问" in p
+    assert "不要自行开始后面的步骤" not in p, "旧措辞会让模型停下来等用户（已废弃）"

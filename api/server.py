@@ -917,6 +917,19 @@ async def api_chat(
         #   ② 落一份**完整 traceback**（控制台 + `data/audit/agent_errors.jsonl`）——
         #   实测「Agent 执行出错」只有一行 message 时根本定位不了（卡死 + cannot schedule 那次就是）。
         _log_agent_error(e, thread_id, sess.get("account_id"), question)
+        # ★ 2026-10-17 真机：这一轮原来**一条都没落库**（只写审计日志 + 抛 500）→ 刷新后提问与
+        #   半截进度全消失，用户没法溯源（"第一次被切断，报错会话刷新就没了"）。
+        #   这里照「中断」那支的做法：把提问 + 报错回答落库，保持问-答成对、可回看。
+        _err_text = ("⚠️ 本轮未能完成（执行出错）。\n\n"
+                     "%s\n\n%s: %s" % (_llm_error_hint(e, provider=_act), type(e).__name__, e))
+        try:
+            cs.save_turn(sess.get("account_id"), thread_id, question,
+                         [AIMessage(content=_err_text)],
+                         picks={"skills": [s for s in (skill_names or []) if s],
+                                "write_sets": [s for s in (_ws_names or []) if s],
+                                "workflows": [s for s in (_wf_names or []) if s]})
+        except Exception as _e2:
+            print(f"[报错轮] 落库失败（忽略）: {type(_e2).__name__}: {_e2}")
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
                             f"Agent 执行出错：{_llm_error_hint(e, provider=_act)}\n\n{type(e).__name__}: {e}")
     finally:
