@@ -347,66 +347,6 @@ def voice_speak_status(task_id: str) -> dict:
         return {"task_id": task_id, "status": task["status"],
                 "url": task.get("url"), "error": task.get("error")}
 
-    pack_name = (req.pack_name or "").strip()
-    if not pack_name:
-        pack_name = _active_pack_name(user)
-        if not pack_name:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                                "尚未选择语音包，请先在「定制助手 → 语音包」创建并选中一个音色")
-    else:
-        # 前端传的是显示名，转全名
-        full = _full_pack_name(user, pack_name)
-        if not (VOICE_PACKS_DIR / f"{full}.pkl").exists():
-            raise HTTPException(status.HTTP_404_NOT_FOUND, f"语音包「{pack_name}」不存在")
-        pack_name = full
-
-    out_dir = _user_tts_out_dir(user)
-    import time
-    ts = time.strftime("%Y%m%d_%H%M%S")
-    wav_path = out_dir / f"{ts}_{uuid.uuid4().hex[:4]}.wav"
-
-    # 长文本分段：每段 ≤100 字，写入 lines.txt，synth.py --in 批量合成（只加载一次模型）
-    segments = _split_segments(text, _PER_SEGMENT)
-    work_dir = out_dir / f"{wav_path.stem}_seg"
-    work_dir.mkdir(parents=True, exist_ok=True)
-    lines_file = work_dir / "lines.txt"
-    lines_file.write_text("\n".join(segments), encoding="utf-8")
-
-    cmd = [str(VOICE_PY), str(SYNTH_SCRIPT),
-           "--pack", pack_name,
-           "--in", str(lines_file),
-           "--out-dir", str(work_dir)]
-    try:
-        with _tts_lock:
-            proc = subprocess.run(cmd, capture_output=True, text=True,
-                                  encoding="utf-8", errors="replace",
-                                  timeout=900, env=_clean_env())
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT,
-                            "语音合成超时（>15分钟）。长文本分段合成较慢，请重试")
-    except Exception as e:
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"执行合成脚本失败: {e}")
-
-    if proc.returncode != 0:
-        import shutil
-        shutil.rmtree(work_dir, ignore_errors=True)
-        tail = (proc.stdout + proc.stderr)[-800:]
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            f"语音合成失败（voice_test 输出）:\n{tail}")
-
-    # 拼接各段 wav（wave 标准库，零依赖；synth.py 输出同采样率/声道/位深）
-    try:
-        _concat_wavs(sorted(work_dir.glob("*.wav")), wav_path)
-    except Exception as e:
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"拼接音频失败: {e}")
-    finally:
-        import shutil
-        shutil.rmtree(work_dir, ignore_errors=True)
-
-    if not wav_path.is_file():
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "合成脚本未产出音频文件")
-    return {"ok": True, "url": f"/api/tts/audio?name={wav_path.name}", "wav": str(wav_path)}
-
 
 def _clean_tts_text(text: str) -> str:
     """朗读前清洗：去 markdown 语法/表格/emoji/HTML/链接，转纯自然语言。

@@ -415,6 +415,24 @@ def _invoke_or_stream(agent, payload, cfg, thread_id):
     return final_state, True
 
 
+def _save_turn_safe(account_id, thread_id: str, question: str, answer: str,
+                    picks: dict | None = None) -> bool:
+    """落一条「提问 + 回答」（含本轮「/」选择）；失败只打日志，绝不拖垮回复。
+
+    ★ 2026-10-17 教训（连踩三次）：不要在 `_run_agent` 里直接用 `cs` —— 它的 import 在函数**后半段**，
+      前半段（workflow 分支）用它就会 `UnboundLocalError`，而异常又被 except 吞成一行日志 →
+      **那一轮静默不落库**（用户看到"成功的一轮刷新后也不见了"）。这里 import 就地取，作用域不可能错。
+    """
+    try:
+        from langchain_core.messages import AIMessage as _AIM
+        from agent import conversation_store as _cs
+        _cs.save_turn(account_id, thread_id, question, [_AIM(content=answer)], picks=picks)
+        return True
+    except Exception as e:                    # noqa: BLE001
+        print(f"[06] 本轮落库失败（忽略）: {type(e).__name__}: {e}")
+        return False
+
+
 def _run_agent(question: str, thread_id: str, account_id: int | None = None,
                skill_names: list[str] | None = None,
                image_ids: list[str] | None = None,
@@ -621,12 +639,7 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
                                 "可以原样再发一次重跑。" % _err[:120])
             # ★ 2026-10-17 真机报障：workflow 分支原来**提前 return**，`save_turn` 在它后面 →
             #   这一轮根本没落库（刷新后连回答都没了，更别说"用过哪个 workflow"的痕迹）。
-            try:
-                from langchain_core.messages import AIMessage as _AIMsg
-                cs.save_turn(account_id, thread_id, question, [_AIMsg(content=_wf_ans)],
-                             picks=_picks)
-            except Exception as _e:           # noqa: BLE001
-                print(f"[06] workflow 轮落库失败（忽略）: {type(_e).__name__}: {_e}")
+            _save_turn_safe(account_id, thread_id, question, _wf_ans, picks=_picks)
             return _wf_ans
 
     cfg = {"configurable": {"thread_id": thread_id}}
@@ -922,14 +935,10 @@ async def api_chat(
         #   这里照「中断」那支的做法：把提问 + 报错回答落库，保持问-答成对、可回看。
         _err_text = ("⚠️ 本轮未能完成（执行出错）。\n\n"
                      "%s\n\n%s: %s" % (_llm_error_hint(e, provider=_act), type(e).__name__, e))
-        try:
-            cs.save_turn(sess.get("account_id"), thread_id, question,
-                         [AIMessage(content=_err_text)],
-                         picks={"skills": [s for s in (skill_names or []) if s],
-                                "write_sets": [s for s in (_ws_names or []) if s],
-                                "workflows": [s for s in (_wf_names or []) if s]})
-        except Exception as _e2:
-            print(f"[报错轮] 落库失败（忽略）: {type(_e2).__name__}: {_e2}")
+        _save_turn_safe(sess.get("account_id"), thread_id, question, _err_text,
+                        picks={"skills": [s for s in (skill_names or []) if s],
+                               "write_sets": [s for s in (_ws_names or []) if s],
+                               "workflows": [s for s in (_wf_names or []) if s]})
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
                             f"Agent 执行出错：{_llm_error_hint(e, provider=_act)}\n\n{type(e).__name__}: {e}")
     finally:

@@ -159,7 +159,7 @@ def run_digest(sub_id: int, owner_id: int, conn=None) -> dict:
         try:
             # M4-8：路径与正文都走唯一事实源（tools/user_doc_paths.py）——周报与聊天必须读同一份文件
             from tools import user_doc_paths as _paths
-            _mem = _paths.read_memory_for_agent(user)
+            _mem = _paths.read_memory_for_agent(username)
             if "## USER PROFILE" in _mem:
                 _seg = _mem.split("## USER PROFILE", 1)[1]
                 _seg = _seg.split("## ", 1)[0].strip()

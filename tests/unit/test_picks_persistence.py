@@ -59,7 +59,7 @@ def test_workflow_branch_saves_turn_before_returning():
     i = src.index("_wf_res = _wfr.run_workflow(")
     j = src.index("return _wf_ans", i)
     seg = src[i:j]
-    assert "cs.save_turn(" in seg, "workflow 轮必须落库（否则刷新后回答与标签全没了）"
+    assert "_save_turn_safe(" in seg, "workflow 轮必须落库（否则刷新后回答与标签全没了）"
     assert "picks=_picks" in seg, "落库时要带本轮「/」的选择（气泡标签靠它）"
 
 
@@ -69,5 +69,37 @@ def test_error_branch_saves_turn_too():
     i = src.index("except Exception as e:  # 不吞掉错误，给出可读信息")
     j = src.index("raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR", i)
     seg = src[i:j]
-    assert "cs.save_turn(" in seg, "报错轮要把提问+报错落库（否则刷新后消失）"
+    assert "_save_turn_safe(" in seg, "报错轮要把提问+报错落库（否则刷新后消失）"
     assert "picks=" in seg, "报错轮也要带本轮「/」的选择"
+
+
+def test_save_turn_safe_never_raises(monkeypatch):
+    """★ 2026-10-17：`cs` 作用域坑导致落库抛 UnboundLocalError，被 except 吞成一行日志 → 静默丢轮。
+
+    这个助手**就地 import**，且任何失败都只返回 False、不影响回复。
+    """
+    from api import server
+    import agent.conversation_store as csmod
+
+    def _boom(*a, **k):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(csmod, "save_turn", _boom)
+    assert server._save_turn_safe(1, "th", "q", "a", picks={"skills": ["x"]}) is False
+
+
+def test_save_turn_safe_writes_row(monkeypatch, tmp_path):
+    from tools import schema_personal as sp
+    monkeypatch.delenv("PERSONAL_DB_PATH", raising=False)
+    monkeypatch.setattr(sp, "DB_PATH", str(tmp_path / "t.db"))
+    sp.ensure_tables()
+    conn = sp.get_personal_conn()
+    conn.execute("INSERT INTO accounts (id, username, password_hash) VALUES (9,'t_safe','x')")
+    conn.commit(); conn.close()
+
+    from api import server
+    assert server._save_turn_safe(9, "th-safe", "问题", "回答", picks={"workflows": ["W"]}) is True
+    from agent import conversation_store as cs
+    rows = cs.get_messages_plain(9, "th-safe")
+    assert [r["role"] for r in rows] == ["user", "assistant"]
+    assert rows[0]["picks"] == {"workflows": ["W"]}
