@@ -2223,6 +2223,7 @@ async def cli_ability_draft(req: dict = Body(...), token: str = Query(...)):
                                      docs=req.get("docs") or "",
                                      docs_mode=req.get("docs_mode") or "url",
                                      help_text=req.get("help_text") or "",
+                                     write_rules_text=req.get("write_cmds") or "",
                                      username=sess.get("username"),
                                      account_id=sess.get("account_id"),
                                      refresh_docs=bool(req.get("refresh_docs")))

@@ -258,6 +258,12 @@ def _validate_payload(payload: dict, *, existing_bins: set[str], cur=None) -> di
     else:
         raw_rules = payload.get("readonly") or ""
     rules, notes = parse_rules(raw_rules, bin_name)
+    # 06：写命令清单（可选；留空 = 不进写池）。同样是「缺省即保留」，显式空串 = 清空。
+    if "write_cmds" not in payload or payload.get("write_cmds") is None:
+        raw_write = ((cur.get("write_cmds") if isinstance(cur, dict) else "") or "")
+    else:
+        raw_write = payload.get("write_cmds") or ""
+    write_rules, write_notes = parse_rules(raw_write, bin_name)
     # M5 能力描述：同样「缺省即保留」——只改个名字不该把路由描述清空；
     # 允许换行（表单里是 textarea，多行更好编辑），注入简报时会被压平成一行。
     if "abilities" not in payload or payload.get("abilities") is None:
@@ -266,6 +272,8 @@ def _validate_payload(payload: dict, *, existing_bins: set[str], cur=None) -> di
         abilities = _clean_text(payload.get("abilities"), MAX_ABILITIES_HARD, "能力描述", allow_multiline=True)
     return {"name": name, "bin": bin_name, "install_cmd": install_cmd, "auth_cmd": auth_cmd,
             "docs": docs, "docs_mode": docs_mode, "rules": rules, "notes": notes,
+            "write_rules": write_rules, "write_notes": write_notes,
+            "write_text": "\n".join(" ".join(t) for t in write_rules),
             "abilities": abilities, "existing_bins": existing_bins}
 
 
@@ -331,6 +339,8 @@ def list_clis(account_id: int | None) -> list[dict]:
             "abilities": (r["abilities"] or "") if "abilities" in r.keys() else "",
             "rules": rules,
             "write_rules": write_rules,
+            # 06：原始写命令文本（编辑表单回填 + "缺省即保留"用；空串=不进写池）
+            "write_cmds": (r["write_cmds"] if "write_cmds" in r.keys() else "") or "",
             # 06：池归属（readonly / write）。**只由用户设定**，默认只读池 —— 不许按初始识别推导
             #     （Verdict/06 裁定 6：用户强制确认为只读的能力必须继续留在路由池）。
             "pool": (r["pool"] if "pool" in r.keys() else "readonly") or "readonly",
@@ -400,20 +410,27 @@ def save_cli(account_id: int | None, payload: dict) -> dict:
         if state not in STATES:
             raise CliConfigError(f"状态非法：{state}")
         readonly_text = "\n".join(" ".join(t) for t in data["rules"])
+        write_text = data.get("write_text") or ""
         abilities = data.get("abilities") or ""
+        # ★ 06（2026-10-17 用户要求）：**填了写命令清单 → 这条 CLI 自动进写工具池**。
+        #   只自动"升"不自动"降"：清空清单不把用户手动设过的归属改回去（去「写工具池」面板手动切）。
+        auto_pool = "write" if data.get("write_rules") else None
         if cur_id is None:
             conn.execute(
-                "INSERT INTO user_clis (account_id, name, bin, install_cmd, auth_cmd, docs, docs_mode, readonly, state, note, abilities, updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?, datetime('now','localtime'))",
+                "INSERT INTO user_clis (account_id, name, bin, install_cmd, auth_cmd, docs, docs_mode, readonly, write_cmds, state, note, abilities, pool, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, datetime('now','localtime'))",
                 (int(account_id), data["name"], data["bin"], data["install_cmd"], data["auth_cmd"],
-                 data["docs"], data["docs_mode"], readonly_text, state, note, abilities))
+                 data["docs"], data["docs_mode"], readonly_text, write_text, state, note, abilities,
+                 auto_pool or "readonly"))
             cur_id = conn.execute("SELECT last_insert_rowid() AS i").fetchone()["i"]
         else:
             conn.execute(
-                "UPDATE user_clis SET name=?, bin=?, install_cmd=?, auth_cmd=?, docs=?, docs_mode=?, readonly=?, state=?, note=?, abilities=?, "
-                "updated_at=datetime('now','localtime') WHERE account_id=? AND id=?",
+                "UPDATE user_clis SET name=?, bin=?, install_cmd=?, auth_cmd=?, docs=?, docs_mode=?, readonly=?, write_cmds=?, "
+                "state=?, note=?, abilities=?, pool=COALESCE(?, pool), updated_at=datetime('now','localtime') "
+                "WHERE account_id=? AND id=?",
                 (data["name"], data["bin"], data["install_cmd"], data["auth_cmd"], data["docs"],
-                 data["docs_mode"], readonly_text, state, note, abilities, int(account_id), cur_id))
+                 data["docs_mode"], readonly_text, write_text, state, note, abilities,
+                 auto_pool, int(account_id), cur_id))
         conn.commit()
     finally:
         conn.close()

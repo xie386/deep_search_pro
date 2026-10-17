@@ -3709,6 +3709,10 @@
                 <textarea v-model="cliForm.readonly" rows="6"
                           placeholder="notes top&#10;readdata summary&#10;（整条粘贴也行：weread notes export 123 --format markdown）"></textarea>
               </label>
+              <label class="wide">写命令清单（可选，每行一条；填了这条 CLI 就<b>自动进写工具池</b>，只有你在「/」里选中它才放行）
+                <textarea v-model="cliForm.write_cmds" rows="5"
+                          placeholder="create&#10;add&#10;set&#10;remove&#10;batch&#10;（留空 = 不进写池；写能力永不被纯文字路由唤起）"></textarea>
+              </label>
               <label class="wide">能力描述（让 AI 在你说「人话」时想起用它；留空 = 只给 AI 看命令名清单）
                 <textarea v-model="cliForm.abilities" rows="4"
                           placeholder="关键词：读书/阅读/书架/我在读/笔记/划线/书评/找书。&#10;我正在读什么书→shelf recent；帮我找书→search；我的笔记与划线→notes notebooks"></textarea>
@@ -3786,6 +3790,12 @@
             </div>
 
             <div class="cli-agent">
+              <div class="cli-agent-h" v-if="c.write_rules && c.write_rules.length">
+                ✍️ 允许的写命令 {{ c.write_rules.length }} 条（仅在「/」选中本工具集后放行）：
+                <span class="cli-cmd" v-for="w in c.write_rules" :key="'w'+w.join('-')"
+                      :title="'点击复制：' + c.bin + ' ' + w.join(' ')"
+                      @click="copyCmd(c.bin + ' ' + w.join(' '))">{{ w.join(' ') }}</span>
+              </div>
               <div class="cli-agent-h" v-if="c.agent_commands.length">🤖 AI 可代跑的只读命令（点命令复制 · 点 ▶ 试跑）</div>
               <div class="cli-agent-h" v-else>🤖 AI 代跑：未开放（只读命令清单为空）</div>
               <div class="cli-agent-list" v-if="c.agent_commands.length">
@@ -7999,7 +8009,7 @@ createApp({
       // helpText 是**临时字段**（只用于草稿生成，不落库）：文档没覆盖的命令，用户可以粘 --help 原文
       // docs_mode：能力描述的依据三选一（url 网址 / path 本机文件 / help 跑 --help），单选
       return { id: null, name: '', bin: '', install_cmd: '', auth_cmd: '', docs: '', docs_mode: 'url',
-               readonly: '', state: 'none', note: '', abilities: '', helpText: '' };
+               readonly: '', write_cmds: '', state: 'none', note: '', abilities: '', helpText: '' };
     }
     const cliForm = ref(emptyCliForm());
 
@@ -8041,6 +8051,7 @@ createApp({
       cliForm.value = Object.assign(emptyCliForm(), {
         id: c.id, name: c.name, bin: c.bin, install_cmd: c.install_cmd, auth_cmd: c.auth_cmd,
         docs: c.docs, docs_mode: c.docs_mode || 'url', readonly: c.readonly,
+        write_cmds: c.write_cmds || '',
         state: c.state, note: c.note, abilities: c.abilities || '',
       });
       cliEditing.value = true;
@@ -8070,8 +8081,8 @@ createApp({
       if (!token.value || cliDrafting.value) return;
       cliErr.value = '';
       const f = cliForm.value;
-      if (!(f.readonly || '').trim()) {
-        cliErr.value = '请先填「只读命令清单」——能力描述里的命令必须来自它';
+      if (!((f.readonly || '').trim() || (f.write_cmds || '').trim())) {
+        cliErr.value = '请先填「只读命令清单」或「写命令清单」——能力描述里的命令必须来自清单';
         return;
       }
       cliDrafting.value = true;
@@ -8083,11 +8094,14 @@ createApp({
           // help_text：url|path 模式下，文档没覆盖时用户粘的 --help 原文
           body: JSON.stringify({ name: f.name, bin: f.bin, readonly: f.readonly,
                                  docs: f.docs, docs_mode: f.docs_mode || 'url',
-                                 help_text: f.helpText }),
+                                 write_cmds: f.write_cmds || '', help_text: f.helpText }),
         });
         const d = await r.json();
         if (!r.ok) { cliErr.value = d.detail || '生成失败'; return; }
-        cliForm.value.abilities = d.content || '';
+        // 06：写命令那段并进同一份「能力描述」（只在用户用「/」选中本工具集时才注入）
+        cliForm.value.abilities = [ (d.content || '').trim(),
+                                    d.write_content ? ('【写命令】\n' + d.write_content.trim()) : '' ]
+                                   .filter(Boolean).join('\n');
         // 证据与审计回显（2026-09-24）：告诉用户这份草稿**基于什么**写的、哪里可疑
         const ev = d.evidence || {}, dcs = ev.docs || {}, hp = ev.help || {};
         const srcLabel = dcs.label || (dcs.mode === 'help' ? '本机 --help 取证' : '官方文档');

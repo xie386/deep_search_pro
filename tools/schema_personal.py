@@ -549,9 +549,11 @@ CREATE TABLE IF NOT EXISTS sessions (
                 docs        TEXT DEFAULT '',                -- 能力描述的依据：网址 / 本机文件路径（模式见 docs_mode；help 模式此列为空）
                 docs_mode   TEXT DEFAULT 'url',             -- 依据来源三选一：url（网址）| path（本机文件）| help（跑 --help 取证）
                 readonly    TEXT DEFAULT '',                -- 只读命令清单：每行一条（空 = 不放行 Agent 代跑）
+                write_cmds  TEXT DEFAULT '',                -- 06：写命令清单（每行一条；空 = 不进写池）
                 abilities   TEXT DEFAULT '',                -- M5：能力描述（用户语言：触发词 + 能力→命令映射；空 = 回退命令名简报）
                 state       TEXT NOT NULL DEFAULT 'none',   -- none|installed|authed
                 note        TEXT DEFAULT '',
+                pool        TEXT NOT NULL DEFAULT 'readonly',  -- 06：池归属（readonly 进路由 / write 只能「/」唤醒）
                 created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(account_id, bin)

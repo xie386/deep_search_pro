@@ -436,6 +436,7 @@ def get_soul_content(aid: int) -> str:
 # ============================ CLI 能力描述生成 AI（M5）============================
 def cli_ability_generate(name: str, bin_name: str, rules_text: str, *, docs: str = "",
                          docs_mode: str = "url", help_text: str = "",
+                         write_rules_text: str = "",
                          username: str | None = None,
                          account_id: int | None = None, refresh_docs: bool = False) -> dict:
     """按证据生成「CLI 能力描述」草稿（用户语言）。**只生成草稿，不落库**。
@@ -465,14 +466,18 @@ def cli_ability_generate(name: str, bin_name: str, rules_text: str, *, docs: str
     name = (name or "").strip() or "该 CLI"
     bin_name = (bin_name or "").strip()
     rules_text = (rules_text or "").strip()
-    if not rules_text:
+    write_rules_text = (write_rules_text or "").strip()
+    # 06：两份清单**至少有一份**（只配写工具的 CLI 也能生成描述）；描述里的命令必须来自它们
+    if not rules_text and not write_rules_text:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            "请先填好「只读命令清单」再生成能力描述——描述里的命令必须来自这份清单")
+                            "请先填好「只读命令清单」或「写命令清单」再生成能力描述——描述里的命令必须来自清单")
 
     # ---- 清单解析（与保存时同一套：只保留子命令路径）
     from tools import cli_registry as reg
     rules, _notes = reg.parse_rules(rules_text, bin_name)
     cmds = [" ".join(r) for r in rules]
+    wrules, _wnotes = reg.parse_rules(write_rules_text, bin_name) if write_rules_text else ([], [])
+    wcmds = [" ".join(r) for r in wrules]
 
     # ---- 证据 ①：依据来源三选一（url / path / help）
     from tools import cli_docs, source_docs
@@ -543,7 +548,11 @@ def cli_ability_generate(name: str, bin_name: str, rules_text: str, *, docs: str
         parts.append(head + "\n" + _kind_table() + tail)
     if (help_text or "").strip():
         parts.append("【用户粘贴的帮助文本（文档没覆盖时以它为准）】\n%s" % help_text.strip()[:6000])
-    parts.append("【允许出现的命令（只能从这份只读清单里挑，逐字原样）】\n%s" % rules_text)
+    if rules_text:
+        parts.append("【允许出现的命令（只能从这份只读清单里挑，逐字原样）】\n%s" % rules_text)
+    if write_rules_text:
+        parts.append("【允许出现的**写命令**（会改动外部状态；只能从这份写命令清单里挑，逐字原样）】\n%s"
+                     % write_rules_text)
     parts.append(
         "# 本次的硬规则（严格按上面的证据判断，**不要凭命令名猜**）\n"
         "1. 形态是「需要 ID」或「需要开关参数」的命令**不能直调**，必须写成两步链的第 2 步；"
@@ -552,7 +561,9 @@ def cli_ability_generate(name: str, bin_name: str, rules_text: str, *, docs: str
         "（帮助里要求 `--id` 这类取值开关）可以作第 2 步；只有「无参数直调」的命令"
         "（真的什么输入都不需要）**不能**作第 2 步——**不要编造这种链**；\n"
         "3. 两条证据都没有提到的能力，**不要写**（宁可少写一条，也不要编造子命令语义）；\n"
-        "4. 只输出规定格式的两行内容（关键词行 + 映射行），不要解释。")
+        "4. 只读部分只输出规定格式的两行内容（关键词行 + 映射行），不要解释；\n"
+        "5. 若上面给了**写命令清单**：在只读部分之后，另起一行写 `【写命令】`，再用同样格式（关键词行 + 映射行）"
+        "只描述这些写命令在什么场景该用、会改动什么；**没有写命令清单就完全不要输出这一段**。")
     user_msg = "\n\n".join(parts)
 
     # ---- 生成
@@ -574,6 +585,11 @@ def cli_ability_generate(name: str, bin_name: str, rules_text: str, *, docs: str
     if not text:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "模型没有返回内容，请重试")
 
+    # ---- 拆出写命令那段（模型按 `【写命令】` 起新段）
+    write_content = ""
+    if write_rules_text and "【写命令】" in text:
+        _ro, _, _wr = text.partition("【写命令】")
+        text, write_content = _ro.strip(), _wr.strip()
     # ---- 审计（纯代码，零模型）：把「需要 ID 却直调」「凭空造链」直接指出来
     warnings = reg.audit_ability_draft(text, kinds, help_map)
     note = reg.coverage_note(text, cmds)
@@ -582,6 +598,7 @@ def cli_ability_generate(name: str, bin_name: str, rules_text: str, *, docs: str
 
     return {
         "content": text,
+        "write_content": write_content,          # 06：写命令那段的草稿（没有写清单时为空串）
         "evidence": {
             "docs": {"ok": bool(doc["ok"]), "url": doc["url"], "source": doc["source"],
                      "mode": mode, "label": doc_label,
