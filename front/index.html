@@ -6212,8 +6212,15 @@ createApp({
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ source: capKind.value, slug: capSource.value.slug }),
         });
-        const d = await r.json();
-        if (!r.ok) { showToast(d.detail || 'AI 预写失败', true); return; }
+        // ★ 2026-10-18：服务端 500 时返回的是**纯文本** "Internal Server Error"，
+        //   直接 r.json() 会抛 "Unexpected token 'I'" —— 真正的错因就看不见了。
+        let d = {};
+        try { d = await r.json(); }
+        catch (e) {
+          showToast('AI 预写失败：服务端返回的不是 JSON（HTTP ' + r.status + '）—— 多半是后端异常，看终端日志', true);
+          return;
+        }
+        if (!r.ok) { showToast(d.detail || ('AI 预写失败（HTTP ' + r.status + '）'), true); return; }
         const got = {};
         const res = capApplyDraft(d);
         const filled = res.filled;

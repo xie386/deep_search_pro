@@ -21,6 +21,25 @@ MAX_NAME_TEXT = 24            # 显示名上限（「人话名字」，2026-10-0
 MAX_TOOL_TEXT = 400          # 单条描述的落库上限（模型偶尔会写长，砍掉尾巴而不是整条丢）
 
 
+def _as_dict(v) -> dict:
+    """DB 行里的 `input_schema` / `invoke_spec` 是 **JSON 字符串**（不是 dict）。
+
+    ★ 2026-10-18 真机：`tool_listing` 直接 `schema.get(...)` → `AttributeError: 'str' object has no
+      attribute 'get'` → 接口 500 → 前端只看到 "Unexpected token 'I'"（"Internal Server Error"）。
+      这里统一容错：dict 原样、字符串尝试 JSON、其它一律空 dict。
+    """
+    if isinstance(v, dict):
+        return v
+    if isinstance(v, str) and v.strip():
+        try:
+            import json as _json
+            d = _json.loads(v)
+            return d if isinstance(d, dict) else {}
+        except Exception:                     # noqa: BLE001
+            return {}
+    return {}
+
+
 def tool_listing(caps: list[dict]) -> str:
     """把该来源的工具清单渲染成**给模型看的事实表**（不是给用户看的卡片）。
 
@@ -30,10 +49,10 @@ def tool_listing(caps: list[dict]) -> str:
     lines = ["| 工具标识（逐字照抄） | 名称 | 参数（必填★） | 只读 | 现有描述 |", "| --- | --- | --- | --- | --- |"]
     for c in caps:
         params = []
-        schema = c.get("input_schema") or {}
+        schema = _as_dict(c.get("input_schema"))
         props = schema.get("properties") or {}
-        required = set(schema.get("required") or [])
-        binds = (c.get("invoke_spec") or {}).get("bindings") or []
+        required = set(schema.get("required") or []) if isinstance(schema.get("required"), list) else set()
+        binds = _as_dict(c.get("invoke_spec")).get("bindings") or []
         for b in binds:
             if isinstance(b, dict) and b.get("name"):
                 params.append("%s%s(%s)" % ("★" if b.get("required") else "", b["name"],
