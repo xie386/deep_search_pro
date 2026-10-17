@@ -179,8 +179,10 @@ def test_write_method_requires_explicit_approval(acct):
     out = tsp.confirm(tsp.ConfirmReq(slug="weather", items=[
         tsp.CandidateIn(ref="api:weather#createHook", approve_write=True)]), acct["token"])
     assert out["confirmed"] == ["api:weather#createHook"]
-    e = cp.pool_entries(acct["aid"])[0]
-    assert e.read_only is False and "会改外部状态" in e.card_text
+    # ★ 2026-10-18（新口径）：确认的**写**工具默认进**写池**，不进路由池
+    assert cp.pool_entries(acct["aid"]) == [], "写工具不许进路由池（纯文字就能改外部状态）"
+    wr = [e for e in cp.write_pool_entries(acct["aid"]) if e.ref == "api:weather#createHook"]
+    assert wr and wr[0].read_only is False and "会改外部状态" in wr[0].card_text
 
 
 def test_confirm_rejects_foreign_ref(acct):
@@ -198,7 +200,7 @@ def test_rediscover_keeps_human_decisions(acct):
         tsp.CandidateIn(ref="api:weather#createHook", approve_write=True, name="我改的名字")]), acct["token"])
     res = tsp.discover(tsp.DiscoverReq(slug="weather", text=SPEC_TEXT), acct["token"])
     assert res["kept_confirmed"] == 1
-    e = next(x for x in cp.pool_entries(acct["aid"], enabled_only=False) if x.ref == "api:weather#createHook")
+    e = next(x for x in cp.write_pool_entries(acct["aid"]) if x.ref == "api:weather#createHook")
     assert e.read_only is False and e.confirmed is True
     conn = get_personal_conn()
     try:

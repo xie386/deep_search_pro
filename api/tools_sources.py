@@ -583,11 +583,13 @@ def discover(req: DiscoverReq, token: str) -> dict:
             # read_only 是**派生值**（按 method 判），确认时再复核一次
             conn.execute(
                 "INSERT INTO tool_capabilities (account_id, source, ref, name, keywords, abilities, invoke_hint, "
-                "enabled, invoke_spec, input_schema, read_only, confirmed_at) VALUES (?,?,?,?,?,?,?,0,?,?,?,NULL)",
+                "enabled, invoke_spec, input_schema, read_only, pool, confirmed_at) VALUES (?,?,?,?,?,?,?,0,?,?,?,?,NULL)",
                 (aid, "api", c["ref"], c["name"], "", (c.get("summary") or c["name"]),
                  "%s %s" % (c["method"], c["url_template"]),
                  json.dumps(spec, ensure_ascii=False), json.dumps(c["input_schema"], ensure_ascii=False),
-                 0 if _is_write_spec(spec) else 1))
+                 0 if _is_write_spec(spec) else 1,
+                 # ★ 2026-10-18：写工具**默认就进写池**（进路由池等于纯文字就能改外部状态）
+                 "write" if _is_write_spec(spec) else "readonly"))
         conn.commit()
         # ★ 返回给前端的形状必须与 `candidates_list` **完全一致**（含 `is_write` / `param_summary`）：
         # 直接把解析器条目吐出去，会让"刚贴完文档"这一步的写操作显示成只读、勾选框不被禁用。
@@ -665,10 +667,11 @@ def _discover_mcp(aid: int, slug: str, sid: int, cfg: dict, req) -> dict:
                 continue
             conn.execute(
                 "INSERT INTO tool_capabilities (account_id, source, ref, name, keywords, abilities, invoke_hint, "
-                "enabled, invoke_spec, input_schema, read_only, confirmed_at) VALUES (?,?,?,?,?,?,?,0,?,?,?,NULL)",
+                "enabled, invoke_spec, input_schema, read_only, pool, confirmed_at) VALUES (?,?,?,?,?,?,?,0,?,?,?,?,NULL)",
                 (aid, "mcp", ref, name, "", desc, "MCP 工具 %s（%s）" % (name, src_kind_label(cfg)),
                  json.dumps(spec, ensure_ascii=False), json.dumps(schema, ensure_ascii=False),
-                 0 if is_write else 1))
+                 0 if is_write else 1,
+                 "write" if is_write else "readonly"))
         conn.commit()
         refs = ["mcp:%s/%s" % (slug, t["name"]) for t in tools if str(t.get("name") or "").strip()]
         state = {}
@@ -791,8 +794,11 @@ def confirm(req: ConfirmReq, token: str) -> dict:
                 skipped.append({"ref": ref, "why": "写操作（非只读）需显式勾选「我确认这是写操作」"})
                 continue
             conn.execute("UPDATE tool_capabilities SET name=COALESCE(NULLIF(?,''), name), read_only=?, enabled=1, "
+                         # ★ 2026-10-18：确认的是**写**工具 → 自动归写池（只升不降：用户手动归进写池的只读工具不改回去）
+                         "pool=CASE WHEN ?=0 AND (pool IS NULL OR pool='readonly') THEN 'write' ELSE pool END, "
                          "confirmed_at=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                         (it.name or "", 0 if is_write else 1, time.strftime("%Y-%m-%d %H:%M:%S"), r["id"]))
+                         (it.name or "", 0 if is_write else 1, 0 if is_write else 1,
+                          time.strftime("%Y-%m-%d %H:%M:%S"), r["id"]))
             confirmed.append(ref)
         conn.commit()
     finally:

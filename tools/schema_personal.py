@@ -575,6 +575,7 @@ CREATE TABLE IF NOT EXISTS sessions (
                 abilities   TEXT NOT NULL DEFAULT '',       -- 用户语言映射（说法 → 命令/用途）
                 invoke_hint TEXT NOT NULL DEFAULT '',       -- 调用形态（模型可见的精简版）
                 enabled     INTEGER NOT NULL DEFAULT 1,     -- 0 = 不进路由池（如未接入/清单为空）
+                pool        TEXT NOT NULL DEFAULT 'readonly',  -- 06：池归属（readonly 进路由 / write 只能「/」唤醒）
                 -- ===== v3.0 M1（API/MCP 适配框架）：能力演进的五个新槽位（老库由下方 ALTER 幂等补齐）=====
                 invoke_spec  TEXT NOT NULL DEFAULT '{}',    -- ★ 执行侧元数据（模型不可见）：
                                                             --   api: {source_id,method,url_template,bindings[{name,location,required}],body_mode,auth}
@@ -617,6 +618,7 @@ CREATE TABLE IF NOT EXISTS sessions (
                 intro       TEXT NOT NULL DEFAULT '',        -- 用户整段复制的官方/社区介绍文案（能力撰写 AI 的依据之二）
                 state       TEXT NOT NULL DEFAULT 'none',   -- none | configured | verified | failed（体检结果）
                 enabled     INTEGER NOT NULL DEFAULT 1,
+                pool        TEXT NOT NULL DEFAULT 'readonly',  -- 06：来源级池归属（与能力行同步）
                 note        TEXT DEFAULT '',
                 created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP,

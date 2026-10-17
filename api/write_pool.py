@@ -152,10 +152,25 @@ def set_pool(account_id: int, kind: str, ident, pool: str) -> dict:
             if kind == "cli":
                 cur = conn.execute("UPDATE user_clis SET pool=? WHERE account_id=? AND id=?",
                                    (pool, int(account_id), int(ident)))
+                # ★ 2026-10-18 真机：路由池是**按行**派生的（tool_capabilities.pool），只改来源表
+                #   等于没生效 —— 用户把 MCP 归进写池后，路由池仍多出它的工具。
+                _b = conn.execute("SELECT bin FROM user_clis WHERE account_id=? AND id=?",
+                                  (int(account_id), int(ident))).fetchone()
+                if _b:
+                    conn.execute("UPDATE tool_capabilities SET pool=? WHERE account_id=? AND source='cli' AND ref=?",
+                                 (pool, int(account_id), _b["bin"]))
             elif kind in ("api", "mcp"):
                 cur = conn.execute("UPDATE tool_sources SET pool=?, updated_at=datetime('now','localtime') "
                                    "WHERE account_id=? AND source=? AND (slug=? OR CAST(id AS TEXT)=?)",
                                    (pool, int(account_id), kind, str(ident), str(ident)))
+                _s = conn.execute("SELECT slug FROM tool_sources WHERE account_id=? AND source=? "
+                                  "AND (slug=? OR CAST(id AS TEXT)=?)",
+                                  (int(account_id), kind, str(ident), str(ident))).fetchone()
+                if _s:
+                    _prefix = ("mcp:%s/" % _s["slug"]) if kind == "mcp" else ("api:%s" % _s["slug"])
+                    conn.execute("UPDATE tool_capabilities SET pool=? WHERE account_id=? AND source=? "
+                                 "AND substr(ref, 1, ?)=?",
+                                 (pool, int(account_id), kind, len(_prefix), _prefix))
             else:
                 return {"ok": False, "error": "kind 只能是 cli / api / mcp"}
             conn.commit()

@@ -70,6 +70,7 @@ def test_set_pool_bumps_version(monkeypatch):
     calls = {"bump": 0}
     class _Cur:
         rowcount = 1
+        def fetchone(self): return None      # 级联查询：本用例不强求命中
     class _Conn:
         def execute(self, *a, **k): return _Cur()
         def commit(self): pass
@@ -83,6 +84,7 @@ def test_set_pool_bumps_version(monkeypatch):
 def test_set_pool_reports_missing_source(monkeypatch):
     class _Cur:
         rowcount = 0
+        def fetchone(self): return None
     class _Conn:
         def execute(self, *a, **k): return _Cur()
         def commit(self): pass

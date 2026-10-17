@@ -137,3 +137,36 @@ def test_agent_brief_excludes_write_pool(monkeypatch, tmp_path):
     brief = reg.agent_brief(11)
     assert "rocli" in brief, "普通只读 CLI 必须在简报里"
     assert "officecli" not in brief.lower() and "AgentOffice" not in brief, "写池 CLI 不许进简报"
+
+
+def test_set_pool_cascades_to_capability_rows(monkeypatch, tmp_path):
+    """★ 2026-10-18 真机：把 MCP 来源归进写池后，路由池仍是 30 条（该来源的工具还在里面）。
+
+    根因：路由池按 `tool_capabilities.pool` **逐行**派生，`set_pool` 只改了来源表。
+    """
+    _db(monkeypatch, tmp_path)
+    from tools import schema_personal as sp
+    conn = sp.get_personal_conn()
+    conn.execute("INSERT INTO tool_sources (account_id, source, slug, name, enabled, pool) "
+                 "VALUES (11,'mcp','mineru','MinerU 文档解析',1,'readonly')")
+    for ref, ro in (("mcp:mineru/get_ocr_languages", 1), ("mcp:mineru/parse_documents", 0)):
+        conn.execute("INSERT INTO tool_capabilities (account_id, source, ref, name, enabled, read_only, confirmed_at, pool) "
+                     "VALUES (11,'mcp',?,?,1,?,'2026-10-18 00:00:00','readonly')", (ref, ref.split("/")[-1], ro))
+    conn.commit(); conn.close()
+
+    from api import write_pool as wp
+    assert wp.set_pool(11, "mcp", "mineru", "write")["ok"] is True
+
+    conn = sp.get_personal_conn()
+    pools = {r["ref"]: r["pool"] for r in conn.execute(
+        "SELECT ref, pool FROM tool_capabilities WHERE account_id=11 AND ref LIKE 'mcp:mineru/%'")}
+    conn.close()
+    assert pools == {"mcp:mineru/get_ocr_languages": "write", "mcp:mineru/parse_documents": "write"}, pools
+
+
+def test_new_write_candidates_default_to_write_pool():
+    """发现候选时写工具必须**默认落写池**（进路由池 = 纯文字就能改外部状态）。"""
+    src = (ROOT / "api" / "tools_sources.py").read_text(encoding="utf-8")
+    assert src.count('"write" if is_write else "readonly"') >= 1
+    assert src.count('"write" if _is_write_spec(spec) else "readonly"') >= 1
+    assert "pool=CASE WHEN ?=0" in src, "确认写工具时要自动归写池"
