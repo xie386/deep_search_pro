@@ -5907,7 +5907,9 @@ createApp({
     }
 
     function doLogout() {
-      fetch('/api/logout?token=' + encodeURIComponent(token.value)).catch(()=>{});
+      // ★ 2026-10-17：/api/logout 是 POST 路由；原来这里没写 method（= GET）→ 405，
+      //   前端清了本地状态、但**服务端 token 从没被注销**。补上 method。
+      fetch('/api/logout?token=' + encodeURIComponent(token.value), { method: 'POST' }).catch(()=>{});
       if (ws) ws.close(); wsTarget = '';
       token.value = ''; role.value = 'personal';
       storeClear();
@@ -9066,9 +9068,11 @@ createApp({
       });
     }
     async function wdLoadTrash() {
-      const r = await fetch(wdTok('/api/workdir/trash'));
-      const d = await r.json().catch(() => ({}));
-      if (r.ok) { wdTrash.value = d.items || []; wdTrashTtl.value = d.ttl_days || 7; }
+      // ★ 2026-10-17 真机报障：后端 /api/workdir/trash 是 **POST**（list/restore/purge 同一入口），
+      //   原来这里用 GET → 405，而手写 fetch 又把失败当空列表 → 表现为"删了文件、回收站却显示为空"。
+      const d = await api('POST', wdTok('/api/workdir/trash'), { action: 'list' });
+      if (d) { wdTrash.value = d.items || []; wdTrashTtl.value = d.ttl_days || 7; }
+      else { wdTrash.value = []; wdErr.value = '回收站读取失败'; }
     }
     async function wdOpenPanel(which) {
       wdErr.value = ''; wdMsg.value = '';
