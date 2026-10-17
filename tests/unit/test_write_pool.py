@@ -40,6 +40,7 @@ def test_compose_lists_picked_sets_with_write_cmds(monkeypatch):
     ])
     t = wp.compose_write_sets_text(3, ["归档CLI"])
     assert "本轮经「/」授权的写工具集" in t and "归档CLI" in t and "push、tag" in t
+    assert "run_shell_command(command=\"arch\"" in t, "CLI 要给可执行调用方式"
     assert "文件服务器" not in t, "没选的不许出现在说明书里"
 
 
@@ -52,7 +53,10 @@ def test_write_sets_reads_cli_pool_and_sources(monkeypatch):
     class _Row(dict):
         def __getitem__(self, k): return dict.__getitem__(self, k)
     class _Conn:
-        def execute(self, *a, **k): return [ _Row(id=7, source="mcp", slug="fs", name="文件服务器", pool="write") ]
+        def execute(self, sql, *a, **k):
+            if "FROM tool_capabilities" in (sql or ""):     # 新增：来源下已确认工具（本用例不关心）
+                return []
+            return [ _Row(id=7, source="mcp", slug="fs", name="文件服务器", pool="write") ]
         def close(self): pass
     monkeypatch.setattr(wp, "get_personal_conn", lambda: _Conn())
     got = wp.write_sets(3)
@@ -92,3 +96,17 @@ def test_set_pool_reports_missing_source(monkeypatch):
     monkeypatch.setattr(wp, "get_personal_conn", lambda: _Conn())
     r = wp.set_pool(3, "api", "nope", "write")
     assert r["ok"] is False and "没找到" in r["error"]
+
+
+def test_compose_tells_mcp_to_use_invoke_tool(monkeypatch):
+    """★ 2026-10-18 真机：模型把 MCP 来源当 CLI 跑 `run_shell_command("mineru")` → 不在白名单。
+
+    授权说明书必须写清：MCP 走 `invoke_tool(ref=…)`，并列出可用工具 ref。
+    """
+    monkeypatch.setattr(wp, "write_sets", lambda aid: [
+        {"kind": "mcp", "id": 2, "name": "MinerU 文档解析", "ref": "mineru", "write_rules": [],
+         "tools": ["mcp:mineru/parse_documents"]},
+    ])
+    t = wp.compose_write_sets_text(3, ["MinerU 文档解析"])
+    assert "invoke_tool(" in t and "不能交给 run_shell_command" in t
+    assert "mcp:mineru/parse_documents" in t

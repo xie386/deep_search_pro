@@ -47,8 +47,15 @@ def write_sets(account_id: int | None) -> list[dict]:
             for r in conn.execute(
                     "SELECT id, source, slug, name, pool FROM tool_sources "
                     "WHERE account_id=? AND pool='write' ORDER BY source, id", (int(account_id),)):
+                # ★ 2026-10-18 真机：模型不知道 MCP 的调用形态，把来源名当 CLI 去 run_shell_command
+                #   （"mineru 不在白名单"）。把该来源下**已确认的工具 ref** 一并给出，说明书才可执行。
+                _pref = ("mcp:%s/" % r["slug"]) if r["source"] == "mcp" else ("api:%s" % r["slug"])
+                _tools = [x["ref"] for x in conn.execute(
+                    "SELECT ref FROM tool_capabilities WHERE account_id=? AND source=? "
+                    "AND enabled=1 AND confirmed_at IS NOT NULL AND substr(ref,1,?)=? ORDER BY ref",
+                    (int(account_id), r["source"], len(_pref), _pref))]
                 out.append({"kind": r["source"], "id": r["id"], "name": r["name"], "ref": r["slug"],
-                            "write_rules": []})
+                            "write_rules": [], "tools": _tools})
         finally:
             conn.close()
     except Exception:                       # noqa: BLE001 —— 老库/表缺失不该让菜单崩
@@ -91,12 +98,17 @@ def compose_write_sets_text(account_id: int | None, names: list[str] | None) -> 
              "下列能力由用户**显式授权**本轮可用（平时不进路由池、不能被纯对话唤起）。",
              "其中标注了「允许的写子命令」的，只能跑列出的那些；未列出的照旧拒绝。"]
     for s in picks:
-        head = "- %s（%s）" % (s["name"], s["ref"])
-        if s["write_rules"]:
-            lines.append(head + "；允许的写子命令：" + "、".join(s["write_rules"]))
+        if s.get("kind") == "cli":
+            head = "- %s（CLI，可执行名 `%s`）" % (s["name"], s["ref"])
+            tail = ("；允许的写子命令：" + "、".join(s["write_rules"])) if s.get("write_rules") else ""
+            lines.append(head + tail + "；调用方式：`run_shell_command(command=\"%s\", argv=[…])`" % s["ref"])
         else:
-            lines.append(head)
-    lines.append("用法：需要改动外部状态时直接调用对应工具；完成或失败都如实回报。")
+            tools = s.get("tools") or []
+            lines.append("- %s（%s 来源 `%s`）：**用 `invoke_tool(ref=…, params={…})` 调用，"
+                         "它不是 shell 命令、不能交给 run_shell_command**；可用工具：%s"
+                         % (s["name"], s.get("kind") or "api/mcp", s["ref"],
+                            "、".join("`%s`" % t for t in tools) or "（该来源下还没有已确认的工具）"))
+    lines.append("用法：需要改动外部状态时按上面的调用方式直接调；完成或失败都如实回报。")
     return "\n".join(lines)
 
 
@@ -167,10 +179,12 @@ def set_pool(account_id: int, kind: str, ident, pool: str) -> dict:
                                   "AND (slug=? OR CAST(id AS TEXT)=?)",
                                   (int(account_id), kind, str(ident), str(ident))).fetchone()
                 if _s:
-                    _prefix = ("mcp:%s/" % _s["slug"]) if kind == "mcp" else ("api:%s" % _s["slug"])
-                    conn.execute("UPDATE tool_capabilities SET pool=? WHERE account_id=? AND source=? "
-                                 "AND substr(ref, 1, ?)=?",
-                                 (pool, int(account_id), kind, len(_prefix), _prefix))
+                    _prefixes = (["mcp:%s/" % _s["slug"]] if kind == "mcp"
+                                 else ["api:%s#" % _s["slug"], "%s#" % _s["slug"]])
+                    for _prefix in _prefixes:
+                        conn.execute("UPDATE tool_capabilities SET pool=? WHERE account_id=? AND source=? "
+                                     "AND substr(ref, 1, ?)=?",
+                                     (pool, int(account_id), kind, len(_prefix), _prefix))
             else:
                 return {"ok": False, "error": "kind 只能是 cli / api / mcp"}
             conn.commit()

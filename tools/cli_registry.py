@@ -980,6 +980,9 @@ def ability_examples(account_id: int | None, max_n: int = 10, max_per_cli: int =
     for c in list_clis(account_id):
         if not c["live"] or not (c.get("abilities") or "").strip():
             continue
+        # ★ 2026-10-18：写池 CLI 连示例都不许进提示词（它只能靠「/」唤起）
+        if (c.get("pool") or "readonly") == "write":
+            continue
         made = 0
         for trigger, path in _parse_ability_pairs(c["abilities"]):
             tokens = path.split()
