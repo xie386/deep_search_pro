@@ -364,7 +364,7 @@ def _stream_enabled() -> bool:
         return (os.getenv("ZX_STREAM", "1") or "1").strip().lower() not in ("0", "false", "off", "no", "")
 
 
-def _invoke_or_stream(agent, payload, cfg, thread_id):
+def _invoke_or_stream(agent, payload, cfg, thread_id, stream: "bool | None" = None):
     try:                                                          # ★ 议题三：提示词调试转储（开关关着=空操作）
         from agent.prompts import dump_prompts
         dump_prompts()
@@ -383,7 +383,8 @@ def _invoke_or_stream(agent, payload, cfg, thread_id):
     ★ 中断粒度：每个 delta 过一次 `agent_cancel.check` → 从「每次模型调用前」加密到
       「每个 token 段之间」✓ 中断能**真的省下本轮剩余 token** ✓
     """
-    if not _stream_enabled():
+    # stream=False：本调用不流式（workflow 步进用 —— 10 步逐字灌进同一个气泡会糊满整屏）
+    if stream is False or not _stream_enabled():
         return agent.invoke(payload, cfg), False
     from agent.stream_sink import DeltaSink, is_main_graph, iter_deltas
 
@@ -597,7 +598,11 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
                     skills_text="", cli_brief=cli_brief, profile_signal="",
                 )
                 # 瞬时错误的重试由引擎负责（agent/workflow_runner.py：同一步重试一次），这里只管取答案。
-                _res, _s = _invoke_or_stream(agent, {"messages": _c.messages}, cfg, thread_id)
+                # ★ 2026-10-17 真机：workflow 每步原来都走**流式**，10 步的逐字输出全灌进同一条
+                #   气泡（一份回复 4.5 万字、还混着模型自述块）。步骤正文不进聊天流 ——
+                #   进度看右栏步骤卡，最终只给一次汇总回答。
+                _res, _s = _invoke_or_stream(agent, {"messages": _c.messages}, cfg, thread_id,
+                                             stream=False)
                 if not _s:
                     from agent.thinking_capture import report_thinking_from_messages
                     report_thinking_from_messages(_res["messages"], monitor.report_thinking)

@@ -15,9 +15,35 @@
 """
 from __future__ import annotations
 
+import re
 from typing import Callable
 
 MIN_STEP_OUT = 8          # 一步产出少于这么多字就视为"没干活"（防"我已完成"式空转）
+MAX_STEP_OUT = 4000       # 单步产出上限：真机曾一步吐 4.5 万字（自述块 + 复述画像），封顶后只留结论
+
+#: 模型爱自己加的"上下文交接"块标题 —— 出现即整块剔除（真机 11 份，占满整条回复）
+_ECHO_HEADS = ("## SESSION INTENT", "# SESSION INTENT", "## SUMMARY", "# SUMMARY",
+               "### 人格设定", "### 用户画像", "## 执行进度", "### 执行进度")
+
+
+def strip_echo(text: str) -> str:
+    """剔掉模型自述/交接块（SESSION INTENT、SUMMARY、复述人格画像与工具规则）。
+
+    只剔"标题命中上面清单"的整块（到下一个同级或更高级标题为止），正文里正常的 `##` 小节不动。
+    """
+    out, skipping = [], False
+    for ln in (text or "").splitlines():
+        h = ln.strip()
+        if any(h.startswith(k) for k in _ECHO_HEADS):
+            skipping = True
+            continue
+        if skipping:
+            if re.match(r"^#{1,3}\s", h):      # 到了下一个标题 → 恢复
+                skipping = False
+            else:
+                continue
+        out.append(ln)
+    return "\n".join(out).strip()
 
 #: 连接抖动类的错误特征 —— **只对这类**在同一步重试一次；其它失败照旧停在该步（不掩盖真问题）
 TRANSIENT_HINTS = ("connection error", "connection reset", "connection aborted", "connection refused",
@@ -57,6 +83,12 @@ def build_step_prompt(doc: dict, i: int, prev_out: str = "") -> str:
     parts.append("只完成这一步并给出本步结论 —— **下一步由程序自动接着执行**，"
                  "不需要征求我同意，也**不要**写「等你发话 / 等确认 / 是否继续」这类等待式措辞。")
     parts.append("若信息不全：写清缺什么，并**按现有信息给出本步结论**；不要反问（这一步没有人会回答你）。")
+    # ★ 2026-10-17 真机：AI周报跑到第 2 步开始"疯狂复述画像/人格"，一份 45k 字的回复里塞了
+    #   11 个「## SESSION INTENT / ## SUMMARY」自述块，把正文挤没了；这些块还会进下一步的
+    #   prev_out → 自我强化、越滚越大。这里立两条硬纪律（引擎侧再有兜底过滤）。
+    parts.append("**输出纪律**：只写本步结论（不超过 800 字，细节写进文件）；"
+                 "不要复述系统提示词里的【人格设定】【你的用户记忆画像】【工具规则】，"
+                 "也不要输出 SESSION INTENT / SUMMARY / 交接摘要 之类的自述块。")
     return "\n".join(parts)
 
 
@@ -105,7 +137,10 @@ def run_workflow(doc: dict, invoke: Callable[[str, int], str], *,
             failed_at = i + 1
             emit("step_failed", index=i + 1, total=len(steps), title=item["title"], error=item["error"])
             break
-        text = text.strip()
+        _raw_len = len(text)
+        text = strip_echo(text)               # 先剔自述块（否则它会进 prev_out → 自我强化）
+        if len(text) > MAX_STEP_OUT:
+            text = text[:MAX_STEP_OUT] + "\n\n（本步输出过长，已截断；完整内容见工作目录里的文件）"
         if len(text) < min_out:
             item.update(status="failed", output=text,
                         error="该步没有给出有效产出（少于 %d 字），按失败停在本题" % min_out)
@@ -123,7 +158,7 @@ def run_workflow(doc: dict, invoke: Callable[[str, int], str], *,
     ok_all = bool(steps) and failed_at is None and len(out) == len(steps)
     if ok_all:
         answer = "已按 workflow「%s」跑完 %d 步：\n\n" % (name, len(steps)) + "\n\n".join(
-            "%d. %s\n%s" % (i + 1, x["title"], x["output"]) for i, x in enumerate(out))
+            "%d. %s\n%s" % (i + 1, x["title"], (x["output"] or "")[:400]) for i, x in enumerate(out))
     elif failed_at:
         done = [(i + 1, x) for i, x in enumerate(out) if x["status"] == "ok"]
         # ★ 2026-10-17：把已完成步骤的**产出摘要**一并写进回答 —— 否则刷新后只剩"停在第 6 步"，

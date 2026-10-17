@@ -197,6 +197,13 @@ async function fetch(url, opts) {
 const wsPicked = ref([]);
 const wfPicked = ref([]);
 const wfSteps = ref([]);
+// ★ 2026-10-17：键盘要跨三组连续走 —— menuFlat 会读这两组，缺了会 ReferenceError
+const wsSets = ref([]);
+const wfSets = ref([]);
+// wsPick / wfPick / pickCaps 定义在切片之外；这里给等价的极简桩（本套件只验"按键分派到哪一组"）
+const pickCaps = ref({ skills: 5, write_sets: 3, workflows: 3 });
+function wsPick(name) { if (wsPicked.value.indexOf(name) < 0) wsPicked.value.push(name); }
+function wfPick(name) { if (wfPicked.value.indexOf(name) < 0) wfPicked.value.push(name); }
 
 // 执行真实抽取代码
 
@@ -208,7 +215,7 @@ const runner = new Function(
 
   'loading', 'messages', 'thinkingText', 'activeThread', 'go', 'connectWS', 'scrollToBottom', 'loadSessions',
 
-  'stopping', 'chatAbort', 'watch', '_initHash', 'wsPicked', 'wfPicked', 'wfSteps',
+  'stopping', 'chatAbort', 'watch', '_initHash', 'wsPicked', 'wfPicked', 'wfSteps', 'wsSets', 'wfSets', 'wsPick', 'wfPick', 'pickCaps',
 
   block + '\nreturn { wsPicked, wfPicked, wfSteps, skills, skPicked, skMenuOpen, skMenuIdx, skFilter, skMenuList, skOnInput, skOnKey, skillPick, skillUnpick, SK_MAX_PICK, cliItems, cliTemplates, cliStates, cliSummary, cliDoneCount, loadCliCatalog, cliNew, cliFill, cliEdit, cliSave, cliSetState, cliSaveNote, cliDelete, cliForm, cliEditing, cliErr, cliDrafting, cliAbilityDraft, SK_MAX, send };'
 
@@ -220,7 +227,7 @@ const M = runner(ref, computed, nextTick, document, localStorage, showToast, des
 
                   loading, messages, thinkingText, activeThread, go, connectWS, scrollToBottom, loadSessions,
 
-                  stopping, chatAbort, watch, _initHash, wsPicked, wfPicked, wfSteps);
+                  stopping, chatAbort, watch, _initHash, wsPicked, wfPicked, wfSteps, wsSets, wfSets, wsPick, wfPick, pickCaps);
 
 
 
@@ -263,6 +270,28 @@ const cases = [
   ['继续输入筛选词「数」', () => { type('/数'); check('筛选后剩 1 个', M.skMenuList.value.length === 1 && M.skMenuList.value[0].name === '数据可视化', M.skMenuList.value.map(s => s.name)); check('filter="数"', M.skFilter.value === '数'); }],
 
   ['↑↓ 改变高亮', () => { type('/'); M.skMenuIdx.value = 0; key('ArrowDown'); check('下移到 1', M.skMenuIdx.value === 1); key('ArrowUp'); check('上移回 0', M.skMenuIdx.value === 0); key('ArrowUp'); check('顶部回绕到末项', M.skMenuIdx.value === 2, M.skMenuIdx.value); }],
+
+  ['↑↓ 能跨到另两组（技能最后一项再按↓）', () => {
+    M.skills.value = [{ name: '甲技能', chars: 1, desc: '' }];
+    wsSets.value = [{ kind: 'cli', id: 1, name: '写工具甲', ref: 'x' }];
+    wfSets.value = [{ name: '流程甲', desc: '' }];
+    M.skPicked.value = []; wsPicked.value = []; wfPicked.value = [];
+    type('/'); M.skMenuIdx.value = 0;
+    key('ArrowDown'); check('进入写工具集组', M.skMenuIdx.value === 1, M.skMenuIdx.value);
+    key('ArrowDown'); check('进入 workflow 组', M.skMenuIdx.value === 2, M.skMenuIdx.value);
+    key('ArrowDown'); check('回绕到第一个技能', M.skMenuIdx.value === 0, M.skMenuIdx.value);
+    key('ArrowUp'); check('↑ 从第一个回绕到 workflow', M.skMenuIdx.value === 2, M.skMenuIdx.value);
+    M.skMenuIdx.value = 1; key('Enter');
+    check('Enter 选中的是写工具集', wsPicked.value.length === 1 && wsPicked.value[0] === '写工具甲', wsPicked.value);
+    // 复原现场：后面的用例依赖这 3 个技能
+    M.skills.value = [
+      { name: '竞品对比表', chars: 210, desc: '对比两个以上竞品' },
+      { name: '来源可追溯', chars: 180, desc: '标注出处与日期' },
+      { name: '数据可视化', chars: 150, desc: '把数据做成图表' },
+    ];
+    wsSets.value = []; wfSets.value = [];
+    wsPicked.value = []; wfPicked.value = []; M.skPicked.value = [];
+  }],
 
   ['Enter 选中并吃掉「/筛选词」', () => { draft.value = '/来源 今天的新闻'; M.skOnInput(); type('/来源'); key('Enter'); check('已加入本轮', M.skPicked.value.length === 1 && M.skPicked.value[0] === '来源可追溯', M.skPicked.value); check('菜单关闭', M.skMenuOpen.value === false); check('输入框里的 /来源 被清掉', draft.value === '', JSON.stringify(draft.value)); }],
 

@@ -141,3 +141,38 @@ def test_step_prompt_says_next_step_is_automatic():
     assert "自动接着执行" in p and "不要" in p and "等你发话" in p
     assert "不要反问" in p
     assert "不要自行开始后面的步骤" not in p, "旧措辞会让模型停下来等用户（已废弃）"
+
+
+# ---------------------------------------------- 自述块 / 超长输出（2026-10-17 真机 45k 字回复）
+def test_strip_echo_removes_self_summary_blocks():
+    """真机：一份回复里 11 个 `## SESSION INTENT` / `## SUMMARY`，里面整段复述人格与画像。"""
+    t = ("第 2 步结论：抓到 15 条。\n\n## SESSION INTENT\n老大正在执行 workflow…\n\n"
+         "## SUMMARY\n### 人格设定（必须保持）\n- 女仆\n\n### 用户画像\n- 实习生\n\n"
+         "## 真正的结论\n保留这行")
+    o = wr.strip_echo(t)
+    for bad in ("SESSION INTENT", "SUMMARY", "人格设定", "用户画像"):
+        assert bad not in o, bad
+    assert "抓到 15 条" in o and "保留这行" in o
+
+
+def test_step_output_is_capped_and_echo_stripped():
+    long = "正文" * 5000 + "\n\n## SESSION INTENT\n自述块"
+    doc = {"name": "T", "steps": [{"id": "a", "title": "一步", "use": [], "output": "x"}]}
+    r = wr.run_workflow(doc, lambda p, i: long)
+    assert r["ok"] is True
+    out = r["steps"][0]["output"]
+    assert "SESSION INTENT" not in out
+    assert len(out) <= wr.MAX_STEP_OUT + 60 and "已截断" in out
+
+
+def test_success_answer_is_summarized_per_step():
+    """成功回答原来把每步全文拼进去（10 步 × 4k = 糊满气泡），现在每步只留 400 字。"""
+    doc = {"name": "T", "steps": [{"id": i, "title": "步%d" % i, "use": [], "output": "x"}
+                                  for i in range(1, 4)]}
+    r = wr.run_workflow(doc, lambda p, i: "内容" * 500)
+    assert r["ok"] and len(r["answer"]) < 3 * 450
+
+
+def test_step_prompt_forbids_echo_and_caps_length():
+    p = wr.build_step_prompt(DOC, 0)
+    assert "输出纪律" in p and "SESSION INTENT" in p and "800 字" in p and "人格设定" in p
