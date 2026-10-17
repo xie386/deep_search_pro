@@ -436,7 +436,7 @@ def _result(ok: bool, *, stdout: str = "", stderr: str = "", error: str | None =
 
 def execute(command: str, args: list[str] | None = None, timeout: int | None = None,
             username: str | None = None, account_id: int | None = None,
-            adhoc: dict | None = None) -> dict:
+            adhoc: dict | None = None, allow_write_pool: bool = False) -> dict:
     """执行一条白名单命令。返回结构化结果，永不抛异常（安全拒绝也走 ok=False）。
 
     `account_id` 决定「已接入的第三方 CLI」动态白名单；拿不到就不放行（fail closed）。
@@ -464,7 +464,9 @@ def execute(command: str, args: list[str] | None = None, timeout: int | None = N
     # ★ 2026-10-18 真机：配了写命令清单的 CLI 会自动进写池 → 上面那条把整条 CLI 排除，
     #   连**只读**子命令都跑不了（用户报「命令 'officecli' 不在白名单」）。写池只该管"写要不要授权"，
     #   不该连读都不许 —— 落一层只读入口（不带 write_rules，写子命令照旧被拒）。
-    if dyn is None and meta is None:
+    if dyn is None and meta is None and allow_write_pool:
+        # ⚠️ 仅 CLI 面板（用户自己的动作）放行；Agent 的 run_shell_command **不传**这个开关 ——
+        #    写工具集里的只读命令同样要「/」唤起，不许被纯文字路由摸到（用户 2026-10-18 明确）。
         dyn = cli_registry.readonly_entry_for(account_id, command)
     if dyn is None and meta is None and adhoc and command in adhoc:
         dyn = {"readonly": adhoc[command], "adhoc": True}
@@ -592,7 +594,7 @@ def execute(command: str, args: list[str] | None = None, timeout: int | None = N
 
 
 def run_line(line: str, username: str | None = None, timeout: int | None = None,
-             account_id: int | None = None) -> dict:
+             account_id: int | None = None, *, allow_write_pool: bool = False) -> dict:
     """CLI 面板入口：把一行命令拆 token 后走 execute。"""
     sandbox = active_workdir(username, account_id)   # 06：面板 cwd 跟随工作目录
     try:
@@ -601,7 +603,8 @@ def run_line(line: str, username: str | None = None, timeout: int | None = None,
         _audit({"ts": time.strftime("%Y-%m-%d %H:%M:%S"), "user": _safe_username(username),
                 "cmd": line[:200], "args": [], "ok": False, "rejected": str(e), "cwd": str(sandbox)})
         return _result(False, error=f"⛔ {e}", command=line[:200], cwd=str(sandbox))
-    return execute(toks[0], toks[1:], timeout, username, account_id)
+    return execute(toks[0], toks[1:], timeout, username, account_id,
+                   allow_write_pool=allow_write_pool)
 
 
 def allowed_commands(username: str | None = None, account_id: int | None = None) -> dict:

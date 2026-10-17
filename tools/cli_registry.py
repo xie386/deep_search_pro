@@ -590,7 +590,10 @@ def agent_brief(account_id: int | None, max_clis: int = 8, max_cmds: int = 6,
         绝不再输出「其余 N 个未列出」——工具从提示词里隐身等于没接入；
       - 返回空串表示没有可用的自定义 CLI（调用方不注这一段）。
     """
-    items = [c for c in list_clis(account_id) if c["live"]][:max_clis]
+    # ★ 2026-10-18 用户追问：**写工具集里的只读命令也不能进路由池** ——
+    #   它们和写命令一样必须靠「/」显式选中，所以这份"注入提示词的简报"一条都不许出现。
+    items = [c for c in list_clis(account_id)
+             if c["live"] and (c.get("pool") or "readonly") != "write"][:max_clis]
     if not items:
         return ""
     budget = int(max_chars or MAX_BRIEF_CHARS)

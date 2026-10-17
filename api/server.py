@@ -2166,9 +2166,10 @@ async def shell_exec(req: dict = Body(...), token: str = Query(...)):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "args 必须是字符串数组")
     acc = sess.get("account_id")
     if args:
+        # ★ 面板是**用户自己的动作**：允许跑写工具集的只读命令（写子命令仍要「/」授权）。
         return await asyncio.to_thread(shell_runtime.execute, line, [str(a) for a in args],
-                                       timeout, sess["username"], acc)
-    return await asyncio.to_thread(shell_runtime.run_line, line, sess["username"], timeout, acc)
+                                       timeout, sess["username"], acc, None, True)
+    return await asyncio.to_thread(shell_runtime.run_line, line, sess["username"], timeout, acc, True)
 
 
 # ----------------------------- M4c 自定义 CLI 接入配置 -----------------------------

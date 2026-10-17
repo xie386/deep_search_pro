@@ -79,7 +79,12 @@ def test_write_pool_cli_readonly_still_runnable(monkeypatch, tmp_path):
 
     from tools._runtime import shell_runtime as sh
     monkeypatch.setattr(sh, "active_workdir", lambda *a, **k: tmp_path)
-    r = sh.execute("rotool", ["view", "a.docx"], username="t_cli", account_id=11)
+    # Agent 的工具入口（不传 allow_write_pool）：写工具集的只读命令**也不许**跑
+    strict = sh.execute("rotool", ["view", "a.docx"], username="t_cli", account_id=11)
+    assert "不在白名单" in (strict.get("error") or ""), strict
+    # CLI 面板（用户自己的动作）：允许试跑只读命令
+    r = sh.execute("rotool", ["view", "a.docx"], username="t_cli", account_id=11,
+                   allow_write_pool=True)
     assert "不在白名单" not in (r.get("error") or ""), r
     # 写子命令：没经「/」授权 → 被第三方 CLI 闸拒掉（不是"不在白名单"，而是"不允许执行"）
     w = sh.execute("rotool", ["set", "a.docx"], username="t_cli", account_id=11)
@@ -118,3 +123,17 @@ def test_document_paths_not_treated_as_escape(monkeypatch, tmp_path):
     err = r.get("error") or ""
     assert "路径逃逸" not in err, r
     assert "不在只读清单" not in err and "第三方 CLI" not in err, r
+
+
+def test_agent_brief_excludes_write_pool(monkeypatch, tmp_path):
+    """★ 用户 2026-10-18：写工具集里的**只读命令**也不能进路由池/提示词简报，必须靠「/」唤起。"""
+    _db(monkeypatch, tmp_path)
+    from tools import cli_registry as reg
+    monkeypatch.setattr(reg, "_sync_pool", lambda *a, **k: None)
+    reg.save_cli(11, {"name": "只读工具", "bin": "rocli", "state": "authed",
+                      "readonly": "list", "abilities": "关键词：列表"})
+    reg.save_cli(11, {"name": "AgentOffice", "bin": "officecli", "state": "authed",
+                      "readonly": "view", "write_cmds": "create", "abilities": "关键词：文档"})
+    brief = reg.agent_brief(11)
+    assert "rocli" in brief, "普通只读 CLI 必须在简报里"
+    assert "officecli" not in brief.lower() and "AgentOffice" not in brief, "写池 CLI 不许进简报"
