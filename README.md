@@ -1,405 +1,210 @@
-# deep-search-pro
+# 智选情报官（deep-search-pro）
 
-> 一个面向初学者的 **多智能体（Multi-Agent）深度搜索** 框架，基于 `deepagents` + `LangChain` + `FastAPI`，已演进为本地纯个人使用的 AI 情报助手「**智选情报官**」。
-> **当前版本 v4.0（已收尾）**：在 v1.0 的多智能体底座、v2.0 的上下文与工具体系、v3.x 的 API/MCP 与度量之上，v4.0 让 Agent **会动手、而且手是受控的** —— 工作目录看得见改得动、写能力分两种各守规矩、常用流程可固定、网页上的文件能真的下到工作目录。
->
-> - 想直接用 → [七、快速开始](#七快速开始)；想读代码 → [四、阅读指南（Web）](#四阅读指南web建议顺序) / [五、阅读指南（CLI）](#五阅读指南cli建议顺序)。
-> - 版本线：v1.0（多智能体 / Web / RAG / 周报）→ v2.0（上下文工程化 · 技能与工具）→ v2.5（修复与体验）→ v3.0（API/MCP · 画像 · 成本）→ v3.1（测试基线）→ **v4.0（工作目录与写能力）**；各版本细节在 `docs/<版本>/`。
-> - v4.0 面向使用者的介绍：[`docs/v4.0/README.md`](docs/v4.0/README.md)；逐大点记录：[`docs/v4.0/Done/`](docs/v4.0/Done/)；设计图：[`设计图-agent工作与工具调用体系.html`](docs/v4.0/设计图-agent工作与工具调用体系.html)。
+一个本地运行的个人 AI 情报助手：你用自然语言提问，它**自己决定调用哪些工具**（联网检索、进站抓取、读你自己的资料库、跑你配的 CLI / API / MCP），把过程实时显示在右栏，最后给你带来源的回答；它还会按你订阅的主题定期生成周报。
 
----
+- 给谁用：想在自己电脑上跑一个「能查、能写、能定时汇报」的个人情报助手的用户。
+- 形态：Web 版（浏览器）+ 桌面版（双击即用的窗口壳）+ CLI（`dspro`）。
+- 平台：**Windows**（依赖 `pywin32`；语音朗读、桌面壳为 Windows 特有）。
 
-## 一、项目简介
-
-`deep-search-pro` 的目标是让你用最少的概念，理解一个「能联网搜索、能查数据库、能查知识库」的智能体系统是怎么组织起来的。
-
-它的核心理念是 **编排（Orchestration）**：
-
-- 有一个 **主智能体（Main Agent）** 充当「团队负责人」，负责理解用户问题、拆解任务、并把子任务分派出去；
-- 有若干个 **子智能体（Sub Agents）** 各司其职，例如：
- - 🔍 **网络搜索助手**（已装配）：调用 Tavily 搜索公开网络信息；
- - 🗄️ **数据库查询助手**（已装配）：读取当前登录公司自己的资料（SQLite，按账号隔离：公司信息 / 我司产品 / 关注竞品）；
- - 👤 **个人情报助手**（已装配，M1.5）：读取本地 SQLite 个人库，做消费选购的性价比分析与兴趣快讯；
- - 📚 **RAG 知识库**：自建 Chroma 向量库（每用户一库，导出报告弹窗确认入库 / 上传 .md + 评估清洗 + 快/全双模式检索 + 消息级防重复入库）。
-- 每个子智能体都挂载自己的 **工具（Tools）**，由大模型按需调用；
-- 整个过程通过 **监控埋点 + WebSocket** 把「当前在做什么」实时推送给前端，方便观察 Agent 的思考与执行链路；
-- **思考过程可视化**：模型推理内容（reasoning_content）经 ReasoningChatOpenAI 透传后推给前端右栏「🤔 模型思考过程」折叠区，肉眼可见 Agent 在想什么；
-- **可定制**：模型选型（自带免费模型或自填 OpenAI 兼容接口）+ 助手人格（SOUL.md 注入系统提示词，可 AI 生成人格一键导入）。
-
-> 一句话总结：把「一个会自己调用工具的 AI」升级成「一个会指挥多个专家 AI 协同工作的 AI」。
+> 想读代码、看设计取舍与逐文件讲解 → [`开发者阅读指南.md`](开发者阅读指南.md)｜想了解 v4.0 新增了什么 → [`docs/v4.0/README.md`](docs/v4.0/README.md)
 
 ---
 
-## 二、功能特性
+## 功能特性
 
-| 特性 | 说明 |
-| --- | --- |
-| 多智能体协作 | 主 Agent 调度 4 个专职子 Agent（网搜 / 数据库 / 个人情报 / 周报），分工完成复杂任务 |
-| 工具三族 | ① 内置 `@tool`；② 子 Agent 自带工具；③ **自配来源**（CLI / API / MCP，配置导向、按账号隔离） |
-| 工具路由 | 按**提问相关性**选工具：稠密 + 词法 → RRF → 相对置信 → 完整卡/紧凑行/仅名称分层注入；不确定就回退全量（工具永不隐身）；近并列时请决策模型复核一次顺序 |
-| 网络搜索（三种取法） | ① 只检索 ② 只进站 ③ 先检索定位再进站深抓；取法由**工具签名**约束，每轮检索上限在代码里强制 |
-| 工作目录（v4.0） | 前端可见可编辑的真实目录：主页 + 自加目录、逐层树、文本编辑 / docx·xlsx 只读预览 / pdf 下载、删除进回收站可还原 |
-| 写能力（v4.0） | 内置写工具**纯文字可用**；自配来源的写命令与写工具**只在「/」选中那一轮放行**；三道代码闸（路径逃逸 / 保护名单 / 凭据红线） |
-| workflows（v4.0） | 步骤固定的流程：逐步驱动、校验产出、失败停步；顶层 `write:` 声明要用的写工具集 → 整轮授权 |
-| 资源下载（v4.0） | 浏览任务可点下载，文件落进账号工作目录 `_downloads/`；回执列出文件名与体积，图片直接在气泡里显示 |
-| 知识库 | 自建 Chroma 每用户一库（弃 RAGFlow）：弹窗确认入库 / 上传 .md + 评估清洗 + 快/全双模式检索 + 消息级防重复入库 |
-| 个人库与用户数据 | SQLite 个人库（兴趣/关注/收藏）；`/api/me/*` 全套 CRUD 按账号隔离；用户数据统一归口 `user_data/` |
-| 可观测性 | `ToolMonitor` + WebSocket 实时推送工具调用进度；`reasoning_content` 透传到右栏「模型思考过程」折叠区 |
-| 定制助手 | 模型选型（`llm_providers`，列表掩码）、多人格集（`SOUL/`）、AI 生成人格一键导入、背景图按账号持久化 |
-| 记忆白盒化 | 账号级 `MEMORY.md`：人可读可编辑、Agent 可自行维护、回复末尾提示画像变更 |
-| 周报时效性 | 代码层按 `published_date` 剔旧闻 + 查询词泛用化 + 中英双语检索合并 + 订阅级检索语言 |
-| 语音 | 朗读（Qwen3-TTS 音色克隆，用时启动用完释放）+ 语音输入（长按说话 → 松手转文字，独立进程） |
-| 账号与安全 | 登录 / 注册两卡分离（登录绝不建号）、绑定邮箱 + 注销、密钥「名入库、值走 `.env`」 |
-| 桌面版 | pywebview 外壳：同源加载同一份 SPA、记住登录、托盘常驻、崩溃自愈、原生「另存为」导出 |
-| 配置外置 | 提示词全部在 `prompt/prompts.yml`；设置项集中在「设置」页 |
+- **会自己选工具的多智能体问答**：主 Agent 调度 4 个专职子 Agent（网络搜索 / 数据库 / 个人情报 / 周报）；工具分三族——内置工具、子 Agent 自带工具、你自配的 CLI·API·MCP 来源，按提问相关性挑选。
+- **三种联网取法**：「只检索」「只进指定网址」「先检索定位再进站深抓」，由工具签名约束，每轮检索次数有上限。
+- **工作目录可见可编辑**：左栏「📁 工作目录」能逐层浏览、直接改文本、预览 docx/xlsx、删除进回收站可还原。
+- **写能力有边界**：内置写工具（建/改/删文件）用人话直接可用；你自配来源的写操作必须在输入框用 `/` 选中对应「写工具集」才放行，且只对那一轮生效。
+- **固定流程（workflows）**：把多步任务写成流程，逐步执行、失败停步；流程可声明自己要用的写工具集。
+- **能真的下载文件**：让它「打开这个网页，把附件/图片下下来」，文件会落进你的工作目录 `_downloads/`，回答里列出文件名与体积，图片直接显示。
+- **知识库与周报**：本地自建向量库（导出报告一键入库，检索前自动清洗）；周报按订阅定时生成并推送，支持中英双语检索。
 
 ---
 
-## 三、项目结构
+## 快速开始
 
-> ⚠️ **唯一权威是 [`docs/文件存放规则.md`](docs/文件存放规则.md)**（含每个目录的职责、新文件放哪的判据、不入库清单）。
-> 本章只是速览；新增文件/目录前请先读那份规则，**新建子文件夹需先与用户确认**。
+### 1. 前置依赖
 
-```text
-deep_search_pro/
-├── main.py # 程序入口（CLI 交互版：主 Agent + 子 Agent 装配）
-├── dspro / dspro.cmd # CLI 包装脚本（免激活 venv；PATH 加项目根即可直接 dspro）
-├── pyproject.toml / uv.lock # 依赖清单与锁文件（uv 管理）
-├── .env / .env.example # 环境变量（.env* 不入库）
-├── README.md / IDEA.md # 主文档（含阅读指南）/ 项目定位
-│
-├── agent/ # ★ 智能体核心（模型接入 / 装配 / 预算 / 会话 / 思考捕获 / 周报引擎）
-│ └── subagents/ # 子 Agent 装配（网络搜索 / 数据库 / 个人情报 / 周报）
-├── api/ # ★ FastAPI 服务层（REST + WebSocket + 各业务 API 模块）
-├── cli/ # ★ CLI 版（dspro）：login / list / digest / chat
-├── prompt/prompts.yml # ★ 全部提示词（主 Agent + 各子 Agent + 各撰写 AI 段）
-│
-├── tools/ # ★ agent 的**硬编码内置工具**（产出用于挂载 agent）
-│ └── _runtime/ # ⚠️ 内部实现（能力执行层），外部不许直接 import
-├── utils/ # 便利开发的小工具（如路径辅助：封装一次、别处一句引用）
-├── rag_knowledge/ # ★ RAG 知识库（kb_service / kb_store / cleaner / evaluator）
-│ └── db/ # 每用户 Chroma 落盘（不入库；含路由基准临时库，保留）
-│
-├── front/ # ★ 前端一切（唯一家）：SPA + 教程素材 + 桌面壳
-│ ├── index.html # 免构建 Vue3 单文件 SPA（登录 / 工作台 / AI 助手 / 报告 / 定制）
-│ ├── vendor/vue.global.prod.js
-│ ├── tutorial/ # 教程素材（演示文档引用的截图/svg + api 教程正文）
-│ │ └── previews/ # 机器生成的静态预览/harness（不入库）
-│ └── desktop/ # 桌面版外壳（pywebview：app.py / desktop.cmd / 图标）
-│
-├── scripts/ # 开发运维脚本（预览生成 / CDP 探针 / 数据迁移）
-├── tests/ # 测试与调试（按类分子目录）
-│ ├── unit/ # ① pytest 单元 / 静态契约（秒级，无需服务）
-│ ├── harness/ # ② 前端抽取式 harness（Node）
-│ ├── testclient/ # ③ TestClient 端到端（进程内）
-│ ├── live/ # ④ 真机 / 外壳 / 真窗口（慢，注意额度）
-│ ├── debug/ # ⑤ 调试 / 临时
-│ ├── fixtures/ # 基准与夹具（不能放 data/，会被 gitignore 丢掉）
-│ └── test_out/ # 系统级测试产物（不入库）
-├── docs/ # 里程碑文档：v1.0 / v2.0 / v2.5 / v3.0 + sql/ + 本规则文件
-│ └── <版本>/backups/ # 按版本存放的备份
-│
-├── user_data/ # ★ 账号级用户数据唯一归口（2026-10-13 起，不入库）：agents_docs / output / pic / rag_knowledge/db / sandbox / probe_sets / tts_ref
-│ ├── agents_docs/{账号}/ # 用户级智能体资料：SOUL.md / MEMORY.md / 人格库 / 技能
-│ ├── output/{账号}/ # agent 产物：周报 md/pdf、导出、测评打分表、tts/ 语音
-│ ├── pic/{账号}/ # 用户上传的背景图 + chat_images/
-│ └── rag_knowledge/db · sandbox · probe_sets · tts_ref # 知识库向量 / 命令沙箱 / 题集 / 音色参考（路径由 utils/paths.py 统一提供）
-├── data/ # 运行时数据（不入库）：personal.db（用户指定暂留）/ audit / 各类缓存
+| 依赖 | 最低版本 | 说明 |
+| --- | --- | --- |
+| Windows | 10 / 11 | 桌面壳、语音、`pywin32` 相关功能仅 Windows |
+| Python | **3.11.x** | `pyproject.toml` 要求 `>=3.11`；请用 3.11（不要用 3.12+，部分依赖无 cp312 轮子） |
+| [uv](https://docs.astral.sh/uv/) | 0.4+ | 包与虚拟环境管理（项目用它生成 `uv.lock`） |
+| Git | 2.x | 拉代码 |
+| Chrome | 任意较新版本 | 进站抓取（browser-use）复用本机 Chrome，不下 Chromium |
+
+```powershell
+# 安装 uv（Windows PowerShell）
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-**三条最容易被忽略的规矩**：
-1. **前端一切文件都在 `front/`**，不放别处；
-2. **`tools/` 是"挂给 agent 的内置工具"，`utils/` 是"给开发者用的小工具"**——别混；
-3. **测试账号产出的数据按正常账号规则对待**（在 `user_data/output/{账号}/`）；只有**针对整个系统测试运行**的产物才进 `tests/test_out/`。
-
-### v3.0 / v3.1 新增模块的阅读路径（M1 ~ M6c · M6b）
-
-> 上面那张表是 v1.0/v2.0 的骨架；v3.0 是在同一套骨架上**填槽位**，v3.1 补的是**度量**（怎么证明「没改坏」），
->
-> 🗺 **先看一张图（读代码前建立全局坐标）**：[`设计图-agent工作与工具调用体系.html`](docs/v4.0/设计图-agent工作与工具调用体系.html)（交互查看器：明暗切换 / 缩放 / 搜索 / 关系追踪 / **点击节点看技术栈** / 3 章导览 / 演示 / 导出）—— 主 Agent 的**调用依据**（能力池与路由 → **决策模型精排**（大点 02）→ 系统提示词装配 → `messages[0]` 注入）、三族工具（内置 @tool / 4 个子 Agent / 自配 CLI·API·MCP）如何**纳入**与**联动**、以及执行侧护栏，全在一张图里。
-> 所以按下面这八步接着读即可。每步都留了思考题——它们就是面试里最容易被追问的点。
-
-| 顺序 | 文件 | 看什么 / 思考题 |
-|---|---|---|
-| 1️⃣ | `docs/v3.0/v3.0规划书.md` | 先看 §2 优先级与 §7「明确不做」。**思考题**：为什么"不做清单"对个人项目比路线图更有用？ |
-| 2️⃣ | `tools/api_driver.py` · `tools/mcp_driver.py` · `tools/capability_pool.py` | 两类外部能力怎么被抹平成同一个 `CapabilityEntry`。**思考题**：如果当初把工具池写成"CLI 专用"，加 API/MCP 要多付哪三笔代价？ |
-| 3️⃣ | `agent/usage_counter.py` · `agent/token_usage.py` · `docs/v3.0/M6c-成本表与失败分类实现记录.md` | 一次工具调用、一次模型调用分别在哪一刻落库。**思考题**：为什么金额必须**落库**而不是查询时现算？（提示：换模型后历史账） |
-| 4️⃣ | `tools/memory_profile.py` · `tools/profile_evidence.py` | 画像为什么坚持"人可读、可编辑、可追溯"。**思考题**：只做向量化黑盒画像，三个月后哪类问题会集中爆发？ |
-| 5️⃣ | `tools/price_ledger.py` · `tools/price_display.py` · `api/price_api.py` | 台账、登记价、目标价、复杂价格规则四者的边界。**思考题**：为什么「资讯价」必须与「当前价」分表并强制标注来源？ |
-| 6️⃣ | `tests/live/m5c_router_bench.py` · `docs/v3.1/M6b-测试基线与路由基准方案.md` | **路由质量怎么变成可复跑的基准**：冻结池（28 条快照）+ 题库（30 题）+ 五个数（precision@3 / recall@3 / hit@3 / 灰区 / 噪声假阳性）——**纯本地 embedding、零网络、零额度、一次约 2 分 42 秒**。**思考题**：为什么「池子 8 → 28 后路由全对」这个结论**不可复现**？为什么灰区 0.5（一半问句回退全量）是 **fail-safe 而不是错误**？为什么判据要分**软**（能力目标，只记录）与**硬**（相对基线不得下降，才告警）两层？★ **2026-10-09 收口后**：该基准的 `precision@3` 已被证明**结构上不得超 0.536**（题集里大量题目只有 1 个可接受工具、而 top3 恒 3 条）→「`≥ 0.7`」作废，改以 **`precision@1`** 为主力信号、**灰区分两栏**（噪声题的正确回退单独看）；见 `docs/v4.0/Done/01-度量口径收口工程·实现记录.md`。★ **真机侧的对应物**（账号级测评与自维护：出题/判分/建议三段小 Agent + 测评隔离 + 清理硬规则）见 `docs/v4.0/Done/03-账号路由测评用户端可视化与可视化改进建议·实现记录.md`。**追加思考题**：为什么给一个指标定「绝对值目标」之前，必须先确认它的**可达上限**？（提示：一条恒真的触发线，会把「发现了问题」变成「只要去看就一定有问题」） |
-| 7️⃣ | `tests/live/m5b_pressure_probe.py`(v3) · `m6b_probe_drift.py` · `m6b_score_import.py` · `docs/v3.1/M6b-探针问题集v2.md`(§八/§十) | **真机探针制度 v3**：43 条真实工具题集（覆盖账号 28 条能力）+ ★ **脚本只记录「调了哪些工具、什么顺序」，对错人工打分**；基线 = 序列 + 评分 + 备注（`tests/fixtures/m5b_probe_baseline.json` full 43 条）。**思考题**：为什么链式调用（12306「取时间 → 城市换站码 → 查票」）让「只看首调」**必然误判**、且每加一个来源就得打一块补丁？为什么基线只能记**一次路径**，序列变了 ≠ 变差？为什么**未测（429/5xx）**必须单列、不能记成能力问题？ |
-| 9️⃣ | **`docs/v3.1/工具路由设计-逐文件带读.md`**（★ 想**逐行检查路由设计**就从这份走） | 路由这条线的**全量文件带读**：按「非 Python 契约/配置 → 零第三方依赖的纯逻辑 → 少量依赖 → 装配层」八层排序，每个文件都给**关键定义行号 + 在链路里的位置 + 逐行检查要点 + 思考题**；配套命令速查与已知缺陷清单 |
-| 8️⃣ | `docs/v3.1/路由质量修复任务书.md`（**已批注 · 主体落地**） | **拿实测证据立项**：7 个「选错工具」用例（离线基准 5 + 真机探针 2）分两种形态（期望工具不入 top3 / 命中了来源却取错函数），候选修法按「**先补配置 → 再动策略 → 阈值放最后**」排序，验收判据六条。**思考题**：为什么噪声假阳性**不得上升**必须和 precision 一起写进硬判据？为什么旧根因假设（来源级描述污染向量文本）**必须先复验**再开工？为什么「选对工具」与「正确使用对的工具」要**分成两件事**？ |
-| 9️⃣ | `tools/voice_asr.py` · `api/server.py`(`/api/asr*`) · 前端 `index.html` 的语音块 · 外部小项目 `asr_cli` · `docs/v3.1/语音转文字-逐文件带读.md` | **语音输入（长按说话 → 松手转文字）**：像微信那样**长按输入框里的话筒**说话，松手把话转成文字**追加**进输入框—— 这是**产品自己的输入方式** 不是 agent 的工具（不进工具路由）。★ 两个实测逼出来的设计：① 模型冷加载 **8.5s** → 引擎**常驻**（之后 ≈0.3s）；② 主项目 venv 里 chromadb 的 `onnxruntime` 与 sherpa 自带的**撞名 → 段错误** → 引擎**独立进程 + 独立 venv**。**音频全程不落盘**。**思考题**：为什么「每次起一个 CLI 进程」在这个功能上**必然不可行**？为什么两条边界要用**两种请求格式**（前端 multipart 后端到引擎裸字节）？为什么把「音频不落盘」写成**源码级断言**而不是只测行为？ |
-
-> 真机口径与额度纪律见 `tests/README.md`（例如 `STUB_WEBSEARCH=1` 零消耗跑周报、Tavily 额度紧张期不碰网搜）。
-
-## 四、阅读指南（Web）（建议顺序）
-
-> 智选情报官 **Web 版**（FastAPI + Vue3 免构建前端）的代码阅读路径。按「配置 → 模型 → 工具 → 装配 → 可观测性」的难度递进组织，每读一个文件都先问自己一个问题。
-
-> **只关心命令行版？** 跳到 [五、阅读指南（CLI）（建议顺序）](#五阅读指南cli建议顺序)。
-
-| 顺序 | 文件 | 看什么 / 思考题 |
-| --- | --- | --- |
-| 1️⃣ | `prompt/prompts.yml` | **先读「大脑」**。主 Agent 和子 Agent 的 `system_prompt` 写在这里。理解：一个 Agent 的「人设」和「能力边界」是怎么用 YAML 描述出来的？为什么要把提示词放在配置里而不是写死在代码里？ |
-| 2️⃣ | `agent/prompts.py` | 配置是怎么被代码读进来的？注意 `yaml.safe_load` 比 `load` 安全（防执行注入）。输出 `main_agent_content` / `sub_agents_content` 两个字典。 |
-| 3️⃣ | `agent/llm.py` + `agent/reasoning_model.py` | 大模型是怎么初始化的？现在用 `ReasoningChatOpenAI`（继承 ChatOpenAI，见 1️⃣9️⃣）实例化，不再用 `init_chat_model`——唯一区别是保留第三方模型 `reasoning_content`。`LLM_MODEL_MAX`/`OPENAI_BASE_URL` 在 `.env` 里配置。 |
-| 4️⃣ | `tools/tavily_tool.py` | **工具的本质**：一个普通函数 + `@tool` 装饰器 + 清晰的 docstring（docstring 就是给模型看的「说明书」）。注意开头的 `monitor.report_tool(...)` 埋点。 |
-| 5️⃣ | `tools/db_tools.py` | 三个数据库工具：`list_sql_tables`（看有哪些表）→ `get_table_data`（预览表结构）→ `execute_sql_query`（自定义 SQL）。体会「工具之间有序协作」的设计。 |
-| 6️⃣ | `agent/subagents/network_search_agent.py` | **子 Agent 的装配**：把「提示词 + 工具」打包成一个字典。这就是第 5️⃣ 步工具和第 2️⃣ 步配置的结合点。 |
-| 7️⃣ | `api/monitor.py` | **可观测性**：`ToolMonitor` 单例如何把「工具开始/进行中/结束」推给前端？理解 `WebSocketManager` 与「脚本运行时 stream_writer」两种输出通道。 |
-| 8️⃣ | `api/context.py` | **异步难点**：为什么不能用全局变量 / `threading.local`？`ContextVar` 如何在同一个线程的多个协程之间隔离数据（避免 A 用户看到 B 用户的结果）？ |
-| 9️⃣ | `utils/` | `path_utils.py` 处理多用户文件隔离；`word_converter.py` 是结果导出的辅助能力。 |
-| 🔟 | `main.py` | 入口。当前为 **CLI 交互版**（`while True + input` + `MemorySaver` 多轮记忆），已把主 Agent 与 3 个子 Agent 串起来跑通；Web 版入口见 `api/server.py`。 |
-| 1️⃣1️⃣ | `agent/subagents/db_agent.py` | **数据库子 Agent 的装配**：与 `network_search_agent.py` 同构，把「提示词 + MySQL 三件套工具」打包成字典。对照阅读，体会「一套装配模式复用到不同专家」。 |
-| 1️⃣2️⃣ | `tools/personal_tools.py` + `tools/schema_personal.py` | **个人侧工具与本地库**（M1.5）：操作 SQLite 个人库，`attributes` 用 JSON 列承载异质规格（耳机 vs 显卡字段完全不同却共用一表）。这是「泛用化 + JSON 扩展」设计的落点。 |
-| 1️⃣3️⃣ | `api/server.py` + `api/account.py` | **Web 服务层**（M2/M3）：① 同步的 `agent.invoke` 为什么必须用 `asyncio.to_thread` 放到线程池？（否则卡死事件循环，WebSocket 推不出去）② startup 时 `manager.set_loop()` 绑定事件循环后，monitor 埋点如何经 `run_coroutine_threadsafe` 从工作线程送回主循环、再按 thread_id 定向推到 WebSocket？③ 账号如何用个人库 `accounts` 表做角色分流？④（M3）`/api/competitors` 为什么不走 agent 直查 MySQL？`/api/export`→`/api/download` 链路如何做「用户目录隔离 + 防目录穿越」校验？ |
-| 1️⃣4️⃣ | `front/index.html` | **前端 SPA**（M2/M3，免构建 Vue 3）：登录页按 role 分流到公司/个人双工作台；WebSocket 收到 `monitor_event` 渲染右栏进度；来源标记 🔍/🗄️/📚 高亮。登录区是**登录 / 注册两张卡**（2026-09-16 收尾拆分）——旧版是混合卡「输入的用户名不存在即自动注册」，打错一个字就会静默建出错误账号，现在改为注册卡独立（含确认密码 + 「即将创建：xxx」实时回显），且**登录失败绝不建号**、账号不存在时提示「去注册 →」引导。思考：为什么「登录失败自动注册」看着贴心却危险？（用户打错用户名时得到的是一个**能登进去的空账号**，等到发现数据都不见了才察觉，错误被延迟放大）；为什么「即将创建」这行回显比弹窗二次确认更合适？（不打断流程，但把不可逆操作的后果提前摆到眼前）。组件美化来自 uiverse 库（003 气泡按钮 / 004 硬阴影输入框 / 001 3D 方块加载器），体会「snippet 重配色适配主题」的方法。后续增强：浅绿/白/黄三色系重配色、AI 回复框深底亮字对比、右栏「🤔 模型思考过程」折叠区、顶栏「🎨 背景」图库面板。 |
-| 1️⃣5️⃣ | `tests/` | **测试与调试脚本**：与项目代码分离存放。`m3_smoketest.py` 是接口层回归（登录→竞品清单→导出下载）；`auth_split_e2e.py` 是登录/注册拆分的回归（**核心断言：用打错的用户名登录不会建号**——查库计数不变）；前端交互的真机验证在 `scripts/cdp_auth_probe.py`（无头 Chrome + CDP，真实点击并断言「账号是否真的建出来」）。注意脚本须基于 `__file__` 解析项目根注入 sys.path、并豁免本机 HTTP_PROXY 才能访问 localhost。 |
-| 1️⃣6️⃣ | `api/me_user_data.py` | **用户数据自主管理**（M4 前置）：`/api/me/*` 全套 CRUD，全部按 session 的 account_id 隔离。思考：为什么「增删改走 REST、Agent 工具只读」的读写分离能同时保住数据安全与 Agent 可靠性？ |
-| 1️⃣7️⃣ | `agent/digest_engine.py` + `agent/subagents/digest_agent.py` + `api/digest_scheduler.py` | **Digest 定期推送**（M4，回归主智能体编排）：① 为什么 digest 不自己写检索代码、而是让主 Agent 调度【网络搜索助手】？② 查询批次为何硬上限 ≤8？③ 候选不足 15 条时筛选门槛为何放宽（禁止空周报）？④ APScheduler 为何内嵌 FastAPI 进程而非外部 cron？⑤（时效性修复）`build_batches` 为何弃用「关键词+修饰词」拼接、改用关键词原文？——实测 Tavily 对带修饰词的中文长查询相关性崩坏（返回无关金融/加密货币新闻），且修饰词无法跨领域通用。 |
-| 1️⃣8️⃣ | `front/index.html` 的「v3.1：语音转文字」标记块 · `tools/voice_asr.py` · `api/server.py`(`/api/asr*`) · `docs/v3.1/语音转文字-逐文件带读.md` | **长按说话 → 松手转文字**（输入侧）：为什么它**不是** agent 的工具、不进工具路由？为什么必须**两个进程**（`onnxruntime` 撞名 → 段错误 + 冷加载 8.5s → 常驻引擎）？「音频不落盘」为什么要在**源码层**钉住？「移出话筒 = 取消」为什么**单向不可逆**？**思考题**：harness 从 `index.html` **抽取代码块**时，会怎样被「插在中间的新代码」悄悄弄坏（本次踩过 区间锚点该指向什么才稳）？ |
-| 2️⃣7️⃣ | `agent/build_context.py` + `api/server.py`(agent 构建/缓存) | **M2 请求装配管线化（v2.0）**：① 为什么 v1.0「改人格/记忆就重建整个 agent」不好？（每次画像变化重建开销大、缓存膨胀、动态来源无法叠加、难以调试这次请求带了什么）→ agent 静态化（只按自定义模型配置缓存），SOUL/MEMORY 每次 invoke 前由 `build_request_context` 拼成 **SystemMessage 放 messages 首条**注入（Spike 实测：deepagents invoke 首条 system 动态覆盖构建时 system_prompt）；② 人格切换零重建（e2e：P1海盗→P2管家不重启服务即生效）；③ 单一来源：旧拼接副本删除，动态内容统一走 `compose_dynamic_prompt`（人格在前、记忆在后）。（**v3.0 M3 追加**：记忆注入不再是"整份塞进去"——画像段 ≤500 字、笔记段 ≤300 字，超限在**装配期**按"情报相关维度优先 / 笔记相关度取前 N + 最近 3 条兜底"裁剪（下下游按句子做字符串过滤是不可控的，看 `_trim_profile`/`_trim_notes`）；同时注入一行服务端算好的**【画像待更新】信号**，把"该不该更新画像"从模型的自由发挥变成看得见的事实。）思考：为什么动态 SystemMessage 不怕历史截断？（ContextTruncator 保护所有 SystemMessage，persona 永不丢）；为什么「改模型才重建」？（模型配置影响 agent 绑定的模型实例，人格/记忆只是请求期输入）。 |
-
-| 1️⃣8️⃣ | `docs/README.md` + `docs/v1.0/` + `docs/v2.0/` + `docs/v2.5/` + **`docs/v3.0/`** + **`docs/v3.1/`** | **设计文档与里程碑**（★ **v3.1 先看这三篇**：`M6b-测试基线与路由基准方案.md`（离线路由基准实测 + 探针制度 v3 + 三项裁决）· `M6b-探针问题集v2.md`（43 条真实题集 + §十 全量审计：36 / △5 / 2 + 两个悬案结案）· `路由质量修复任务书.md`（7 个「选错工具」用例 + 候选修法 + 六条验收判据；**已批注 · 主体落地，剩一轮 live △ 复跑**）■ ★ v3.0 里还有一篇**路由专题**：`遗留问题v2.0M5c-路由基准与Jev仲裁预研.md` —— 池子从 8 涨到 28 后实测出的三类真问题（权限元数据把 19/28 个纯查询工具标成写操作 / 来源级描述污染同源每个工具的向量文本 / 缺带标签基准），以及三步走方案与 Jev 仲裁层的立项条件；想理解"路由为什么会自信选错"，读它）：`docs/v1.0/` 是定版档案（`里程碑计划.md` 为开发顺序准绳 + `M1_*~M4_*` 实现与实测记录）；`docs/v2.0/` 是当前迭代（`M1上下文工程化.md`/`M2请求装配管线化.md`/`M3RAG知识库搭建与使用.md`/`M4技能与工具.md`/`M5工具智能路由.md`/`M5b工具检索路由.md`/**`工具路由设计.md`（跨里程碑的工具路由总设计：链路全景 + 逐文件带读 + 阅读指南）**/`CLI命令行工具dspro.md`）。**★ 版本与文档规则（2026-09-24 定，详见 `docs/README.md`）**：**整数版**（v1.0/v2.0/v3.0）= 大规模变化（新功能开发、现有功能颠覆性优化、架构改进），**技术调研 / 大型方案 / 工程计划书一律进整数目录**——**即使该版本收官之后才写**也算它的（判断依据是**文档性质**而非写作时间）；**小数版**（v2.5/v2.6）= 现有功能的用户观感优化、bug 修补、小功能添加，且**小数目录只放「问题-方案-结果」性质的文件**，不允许出现长文档。放错目录比不写更麻烦（找不回、也对不上版本号）。思考：为什么「按文档性质、而非按写作时间」归档，才能让一个版本的目录自解释？（提示：读者来找的是「这个版本改了什么」，不是「你哪天写的」） |
-
-| 1️⃣9️⃣ | `agent/reasoning_model.py` + `agent/thinking_capture.py` + `api/monitor.py` | **思考过程可视化（A+ 方案）**：langchain-openai 明确丢弃第三方 base_url 的非标准字段 `reasoning_content`（源码 `_convert_delta_to_message_chunk` 只读 content/function_call/tool_calls，文档明言「Use a provider-specific subclass」）。方案：自定义 `ReasoningChatOpenAI(BaseChatOpenAI)` 重写 `_create_chat_result`（非流式）把 `reasoning_content` 塞进 `additional_kwargs`；`thinking_capture.py` 在 `agent.invoke` 完成后遍历 `result["messages"]` 提取各轮 AIMessage 的思考推前端。思考：为什么不用 `on_chat_model_end` 回调做实时？（deepagents 底层 `langchain.agents.create_agent` 的模型节点 `_execute_model_sync` 只 `model_.invoke(messages)` 不传 config，回调不触发；`model.with_config(callbacks=...)` 返回 RunnableBinding 会被 resolve_model 当字符串报错）。为什么这样比旧「双请求旁路」好？（单请求省 token + 覆盖所有轮次，旁路只覆盖首轮）。 |
-| 2️⃣0️⃣ | `api/customize.py` + `tools/schema_personal.py`(llm_providers 表) | **定制助手后端**：五组 API 按账号隔离——① 背景图 `/api/bg/*`（multipart 上传存 `pic/{username}/`、列表、删除，uuid 前缀防重名）；② 模型选型 `/api/llm/providers`（CRUD + activate，**api_key 列表时掩码 `****后4位`，编辑留空=不改**）；③ 人格 `/api/soul`（默认 `SOUL.md` + 多人格集 `SOUL/{name}.md`，`ACTIVE_SOUL` 文件记录当前激活，list/create/delete/set_active/named 路由）；④ 记忆画像 `/api/memory`（读写 `MEMORY.md` + 一次性初始化 `/api/memory/init`）；⑤ 批量导入 `/api/me/*/batch`（竞品/收藏剪贴板粘贴，一行一个，去空去重 ≤50 条）。思考：`_get_agent_for()` 为什么「有人格/自定义模型/记忆画像就按账号缓存独立 agent」而不是复用全局 AGENT？（全局 AGENT 的 system_prompt 在构建时固定，无法注入动态内容；缓存 key 含 soul+memory 哈希，人格/记忆变化自动重建） |
-| 2️⃣1️⃣ | `agent/digest_engine.py`(任务指令) + `tools/tavily_tool.py`(strict_days/bilingual) | **周报时效性修复**：① `strict_days=True` 在代码层解析每条 `published_date`（RFC822 格式）剔除超窗旧闻——为什么不能只靠模型自觉？（Tavily 的 days 只是硬上限不保证排序时效，旧闻常排前面）② `bilingual=True` 用 LLM 把中文关键词翻译成英文做中英双语检索合并——为什么单中文查询会漏？（实测 Tavily 对中文实体词相关性差，英文召回更精准）③ 订阅级 `lang` 字段（zh/en/both）控制是否双语。思考：无日期的结果为什么「宁可保留不误杀」？ |
-| 2️⃣2️⃣ | `tools/readtofile.py` + `tools/writetofile.py` | **agents_docs 文档读写工具**：主智能体可读/写 `agents_docs/` 下的 .md/.txt（路径穿越防护：归一化后强制前缀校验；扩展名白名单）。端到端验证：`tests/testclient/tool_agent_e2e_test.py` 把工具挂到全局 AGENT 后由 Agent 实际完成写文件+读回任务。思考：为什么这类「越权敏感」工具要同时在路径与扩展名两层设防？ |
-| 2️⃣3️⃣ | `prompt/prompts.yml`(soul_writer + memory_initializer 段) | **人格/画像撰写 AI**：顶层独立段（不进 main_agent/sub_agents，不挂工具）——`soul_writer` 按用户一句话需求（如「活泼女仆」「稳重管家」）生成 200-500 字人格提示词（称呼/说话风格/情绪/周报风格/行为准则五维）；`memory_initializer` 按用户系统已有资料（兴趣/收藏/竞品/公司信息）提炼 150-400 字初始画像（缺的维度如实标注「暂无」）。思考：为什么这两个 AI 必须独立于主 Agent 体系？ |
-| 2️⃣4️⃣ | `agents_docs/{user}/MEMORY.md` + `agent/digest_engine.py`(画像注入) | **记忆白盒化（用户画像/公司形象）**：① 账号注册即生成空 MEMORY.md（`<!-- memory_init: pending -->` 标记）；② 主 Agent 的 system_prompt 注入【你的用户记忆画像】区块 + 强制记忆维护指令——用户表达稳定偏好时必须调用【写入文档工具】更新 MEMORY.md（禁止只口头确认）；③ `_get_agent_for` 缓存 key 含 memory 哈希，画像变化自动重建 agent；④ chat 路由对比调用前后 MEMORY.md 内容，变化则回复末尾附「📝 已更新你的记忆画像」提示；⑤ digest 引擎读 USER PROFILE 段注入「情报侧重」（价格敏感→降价/优惠类优先）；⑥ 前端定制页可视化编辑 + 一次性初始化按钮。**踩坑**：deepagents 内置 filesystem 工具（read_file/write_file）与自定义文档工具重名竞争，模型优先选内置导致绕过 agents_docs 约束——用 `_ToolExclusionMiddleware(excluded=...)` 排除内置工具。思考：为什么「排除内置工具」比「改名自定义工具」更优？（保留 agents_docs 安全边界） |
-| 2️⃣5️⃣ | `api/voice_tts.py` + `voice_test`(外部小项目) | **语音朗读与自定义音色**：① 为什么不能把 voice_test 的代码复制进主项目？（环境冲突：voice_test=py3.12+torch+qwen_tts，主项目=py3.11+langchain，numpy .pyd 不兼容）→ 用 **subprocess 执行 voice_test 的 venv python 跑脚本**，环境天然隔离；② pkl 按账号隔离：`--name {username}_{包名}` 前缀，voice_test 脚本零改动；③ 显存约束（RTX 3050 4GB）：模型**只在用户使用时临时启动**（subprocess 进程退出即释放显存），不做常驻服务；④ 每次合成要重新加载模型（30-60s），常驻化方案见 `docs/v2.0/v2.0方案.md`；⑤ **踩坑**：subprocess 必须清 PYTHONPATH（Hermes 注入的 hermes-agent venv 会让 voice_test 的 numpy 加载崩）；克隆用后即删参考音频（只留 pkl 资产）。思考：为什么「名字前缀隔离」比「子目录隔离」更省事？（voice_test 脚本读固定 PACK_DIR，不支持子目录） |
-| 2️⃣6️⃣ | `agent/context_budget.py` + `agent/conversation_store.py` + `agent/build_context.py` + `api/server.py`(会话路由) | **M1 上下文工程化（v2.0）**：① 为什么 v1.0 的 MemorySaver 承载消息历史是错的？（进程内内存、重启即丢、无界增长必然爆免费模型窗口）→ 对话历史改存 SQLite（`conversations`/`messages` 表，按账号隔离），每次 invoke 显式传入完整上下文（SQLite 恢复 + 新提问），agent 无状态执行；② 上下文预算四组件（AstrBot `core/agent/context/` 借鉴）：TokenCounter（启发式估算，中文 1.5 字/token）/ Truncator（按"轮"丢弃，system 永不丢）/ Compressor（LLM 摘要可选，失败自动降级截断）/ ContextManager 编排——token 超限或轮数超限时触发，静默保证不爆窗；③ 多会话管理（类主流 AI 聊天应用）：UUID thread_id、标题自动取首问、前端左栏会话列表（新建/切换/重命名/删除）、会话归属校验（防越权 404）。思考：为什么「截断按轮不按条」？（工具消息必须跟随所属 user 轮次，留孤立 tool 块模型会崩）；为什么删掉 checkpointer 也安全？（deepagents 只用 interrupt_on 等可选功能才需要 checkpointer，本项目只用了工具排除 middleware）。 |
-| 2️⃣8️⃣ | `rag_knowledge/` + `tools/kb_tools.py` | **M3 RAG 知识库（v2.0）**：① 为什么弃 RAGFlow 用自建 Chroma？（蜀道已验证同栈 chromadb+bge 混合检索 ALL@10=0.83；单机本地零运维；模型方法可复用）② 存什么？（用户私有沉淀：导出报告经弹窗确认入库 + 上传 .md——**不做**网络缓存/SOUL 向量化）；③ 检索管线（BM25 稀疏 + bge 稠密 → RRF 融合 → 可选 bge-reranker 重排 → 父块注入）；④ 快/全双模式（对话 query_kb 快模式跳过 rerank ~0.1s；周报代码层必查 full 模式 <1s——个人库 ≤100 文档规模小）；⑤ **入库决策链**（evaluator 独立小 agent 评估脏/质量 → 前端弹窗显示评估建议 + 清洗预览 → 用户确认 → cleaner 清洗 AI 报告脏内容 → 分块入库）；⑥ **消息级防重复入库**（messages 表 `kb_ingested` 标志：同一条 assistant 消息的报告已入过库 → 弹窗顶部 ⚠️ 警告 + 后端 400 拒绝；force=true 可强入）；⑦ **前端弹窗**：用 `<teleport to="body">` 挂载到 body 根（任何 view 都能弹，不再局限知识库页）；亮色文字适配深底弹窗。思考：为什么入库前要清洗 AI 导出报告？（人格口吻/emoji/表格符是检索脏内容，蜀道 272 篇污染清理教训）；为什么 query_kb 是工具不是子 Agent？（主 Agent 掌控何时查，免费模型不会主动查——周报场景代码层必查兜底）；为什么用消息级去重而不是 md5 去重？（同内容报告每次导出文本可能微调措辞，md5 会漏；消息级精确到"这条回复是否已入过"）。 |
-| 2️⃣9️⃣ | `api/customize.py`(技能能力层) + `agent/build_context.py`(`compose_user_prompt`) + `api/server.py`(`/api/chat` 的 skills) + `front/index.html`(技能与工具视图) | **M4a 技能（v2.0）**：① 技能 = **用户自己写的 SKILL.md 任务说明书**，存 `agents_docs/{user}/skills/`（复用 SOUL 的目录与文档读写工具）——为什么用「user message 前缀注入」而不是塞进 system_prompt？（技能是**本轮一次性**语义：用户只在这次提问里要它，塞 system 会与人格/记忆的常驻语义混淆且无法随轮次消失）② 注入链路：输入框 `/` 唤出目录（筛选、↑↓ 回绕、Enter/Tab 选中、Esc 关闭，最多叠加 5 个）→ 气泡里留技能 pill → `POST /api/chat?skills=a,b` → **server 层**读技能正文传入 `build_request_context`（不能放 `build_context.py` 里读——该模块铁律「不 import api.*」）→ `compose_user_prompt()` 拼成 `【本轮启用技能】…———【用户提问】…` 前缀；③ **落库的仍是原始提问**（前缀只进本轮 invoke）→ 下一轮自然不再带技能，这就是「一次性」的实现方式；④ 边界识别修正：本轮起点判定改按 `ctx.final_user_msg`（装配后文本）比对，否则加了前缀后 `m.content == question` 恒不成立、工具调用消息会被漏掉；⑤ 技能名即文件名 → sanitize 白名单（防 `..` 与 Windows 保留名 `nul/CON/AUX`）+ 单技能 4000 字上限（前后端同值硬截断）。思考：为什么技能要用「说明书文档」而不是「硬编码工具」？（工具是能力、技能是方法：换口径不用改代码）；为什么「用完即清」而不是会话内常驻？（常驻会让多个技能互相污染，也解释不清「这次为什么这样答」）；为什么句中斜杠（如「价格/性能」）不该弹菜单？（只在输入框开头为 `/` 时触发，否则正常提问会被打断）。 |
-| 3️⃣0️⃣ | `tools/_runtime/shell_runtime.py` + `tools/shell_executor.py` + `api/server.py`(`/api/shell/*`) + `front/index.html`(CLI 面板) | **M4b CLI 沙箱面板（v2.0）**：① 为什么给 Agent 开命令行？（CLI 是 AI 的母语：`--help` 自描述、参数组合表达力强、输出可解析；对比 MCP 每接一个服务都要写一层适配）② **工具层 / 能力层分离**：`shell_runtime.py` 只干执行，`shell_executor.py` 用 `@tool run_shell_command` 包给 Agent——**CLI 面板与 Agent 共用同一执行器**，所以「面板能敲什么」＝「Agent 能跑什么」，安全规则不会两套漂移；③ **六道闸**：命令白名单 → 参数级路径校验 → 沙箱 cwd → 超时上限 → 输出 1MB 截断 → 审计日志 `data/audit/commands.jsonl`（含被拒条目）；④ 为什么剔除 `python`？（它本身就是沙箱后门：一条 `python -c` 就能读任意文件、起子进程，其余五道闸形同虚设）；⑤ 为什么 `ls/cat/grep/echo/pwd/mkdir` 要 Python 内建实现？（实测 Windows 原生 PATH 下这些 exe 一个都找不到——Git 只把 `PortableGit\bin` 加进 PATH，`usr\bin` 没加）；⑥ 为什么只挡 cwd 不够？（`cat ../../.env`、`git --git-dir=C:/Users`、`curl file:///C:/Users/ZQK/.ssh/id_rsa` 都能绕过沙箱 → 必须参数级校验，且「等号写法」要一起拦）。思考：为什么 `curl` 只允许 GET 且禁 `-o`？（否则会变成任意文件下载器直写沙箱）；为什么这个沙箱刻意保持**只读**——只做「看文件 + 抓网页 + 建目录」，不提供写文件能力？ |
-| 3️⃣1️⃣ | `tools/cli_registry.py` + `tools/_runtime/shell_runtime.py`(第七道闸) + `api/server.py`(`/api/cli/*`) + `front/index.html`(🧩 自定义 CLI 页) | **M4c 自定义 CLI 接入（v2.0，配置导向）**：① 为什么不预设厂商？（推出 CLI 的厂家远不止飞书/钉钉/Google，写死就得改代码；改成「用户填字段」后，与模型配置填 base_url/model/key 一样通用——系统只按三条与厂商无关的规则办事：白名单＝用户配的条目、只读闸＝用户填的清单、本机检测＝`which 可执行名`；内置几家退化为 `templates` 预填示例，点一下只填表单、不进白名单）；② **只读清单为什么必须人给**？（哪些子命令只读无法自动推断——`doc search` 是读、`cache clear` 是写、`im +messages-send` 是写，同厂内部都没有统一命名规律；系统不猜，清单留空＝不放行 AI 代跑）；③ 与 Agent 的关系＝折中方案 C：登记后只放行只读/查询子命令，写操作与落盘参数（`-o/--output…`）一律拒绝；④ 安全边界（自定义≠放松）：**可执行名只允许纯名字**（含 `/ \ :` 即拒，否则等于把「执行任意程序」交给表单）、清单含 shell 元字符（分号/管道/重定向/美元符等）即拒、每行 ≤6 段 ≤40 行、fail closed；⑤ 配置落 SQLite `user_clis`（`UNIQUE(account_id, bin)`，按账号隔离），旧版内置厂商登记幂等迁移进来；⑥ **局部更新「缺省即保留」**：只传 `id/name/bin` 时不能把 `state` 清成 none、`readonly` 清空（否则「只改个名字」就把接入登记和代跑权限一起弄没了）。⑦ **CLI 简报注入**：`tools/cli_registry.agent_brief()` 为每个已接入的 CLI 生成一行（名称+可执行名+放行条数+示例子命令），由 server 层经 `build_request_context(cli_brief=…)` 拼进 invoke 期的动态 SystemMessage（与人格/记忆同一机制），`prompts.yml` 主 Agent 同步加「命令行使用纪律」——不注入的话，Agent 会答「该命令不在白名单」（实测它连工具都没调，把工具说明书的通用描述当成了查过白名单的事实）；没配 CLI 时注入空串、零开销。思考：为什么「可执行名不允许写路径」这条比「白名单里少几个命令」重要得多？（前者一旦放开，等于给表单开了任意程序执行的后门，只读清单再严也没用）；为什么只读清单要去重却仍按**原始行数**限流？（否则 45 行相同内容去重成 1 条，绕过条数上限） |
-| 3️⃣2️⃣ | `api/server.py`(`/api/tutorial/doc` + `/tutorial-assets` 挂载) + `front/index.html`(`tutRender` 只读阅读页) + `scripts/build_tutorial_preview.js` | **M4 收尾·教程指导（只读 md 阅读页）**：CLI 配置页的「📘 教程指导」按钮（视觉取自 uiverse **003 号 buttons/bubbles**，hover 气泡扩散填充；原片段是 SCSS 嵌套写法，移植时必须展平成 `.bubbles:hover > .text`）→ 跳到 `#/tutorial` 只读阅读页。要点：① **后端只读接口 + 静态资源分离**：md 由 `GET /api/tutorial/doc` 返回（不改文件），图片走 `/tutorial-assets` 静态挂载（`<img>` 不必带 token）；② **图片内联是难点**：教程 md 里的图片是本机**绝对路径**（含一张项目外的 Typora 贴图）——做法是「只取文件名 → 在白名单目录（文档目录 + Typora 贴图目录）里查找 → 拷进 `data/tutorial_assets/` → src 改写成 `/tutorial-assets/<名>`」，找不到的整段剔除并回报 `missing`（避免裂图）；安全上只按文件名解析（挡 `../` 与绝对路径穿越）、只处理图片扩展名（实测 `/tutorial-assets/../.env` → 404）；③ **前端手写 `tutRender`**（零依赖离线可用，照蜀道「政策文件阅读器」做法）：支持标题/表格/列表/引用/代码块/图片/加粗/行内码/`<details>` 折叠块，**先整体转义再只白名单放行 `<details>`/`<summary>`**（`<script>`、`<img onerror>`、`<iframe>` 实测全被转义）。思考：为什么图片不能直接按 md 里的绝对路径返回？（那等于把「读任意本地文件」做成了接口——只能认白名单目录里的**文件名**）；为什么渲染器要「先转义再白名单还原」而不是「选择性转义」？（黑名单永远漏，白名单只放四个字面量最稳） |
-| 3️⃣3️⃣ | `api/server.py`(`/api/weather` + 三层缓存 + 启动预热) + `front/index.html`(`.wx-dock` 时钟/天气卡) + `scripts/build_weather_preview.js` + `scripts/build_wx_harness.py` | **M4 收尾·工作台时钟 + 天气卡**：欢迎语右侧的药丸收起 / 悬浮展开（视觉取自 uiverse **012 号 cards/weather-gradient**）。三个要点：① **数据源选 Open-Meteo**——免 Key 且自带**地理编码**接口，所以能做到**城市级**（成都 30.667/104.067，可中英文城市名）；② **三层缓存是必需的**：首次外网请求实测 2.7~17s（DNS/代理抖动），只做内存缓存的话每次重启首屏都得转圈——所以「城市坐标永久 + 天气 10 分钟 + `data/weather_cache.json` 磁盘缓存 + 启动后台预热」，并按项目惯例写了「代理失败降级直连」与「刷新失败返回 stale 旧数据而不是 502」；③ **收起/展开用绝对定位浮层**（`opacity+transform`，不占文档流），否则会把欢迎语挤走；秒级时钟靠 `setInterval(tickClock,1000)` + `_pad2` 补零，`wxStart()` 做成幂等避免重复起定时器；④ **配色默认松绿以对齐项目色系**（012 原片段是紫罗兰）：色值全抽成 `.wx-dock` 上的 CSS 变量，主题用 `data-wx` 切换、SVG 渐变靠 `stop-color: var(--wx-c1)` 覆盖表现属性，右下角圆点可切 4 套并记 localStorage；⑤ **用户实测后修掉 6 个问题**（v-else 被插入元素打断→生产版无条件渲染致「纯色无内容」、卡片被 hero 的 overflow:hidden 裁切、换城市面板与卡片重叠、`.hero p` 样式污染卡片文字、内容超高致页脚压字、页脚折行）——详见文档附录 D.7。思考：为什么天气不该由前端直连第三方 API？（外网可达性/代理问题会被甩给浏览器，且前端无法缓存、无法统一降级）；为什么展开态不能用 `display:none/block` 切换？（过渡动画会整段失效） |
-| 3️⃣4️⃣ | `cli/main.py` → `cli/cmd_auth.py` `cmd_list.py` `cmd_digest.py` `cmd_chat.py` → `cli/session.py` `ui.py`；对照 `api/server.py`(`_run_agent`) 与 `api/monitor.py`(`set_console_sink`) | **CLI 版 dspro（命令行聊天 + 命令行工具）**：`dspro login/list/digest/chat`。核心设计是「**不做第二套业务逻辑**」——CLI 独立进程直接用 `data/personal.db`、`agent/digest_engine.run_digest()`、`api/server._run_agent()`，与 web 同库同引擎，所以 CLI 生成的周报在 web「情报周报」里也能看到。要点：① **登录态** `data/dspro_session.json` 存身份 + **账号密码哈希的指纹**（不存明文），密码一改旧会话自动失效；② **`list -db/-digest`** 按账号角色取模块（公司看档案/我司产品/竞品，个人看兴趣/关注清单/收藏商品），表格按**东亚显示宽度**对齐（中文/emoji 记 2 列，零依赖）；③ **`digest [领域]`** 的领域解析：`#id` → 名称精确 → 名称包含/关键词命中，**多义时报错列出候选**（实测同一账号 3 条订阅同名「选购快讯」，静默取第一条会误导）；④ **`chat` 复用 `_run_agent`**，SOUL 人格/记忆画像/技能/知识库/自配 CLI 全部生效，会话落 `conversations` 表（web 也能看到）；⑤ **monitor 进度**：给 `ToolMonitor` 加了 `set_console_sink()`，CLI 注册后把工具调用/子智能体/思考渲染成终端进度行，而 web 不注册、行为不变（否则 `_emit` 的保底 `print` 会把 `[Monitor:xxx]` 混进对话）。思考：为什么 CLI 不该自己再写一遍 digest 逻辑？（同一份引擎才能保证 CLI 与 web 结果一致、且生成物同库落盘）；同名订阅为什么不能「取第一条」？（用户以为生成的是 A，实际是 B——静默选择比重名更危险） |
-| 3️⃣5️⃣ | `tools/cli_registry.py`(`agent_brief` / `_parse_ability_pairs` / `ability_examples`) → `prompt/prompts.yml`(`ability_writer` + 主 Agent「你手上的三类工具」段——2026-09-23 重整后 3 条纪律并入此段) → `api/customize.py`(`cli_ability_generate`) → `api/server.py`(`POST /api/cli/ability_draft` + `_run_agent` 注入) → `front/index.html`(CLI 表单「能力描述」)；验证 `tests/testclient/m5_abilities_e2e.py`(43 项) `tests/live/m5_probe_e2e.py`(探针组) `tests/live/_m5_real_weread_check.py`(真实账号)；对照/迭代记录见 `docs/v2.0/M5工具智能路由.md` §3 与 §9 | **工具智能路由 M5a：让 Agent 在你说人话时想起对的工具**。M4c 解决了「Agent 知不知道有这些 CLI」，但注入的是 `shelf recent` 这类**命令名**——用户问「我最近在读什么书」时意图与命令名不在同一语义空间（LLM Agent 的经典「工具路由」问题，业界公认解法就是把描述**改写成用户语言**）。M5a 三步：① `user_clis.abilities` 存一段用户语言（关键词 + 「用户说法→命令路径」映射），`agent_brief()` **有描述出「能力路由卡」、没有就回退命令名清单**（存量零影响）；② 从描述生成 **few-shot 示例**与路由卡一起注入（**每条 argv 逐条过只读闸**，未放行的映射直接丢弃——示范一条会被拒的命令等于反向教学）；③ 「✨ 按只读清单生成草稿」让 AI 起草、**只填表单不落库**，人确认后保存。**★ 最关键的坑**：第三方 CLI 里需要 ID 的命令（`book info` / `reviews list` / `book progress` / `discover similar`，`--help` 实测）不能直调，映射要写成**两步链** `书评怎么样→book resolve 再 reviews list`（示例取链上第一步）；否则模型要么调报错命令、要么绕去网搜答你的私有数据。**实测**：探针组 10 正全中（复跑 9/10）+ 3 反例全过；**同题对照组（M4c 命令名形态）仅 2/10**——8 条连工具都没调；真实账号 + 真实 weread 端到端 15/15。思考：为什么能力描述不必像只读清单那样「必须人给」？（一个决定**能不能跑**、一个决定**想不想得起跑**，错判代价量级不同——安全边界与路由信号分层治理）；为什么判定要看库里 `messages.tool_calls`（会话真值）而不是审计日志的窗口计数？（窗口会被并发进程写进同名调用污染，实测踩过）；为什么要「只看第一次调用」？（装桩后每条命令都能成功，模型会把清单挨个试，按「出现过即命中」判会虚高） |
-> 💡 学习心法：Agent 系统 = **模型（llm.py）** + **提示词（prompts.yml）** + **工具（tools/）** + **编排（subagents/ + main.py）** + **可观测性（api/）**。把这条主线记牢，再看任何 Agent 框架都不慌。
-
----
-
-| 3️⃣6️⃣ | `tools/capability_pool.py` → `tools/tool_router.py` → `api/server.py`(`_run_agent` 注入) → `tools/schema_personal.py`(`tool_capabilities`/`tool_pool_meta`/`purge_account`)；标定与验证 `tests/live/_m5b_route_calib.py` `tests/testclient/m5b_pool_e2e.py`(62) `tests/testclient/m5b_router_e2e.py`(34) `tests/live/m5b_pressure_probe.py`；设计与实测见 `docs/v2.0/M5b工具检索路由.md` | **工具检索路由 M5b：工具变多之后，怎么还能想起对的那个**。① **能力目录**把 CLI / API / MCP 三种来源统一成 `CapabilityEntry`（路由只认这个形状，接新来源只写适配器）；CLI 侧**派生而不迁移**（`user_clis.abilities` 仍是唯一事实源）；池版本 + 向量惰性重建，配置写入不再冻界面。② **路由器**四级决策：池 ≤4 → 快路径（与 M5a 逐字一致）；否则 bge 稠密 + 关键词词法 → RRF 融合；**置信判定用相对信号**（词法命中 ≥2 或向量 z ≥2.0，绝对阈值已被实测证伪）；置信才分层注入（完整卡 / 紧凑行 / **仅名称**——未命中工具也保留一行，藏掉工具等于该类问题永远无解），不置信就**整段回退全量**。**实测**：8 工具异构池下 10 条问句命中判定 **10/10**、**0 条路由到错的工具**、2 条无关问句全部回退；注入量 1644 字 vs 全量 2499 字；两个真 bug 被测试逮住（RRF 无信号排序器、示例过滤条件）。思考：为什么阈值必须用 **z 分数/词法命中**而不是「相似度 > 0.5」？（中文短问句的余弦区分度只有 0.02~0.06、绝对值全挤在 0.53~0.70——绝对阈值会「全部命中」，分层形同虚设；相对信号还能随工具数增长自动放大）；为什么「不确定就回退全量」比「猜一个最像的」更好？（回退等于 M5a 行为、只是没省 token，而猜错会让模型拿着错工具的说明书去答用户的问题）；为什么未命中的工具也要留一行名称？（路由是概率判断，藏掉工具会让「那次没命中」的问题变成永久无解）；为什么要**惰性**同步向量？（向量同步要加载 bge，放进配置写入路径会让面板冻 1~3 分钟——写入只落库+打版本，重建推迟到真正需要路由的时刻） |
-| 3️⃣7️⃣ | `front/desktop/`（`app.py` + `desktop.cmd`） | **桌面版外壳（pywebview）：同一份 SPA，换个壳**。① 为什么窗口必须加载 `http://127.0.0.1:PORT/?desktop=1` 而**不能**用 `file://` 打开本地 `index.html`？（页面与 API 必须**同源**：登录态与 WebSocket 都按 origin 隔离，而后端**没有 CORS 中间件**——跨源等于登录与聊天全废；同源加载让后端一行不用改）② 为什么前端用 **URL 的 `?desktop=1`** 判断「我在桌面壳里」而不是 `window.pywebview`？（后者是页面加载后**异步注入**的，`setup()` 阶段读不到——时序坑）③ 为什么「记住登录」只把 `sessionStorage` 换成 `localStorage` 还不够？（pywebview 默认 **`private_mode=True`**，文档原话 *cookies and local storage are not preserved*——必须同时 `webview.start(private_mode=False, storage_path=…)`，否则第 1 轮写进去、第 2 轮读不到）④ 为什么托盘的「立即生成周报」不走外壳自己发请求、而是调页面的 `window.__zxDesktop.runDigest()`？（前端已有「取订阅 → 生成 → 刷新 → 提示」的完整逻辑，外壳重写等于复制业务、还会把 token 搬出页面）⑤ 为什么「点 X 收进托盘」要先判**托盘是否可用**？（托盘没起来时若仍拦截关闭，用户就没有退出手段，只能杀进程）⑥ 为什么后端要**当子进程监控**、而不是只看 HTTP 轮询？（子进程可能启动即崩——端口被占 / 依赖缺失 / 编码问题；只看轮询会让用户傻等 180 秒而拿不到任何线索）。思考：**同源加载 / 持久化开关 / 进程归属** 这三件事，哪一件做错会让「桌面版」看起来能跑、实际不可用？⑦ 为什么「再次双击」不能只是"第二个实例直接退出"？（用户看到的是**双击没反应**；正确做法是让它把已有窗口唤出来——复用现成的锁 socket 当 IPC 即可）⑧ 判断"端口空着"为什么不能只用 `connect_ex`？（**只 listen 不 accept 的端口会被探测连接的 backlog 塞满**，之后 connect 被拒 → 误判为空闲 → 在占用端口上硬起；要配 `bind` 探测，且自己那把锁绝不能设 `SO_REUSEADDR`）⑨ 后端崩了要自动重启，判定基准该是"子进程还在吗"还是"服务还能访问吗"？（**必须是后者**：venv 的 `python.exe` 是 launcher，会再起一个真解释器跑 uvicorn，端口归"孙子进程"——只盯 `Popen.poll()` 会把正常启动误判成崩溃、退出时还会把真服务留成孤儿）⑩ 「记住登录」为什么是**两半**、缺一半会怎样？（存储端＝`private_mode=False`；**服务端＝token 本身要能活过后端重启**。会话原本是进程内内存字典，而桌面壳每次重开都新起后端 → 旧 token 全失效；前端又只看"token 非空"就渲染工作台，各接口 401 被 `if (!r.ok) return;` 静默吞掉 → 用户看到的是「已登录、数据全是 0、天气卡报未登录或登录已失效」。修法＝会话落 `sessions` 表 + 启动先 `verifySession()`，401 就回登录页。**要守住它，测试就不能只断言"进了工作台"**——必须用页面里存着的 token 真拉一次数据，且**第 2 轮（新后端进程）拿到与第 1 轮相同的数据**才算过） |
-| 3️⃣8️⃣ | `tools/openapi_import.py` + `tools/_runtime/api_driver.py` + `tools/capability_invoke.py` + `api/tools_sources.py` + `front/tutorial/api_tools_tutorial.md` | **M1 · API 工具接入**（两个「配置导向」来源适配器之一，v3.0）：建议按「怎么接进来 → 怎么发出去 → 怎么管住」的顺序读 —— ① `openapi_import.py`：把**用户粘贴的 OpenAPI 文档**变成候选能力（`$ref` 递归内联、`operationId` 兜底命名、路径固定 query 拆成 `static_query`、写方法标记）；② `_runtime/api_driver.py`：真发请求（bindings 四位置分发 path/query/header/body + 鉴权注入 + 超时/1MB 真截断 + SSRF 三项口径 + 直连→代理两臂兜底）；③ `capability_invoke.py`：**Agent 侧唯一的执行网关**（工具名就叫 `invoke_tool`），五道闸依次是「能力存在 → 已人工确认 → 已启用 → 参数合 schema → 只读放行」；④ `api/tools_sources.py`：配置面（来源 CRUD / 体检 / 发现候选 / 人工确认）；⑤ 前端 `front/index.html` 的「🔗 API 工具」页 + 自带教程 `front/tutorial/api_tools_tutorial.md`（含 4 张示意图）。思考：① 为什么「未确认」必须挡在**入池**这一层，而不是只在界面上不显示该工具？② 为什么「是不是写操作」必须由**服务端**从 `invoke_spec` 推导，而不能信前端传来的 `read_only`？③ 卡片上那句「调用示例」看着只是省事，它实际省掉的是模型哪一步推理？④ 为什么供应商文档里标「可选」的参数**不一定能省**（Steam `cc`/`l` 的教训），以及为什么修法是「把它固化进能力定义」而不是「在提示词里提醒模型别忘了填」？ |
-| 3️⃣9️⃣ | `tools/_runtime/mcp_driver.py` + `tools/mcp_probe.py` + `tools/capability_pool.py`(mcp 分支) + `api/tools_sources.py`(mcp 分支) | **M2 · MCP 工具接入**（另一个来源适配器，v3.0；**与 M1 共用同一套候选/确认/入池/审计/放行链路**）：① `mcp_driver.py`：三种连接（`stdio` 起子进程 / `http` 端点 / `inproc` 仅测试）+ **惰性导入 SDK** + `async→sync` 桥接 + 命令白名单 + 超时与结果上限；② `mcp_probe.py`：**七步体检**（配置解析 → 环境检测 → 协议握手 → `tools/list` → **异常容错** → 性能 → 汇总），一次连接分阶段计时，顺带把工具表交给「发现」复用；③ `capability_pool.py`：`mcp_entry` 与 `api_entry` 抽自同一个 `_entry_from_row`（同池共存、同样进路由注入）；④ 前端「🔌 MCP 工具」页（与 CLI/API 同一范式：常态只读卡 + 弹窗表单/发现结果）。思考：① 为什么 `import mcp` 绝不能写在模块顶层？（实测 5s，且 `tests/live/test_mcp_driver.py` 有两条不变量用例专门钉住它）② MCP 的 `annotations.readOnlyHint` 规范原文说它是什么？为什么它只能用来「预勾选」，不能当安全保证（那"未声明"该按只读还是按写处理）？③ 体检第 ⑤ 步为什么要**故意调一个不存在的工具**？④ 为什么 `stdio` 来源需要命令白名单，而 `http` 来源不需要（两者的风险面差在哪）？⑤ 两种来源的 ref 形状为什么不一样（`api:<短名>#<操作>` vs `mcp:<短名>/<工具>`），这对 SQL 里的 `LIKE` 查询意味着什么？ |
-| 4️⃣0️⃣ | `tools/memory_profile.py` + `tools/profile_update.py` + `tools/profile_evidence.py` + `tools/memory_snapshots.py` + `api/customize.py`(画像段) + `agent/build_context.py`(记忆注入) + `front/index.html`(🧠 记忆画像) | **M3 · 用户画像沉淀**（v3.0，**改造既有 `MEMORY.md`，不新建文件**）：读这条线建议按「契约 → 写 → 读证据 → 建议 → 落地」的顺序 —— ① `memory_profile.py`：**格式契约**（`- 维度：事实（来源：X · 日期）`、维度白名单、`FIELD_ALIASES`、`memory_meta` 元数据）——解析/渲染/去重/占位判定**只有这一份**，四条写路径都调它；② `profile_update.py`：给 Agent 的结构化写入工具 `update_user_profile`（模型只说「哪个维度、新值、来源」，**读改写/去重/加来源全交给框架**）；③ `profile_evidence.py`：证据收集（7 张表**带 `表名#行id` 引用**、最近 3 篇周报要点、最近 N 条对话）+ **计数水位**与【画像待更新】信号；④ `api/customize.py`：建议器（`/api/memory/suggest`，**只出建议绝不落盘**）→ 勾选应用（`/apply`）/ 一键导入（`/import`）→ `memory_snapshots.py` 改前必留 3 份快照与一键还原；⑤ `agent/build_context.py`：注入**两段预算**（画像 ≤500 字优先保留情报相关维度 / 笔记 ≤300 字按相关度取前 N、最近 3 条无条件保留）；⑥ 前端「🧠 记忆画像」页：建议差异行（＋/～/−）、逐条勾选（**人工行与白名单外新维度默认不勾**）、一键导入确认、历史版本与还原。思考：① 为什么「同一维度只有一行」必须靠**代码的 upsert** 保证，而不是在提示词里叮嘱模型「别重复写」？（R2 根因：原来只能"读全文→整份重写"，成本高又怕覆盖丢内容，模型于是理性地选择追加）② 为什么「建议」与「应用」必须是两个动作，中间还要人工勾选？③ 待更新信号为什么必须是**服务端算好数字**（"新增了 2 条兴趣"）而不是让模型自己判断该不该更新？④ 为什么人工手写的那一行（来源=人工）任何自动路径都不能覆盖？⑤ 老文件里那些「暂无」占位行为什么要清掉 —— 如果留着，注入给模型之后会发生什么？ |
-| 4️⃣1️⃣ | **`设计图-agent工作与工具调用体系.html`**（单文件交互版，鼠标悬停/点击节点即看该节点的技术栈落点） | **一张图收口整个 Agent 工具体系**（读完全部模块后用它把线索串起来）：左侧「能力池与路由 → **决策模型精排** → 系统提示词装配 → `messages[0]` 注入」＝主 Agent 的**调用依据**（其中决策模型精排是 v4.0 大点 02 新加的一层：候选近并列时复核顺序，灰区题不参与）；中间虚线框＝**账号内工具面（按账号隔离）**，装着三族工具（内置 `@tool` 开箱即用 / 4 个子 Agent 由主 Agent 用 **task** 调度 / 自配 CLI 与 API·MCP 走**统一执行网关**按 `cli:`·`api:`·`mcp:` ref 分派）＋网关本身（ref 解析 / 参数类型宽容 / 超限载荷整条裁剪并附分页提示）；底部「真实数据源」「审计与度量」与四张浓缩卡（决策模型精排 / 子 Agent 职责 / 执行护栏 / 自配来源进池）。图由 archify 生成，过 **9 项几何校验（0 交叉 · 0 走廊合并 · 微段 0）**，浏览器实测 4 种视口 × 明暗两套不溢出（1440×900 起）。**思考题**：① 为什么「内置工具」**不经过**执行网关，而自配工具必须经过？（提示：权限面来源不同——框架内注册 vs 用户配置，后者要面对未声明的写操作与不存在的命令）② 要把一个新 MCP 服务接进来，图里会依次亮起哪几个节点？③ 为什么「能不能跑」和「想不想得起跑」要分两条线治理？④ 大点 02 的决策模型层为什么**只改顺序、不改候选集**，而且**灰区题不参与**？（提示：灰区题本来就回退全量简报、所有工具都已给模型，精排没有增量；而按账号裁剪注入面会让 Agent 在长链路问题里看不到完整工具池） |
-
-| 4️⃣3️⃣ | `api/account_sec.py` · `utils/mailer.py` · `front/index.html`（⚙️ 设置 → 🔐 账号安全 / 🗑 注销账号） | **「一键注销」为什么敢做**：三重校验（密码 + 邮箱验证码 + 确认词）+ **先快照再清除** + 复用 `purge_account`（库行 / 文件侧 / 会话一次清干净），旧 token 立刻失效。**思考题**：为什么不可逆操作的防线要放在**服务端**，而不是前端多弹一个确认框就够？验证码只存哈希、60 秒重发限制、5 次试错上限各防的是什么。另外，**邮件通道（2026-10-13 裁定 5）**：项目级单发件箱只放 `.env`（`QQMAIL` + `QQMSTP`），收件方是账号级；24 小时发信配额 + 报错归一化（且绝不回显授权码） |
-| 4️⃣4️⃣ | `utils/settings.py` · `api/settings_api.py` · `tools/decision_router.py`（`_env` 一处收口） · `utils/paths.py` · `scripts/migrate_user_data.py` | **「配置放哪」这条线怎么收**：开关/参数落库 `app_settings`（保存即生效）· **密钥一律只在 `.env`**（2026-10-13 起：界面不展示、不回显，原先的「密钥（只读）」掩码展示组已整组撤下）· 路径全问 `utils/paths.py`（7 个账号级根的唯一事实源）。三者的分界线是「谁能改、改完谁生效、错了会不会外泄」。**思考题**：同一个开关放 `.env` 与放库，在「多账号 / 免重启 / 可审计」上各差在哪？为什么密钥即使能进库也必须留在 `.env`？ |
-| 4️⃣5️⃣ | `front/index.html`（⚙️ 设置页样式块）+ `tests/unit/test_mailer_config.py` + `tests/test_out/_preview_settings.py` | **配置页怎么做到「一眼看得清」**：条目化描边盒 + 黑标贴纸标题 + 像素开关（018）+ 滑动单选（020）+ 危险区深红收纳到底部；含两条硬教训——**样式块写在应用根节点里会被挂载时连根替换掉**（要放 `<head>`，验法是 `getComputedStyle('.set-item').borderTopWidth` 非 `0px`）、**后端不能重启时用打桩接口渲染真实页面截图**。**思考题**：为什么「注销」按钮的位置本身也是安全设计的一部分？ |
-
-| 4️⃣6️⃣ | `tools/web_workflows.py` · `tools/browser_tool.py` · `scripts/browser_runner.py` · `agent/turn_ledger.py`（+ `browser_venv/`） | **v4.0 大点 05：网络搜索助手的三分支取法（Tavily + browser-use）** —— 让「网络搜索助手」从只会全网关键词检索，变成**按信息需求选三种取法**：① 只检索（`web_search_only`，签名里没有 urls）② 只进指定网址（`browse_only`，签名里**没有查询词**）③ 先检索定位再进站深抓（`search_then_browse`）。三处最值得看：① **取法由签名钉死**——底层 Tavily / 浏览器两个工具已降为 util（不再挂载），越界在结构上不可能，不靠提示词自觉；② **每轮检索上限 15 次进代码**（提示词里的次数纪律实测被无视：审计见一轮 2 分钟约 30 次），被挡回时**零外部调用**；③ **中断占位补强**——在跑轮次台账 + 启动补偿，进程被强杀也能补落「本轮回答已被重启打断」。**思考题**：为什么「要一批网站的清单」用只检索就够了，而「找某个站的官网网址并看它站内内容」才需要第三种取法？（提示：检索结果**自带网址**，差别在于**要不要进站**）把纪律写进提示词与写进代码签名，故障形态有什么不同？★ 逐行检查走 `docs/v4.0/Done/05-网络搜索子Agent升级·逐文件带读.md` |
-
-## 五、阅读指南（CLI）（建议顺序）
-
-> 智选情报官 **CLI 版**（`dspro` 命令行）的代码阅读路径。CLI 版**不做第二套业务逻辑**——它直接复用 web 版的本地库、Agent 装配层与周报引擎，所以这份指南**只聚焦 CLI 自身的 6 个文件**；凡是「业务逻辑」一律指向 web 版对应模块，对照 [四、阅读指南（Web）](#四阅读指南web建议顺序) 阅读。
-
-> **只关心 Web 版？** 跳到 [四、阅读指南（Web）（建议顺序）](#四阅读指南web建议顺序)。
-
-| 顺序 | 文件 | 看什么 / 思考题 |
-| --- | --- | --- |
-| 1️⃣ | `cli/main.py` | **CLI 总入口**：`argparse` 装配 4 个子命令（login/logout/whoami/list/digest/chat）。注意：① 子命令用 `set_defaults(func=lambda x: ...)` 挂载，主函数 `args.func(args)` 统一调度；② 错误分层：业务错误用 `CliError`（`main` 统一捕获 → 红字 + 退出码，**不打印堆栈**），真正的 bug 仍走原生 traceback；③ 无参数不报错 → 打印落地页（ASCII 标识 + 用法 + 当前登录态）；④ 全局开关 `--no-color` 挂在父 parser 上，子命令 `add_help=False` 避免 `-h` 冲突。 |
-| 2️⃣ | `cli/session.py` | **登录态与账号访问**：① 登录态文件 `data/dspro_session.json` 存**身份 + 账号密码哈希的指纹**（不存明文），密码被改后指纹不匹配 → 旧会话自动失效；② 校验**复用** `api/account.py` 的 `login()`（同一份盐 + 同一张 `accounts` 表），不复制第二套哈希逻辑；③ `require()` 是「取当前登录态 + 校验失效」的统一入口，所有子命令先调它；④ `db()` 返回个人库连接（Row 工厂 + 外键），调用方负责 close。 |
-| 3️⃣ | `cli/ui.py` | **终端输出（零依赖）**：① 颜色开关：`--no-color` / `NO_COLOR` 环境变量 / 非 tty → 自动降级纯文本，Windows 老 conhost 手动开 VT；② **东亚宽度**：`unicodedata.east_asian_width(ch) in ("W","F")` 记 2、emoji（`ord(ch) >= 0x1F300`）记 2、ANSI 转义码不计入 → 表格不会因中文/emoji 错位；③ `md_light()` 做 markdown 轻渲染（标题加色加粗、`**x**` 加粗、`` `x` `` 上色、引用加竖线）；④ `progress()` 是 monitor 事件的终端渲染器（`⚙ 调用工具` / `🤝 调度助手` / 思考片段 / ` 子任务完成`）。 |
-| 4️⃣ | `cli/cmd_auth.py` | **login / logout / whoami**：① `login` 支持「密码写 `-`」走 `getpass` 隐藏输入（避免进 shell 历史）；② `--register` 直接注册新账号（角色 company/personal）；③ `logout` 删除登录态文件；④ `whoami` 显示账号/角色/订阅数/周报数/默认城市（直接查库，不走 web API）。 |
-| 5️⃣ | `cli/cmd_list.py` | **list（默认 / -db / -digest / --json）**：① 按**账号角色**取模块——公司账号看「公司档案 + 我司产品 + 关注竞品」，个人账号看「兴趣领域 + 关注清单 + 收藏商品」；另一侧若有数据会额外提示一行，避免用户以为「数据丢了」；② 表格按东亚宽度对齐；③ `--json` 给脚本用（`{username, role, counts, db, digest}`）。 |
-| 6️⃣ | `cli/cmd_digest.py` | **digest [领域名\|#id]**：① 领域解析优先级：`#id` 或纯数字 → 名称精确匹配 → 名称包含/关键词命中；**多义时报错并列出候选（带 #id 与关键词），绝不静默取第一条**（实测同一账号 3 条订阅同名「选购快讯」，静默选择会误导）；② 引擎直接调 `agent.digest_engine.run_digest()`（与 web `/api/digest/run` 同函数），生成物落 `digest_reports` 表（web 端「情报周报」也能看到）；③ 进度行由 `monitor.set_console_sink(ui.progress)` 渲染（工具调用/子智能体/思考片段），用完 `set_console_sink(None)` 恢复。 |
-| 7️⃣ | `cli/cmd_chat.py` | **chat（交互 + 单轮）**：① 直接调 `api/server._run_agent()`（与 web `/api/chat` 同装配管线：SOUL 人格 + MEMORY 画像 + 技能 + 自配 CLI 简报 + 同一份 SQLite 历史与 token 预算）；② 会话落 `conversations`/`messages` 表（web 也能看到 CLI 的对话）；③ 交互命令：`:new` 新会话、`:sessions` 列表、`:skills` 技能列表、`:q` 退出；`Ctrl+C` 中断本轮但保留历史；④ `--skill` 可重复，仅本轮生效（技能文件在 `agents_docs/{用户名}/skills/*.md`）。 |
-| 8️⃣ | `api/monitor.py`（对照） | **CLI 与 Web 共享 monitor 事件源**：① `ToolMonitor._emit` 有「控制台保底输出」`print("[Monitor:xxx] …")`，CLI 直接调服务端模块会被调试行污染；② 给 `ToolMonitor` 加了 `set_console_sink(fn)` 钩子：CLI 注册后渲染成进度行，**web 端不注册、行为不变**；③ 这是「对 Web 行为零风险的加法」的典型做法。 |
-| 9️⃣ | `docs/v2.0/CLI命令行工具dspro.md` | **CLI 版设计文档**：命令清单、架构对照表（CLI 与 web 一一对应的模块）、登录态设计、同名歧义处理、monitor sink 接线、踩坑记录、决策记录（用户拍板：独立运行 / 项目内登录态 / 一并提供 chat / 纯文本 ANSI 零依赖）。 |
-| 4️⃣4️⃣ | `scripts/browser_runner.py`（下载段） + `tools/browser_tool.py`（`_download_dir` / `_move_downloads` / 回执） + `tools/web_workflows.py`（`browse_only` 说明书） + `prompt/prompts.yml`（取法第 ④ 条） | **v4.0 大点 07：让 Agent 真的能把文件下载到工作目录**：① 先看 `browser_runner.py` 里 `downloads_path` 与 `accept_downloads` 两行的关系 —— **思考题**：为什么「关掉下载」这个开关其实关不住？真正的开关是哪一个？② 再看 `_download_dir()` 为什么先落暂存再搬 —— **思考题**：把落点直接指到工作目录时浏览器为什么 20 秒超时？（根因未查清，只做到现象级定位。）③ 最后看回执里的 `[[img:…]]` —— **思考题**：模型只认文本、前端只认这个标记，中间断一环用户会看到什么？ |
-| 4️⃣3️⃣ | `tools/workdir_guard.py` + `tools/workdir_store.py` + `tools/workdir_tools.py` + `api/workdir_api.py` + `utils/write_auth.py` + `api/write_pool.py` + `tools/capability_pool.py` + `tools/capability_invoke.py` + `agent/workflow_runner.py` + `front/index.html`（📁 工作目录） | **v4.0 大点 06：工作目录与写能力（能看、能改、能授权）**：① 先读 `workdir_guard.py` —— 一个写请求要过**三道代码闸**（路径逃逸 / 保护名单 fail-closed / 凭据红线），**思考题**：为什么「保护名单自身不可删」是安全前提而不是洁癖？② 再读 `write_auth.py` + `write_pool.py` —— 自配来源的写能力为什么要靠「/」显式授权，而内置 `workdir_*` 却能纯文字直接用？**思考题**：如果「/」第二组只列自配来源，内置写工具会掉进什么死角（这是真机踩过的坑）？③ 最后读 `capability_pool.py` 的 `set_pool` 与 `capability_invoke.py` 的判定链 —— **思考题**：为什么「写池来源的只读命令」也要一起挡住？为什么图片类 302 窄放行只对只读能力开？ |
-| 4️⃣2️⃣ | `tools/probe_agent.py` + `tools/probe_runner.py` + `api/probe.py` + `front/index.html`（🧪 工具池测评） | **v4.0 大点 03：账号级工具池测评与自维护（第 6 个页签）** —— 把「让路由变准」拆成两条腿：**算法侧**（项目代码：阈值/度量/清理硬规则）+ **词法侧**（**账号数据**：CLI 能力描述 / API·MCP 工具描述 + keywords，**由账号主自己改**）。闭环：体检 → Agent 出题（**人过目**）→ 真机跑 → Agent 判分**只预填**（人工终判才算数）→ 词法建议（**只建议改素材**，并写明该改哪个框）→ 写大屏 → 改素材 → 再测。★ 三处最值得看：① **测评隔离**（`agents_docs/{user}/` 整目录快照 → 跑完**立刻**还原；测评会话从不进会话库）；② **单题墙钟上限 + 中断记账**（模型无限翻页曾被记成「一次工具都没调用」，现靠耐久日志 `data/audit/tool_calls.jsonl` 在「读库为空」时回落）；③ **清理 fail-closed**（水位线读不到就**一行不删**、画像历史**永不**参与清理 —— 这条是**事故换来的**）。**思考题**：既有「Agent 出题、人过目」，为什么判分还要「Agent 只预填」？（提示：把模型判断当裁决 = 发现不了模型自己的盲点）为什么**清理**必须 fail-closed、而一般读接口可以 fail-open？如果工具池素材**不**交给账号主维护、而是写死在代码里，「跨账号复用」会缺哪一块？★ 逐行检查走 `docs/v4.0/Done/03-账号路由测评用户端可视化与可视化改进建议·逐文件带读.md` |
-
-> 💡 CLI 心法：**CLI ＝ 同一份业务逻辑的另一个调用方**。6 个 CLI 文件（main/session/ui/cmd_auth/cmd_list/cmd_digest/cmd_chat）本身不含业务规则，全部指向 web 版对应模块。读 CLI 时始终问：「这个能力在 web 版走哪里？」——答案在 [四、阅读指南（Web）](#四阅读指南web建议顺序)。
-
----
-
-## 六、环境要求
-
-- **Python 3.11**（项目通过 `.python-version` 锁定）
-- 包管理器：**uv**（推荐，已配置清华镜像源，安装更快）
-- 操作系统：Windows / macOS / Linux 均可；`utils/word_converter.py` 依赖 Windows 上的 Word COM，仅转换 PDF 功能受限
-
----
-
-## 七、快速开始
-
-### 1. 安装 uv（如未安装）
+### 2. 克隆
 
 ```bash
-# Windows (PowerShell)
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps4 | iex"
-
-# macOS / Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-### 2. 克隆并进入项目
-
-```bash
+git clone https://github.com/xie386/deep_search_pro.git
 cd deep_search_pro
 ```
 
-### 3. 创建虚拟环境并安装依赖
+### 3. 安装依赖
 
 ```bash
-# 用项目指定的 Python 3.11 创建环境并安装依赖
-uv sync
-# 或：uv venv && uv pip install -e .
+# 用 Python 3.11 建虚拟环境
+uv venv --python 3.11
+
+# 安装项目依赖（依据 pyproject.toml，含 dspro 命令行入口）
+uv pip install -e .
 ```
 
-> 依赖较多（langchain、langgraph、deepagents、fastapi、mysql-connector、tavily、ragflow-sdk 等），首次安装可能需要几分钟。
+`pyproject.toml` **之外**还需要按需补装（不在 lock 里，缺失只会让对应功能不可用）：
 
-### 4. 配置环境变量
+| 功能 | 安装命令 | 缺失表现 |
+| --- | --- | --- |
+| 知识库（RAG） | `uv pip install chromadb sentence-transformers` | 知识库页/检索报 `ModuleNotFoundError` |
+| 语音朗读 | 见 `voice_test` 项目（Qwen3-TTS），需与本机 GPU 匹配 | 「🔊 朗读」不可用 |
+| 桌面版外壳 | `uv pip install pywebview pystray pillow` | 双击 `desktop.exe` 无反应 |
+| 语音输入（ASR） | `uv pip install sherpa-onnx`（推理引擎，需独立 venv） | 长按说话无反应 |
 
-复制示例文件并填入你自己的密钥：
+> 需要 GPU 加速时，请先按本机 CUDA 版本安装对应的 `torch`（例如 CUDA 12.1：`uv pip install torch --index-url https://download.pytorch.org/whl/cu121`），再装 `sentence-transformers`。
+
+### 4. 配置
 
 ```bash
 cp .env.example .env
 ```
 
-然后编辑 `.env`，至少填写以下变量（详见 `.env.example` 内注释）：
+然后编辑 `.env`。**最少要填 3 个变量**（见下一节表格）；其余留空即可启动。
 
-| 变量 | 作用 | 是否必须 |
-| --- | --- | --- |
-| `LLM_MODEL_MAX` | 大模型名称（OpenAI 兼容接口） | ✅ 必填 |
-| `OPENAI_API_KEY` / `OPENAI_BASE_URL` | 模型 API Key 与接入地址 | ✅ 必填 |
-| `TAVILY_API_KEY` | Tavily 网络搜索密钥（启用网络搜索助手） | ⚠️ 用到才填 |
-| `MYSQL_HOST` / `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DATABASE` | 数据库连接信息（启用数据库助手） | ⚠️ 用到才填 |
-| ~~`RAGFLOW_*`~~ | 已废弃：M3 起知识库为**自建 Chroma**（`rag_knowledge/`），无需外部 RAG 服务 | ❌ 不用填 |
-| `WEATHER_CITY` | 工作台天气卡默认城市（Open-Meteo 免 Key 数据源；前端可随时「📍 换城市」覆盖） | ⚠️ 想要非成都默认才填 |
+### 5. 启动
 
-### 5. 跑通最小验证
-
-`main.py` 已是可运行的 CLI 交互版。可先单独验证「配置 + 模型 + 工具」这条链路是否打通：
+**A. Web 版（推荐）**
 
 ```bash
-# 验证提示词配置能正常加载（应看到 main_agent + 4 个子 Agent：tavily / db / personal / ragflow 占位）
-python -c "from agent.prompts import main_agent_content, sub_agents_content; print('主Agent:', main_agent_content); print('子Agent:', list(sub_agents_content.keys()))"
-
-# 验证模型初始化（需先配好 .env 中的模型变量）
-python -c "from agent.llm import model; print(model)"
-```
-
-看到配置字典和模型对象正常打印，说明环境已就绪。
-
-### 6. 跑起来（三种方式任选）
-
-**方式 A：Web 版（M2，推荐）**
-
-```bash
-# 启动 FastAPI 服务（默认 127.0.0.1:8123，可自行改端口）
 uv run python -m uvicorn api.server:app --host 127.0.0.1 --port 8123
 ```
 
-浏览器打开 `http://127.0.0.1:8123`：
-- **登录页是两张卡**：登录卡只输用户名 + 密码；**没有账号就切到「注册」卡**创建（用户名 + 密码 + 确认密码 + 选「个人账号 / 公司账号」）。**登录绝不自动建号**——打错用户名只会提示「账号不存在」，不会像旧版那样静默建出一个错字账号；
-- 登录后按角色进入多页签工作台：**工作台**（总览，含快捷入口）/ **公司信息·个人信息**（维护资料/产品/竞品/兴趣，供 Agent 分析用）/ **AI 助手**（问答 + 右栏 WebSocket 实时进度 + 「🤔 模型思考过程」折叠区 + 回答导出 MD/PDF）/ **报告**（Digest 订阅管理与周报下载）/ **定制助手**（模型选型 + 助手人格设计）；顶栏「🎨 背景」可上传/选择/删除背景图并调透明度；
-- **Digest 报告页**：首次进入自动生成默认订阅（公司←竞品清单、个人←兴趣标签），可改关键词、周期（daily/weekly）与**检索语言**（中文/英文/中英双语，`lang` 字段）；点「批量生成（选中 N 个）」手动触发，或等 APScheduler 每天 9 点 / 每周一 9 点自动跑；新报告生成时顶栏红点 + WS 弹提醒。
-- **定制助手页**：模型选型区填「名称/模型名/base_url/API Key」四点并「启用」，该账号后续对话即走自定义模型（默认 .env 免费模型）；人格区可手动编辑 SOUL.md，或输入风格描述（如「活泼女仆」）点「✨ AI 生成人格」→「一键导入」→「保存人格」，对话与周报措辞立即体现该人格。
-
-**方式 B：CLI 版（保留可用）**
+**B. 桌面版（双击窗口）**
 
 ```bash
-# 进入交互式问答（输入 exit / quit / q / 退出 结束）
-python main.py
-
-dspro 子命令 #作为CLI工具使用
+front/desktop/desktop.cmd
 ```
 
-**方式 C：桌面版（pywebview 外壳，双击即用）**
+**C. 命令行版**
 
 ```bash
-# 双击这个文件（推荐）——Windows 资源管理器里直接双击
-front/desktop/desktop.exe # 有自己的图标、且不弹控制台黑窗
-
-# 后备：front/desktop/desktop.cmd（排查启动问题时能看到完整输出）
-# 或者命令行起（等价）
-.venv/Scripts/python.exe front/desktop/app.py
-# 首次需先装外壳依赖：uv pip install pywebview pystray pillow；
-# 若 desktop.exe 不存在，用系统自带编译器生成：python front/desktop/build_launcher.py
+python main.py      # 交互式问答，输入 exit / quit / q 退出
+dspro --help        # 打包好的 CLI 子命令（登录、列数据、生成周报、单轮问答）
 ```
 
-窗口里跑的就是**方式 A 的那份前端**（同一个后端、同一套 API、同一个库，外壳零改动），只是多了原生外壳：
+### 6. 确认启动成功
 
-- **不用先开服务**：外壳自己探测/启动后端（约 7~9 秒就绪，首次装依赖后更快）；**你已经开着服务时它直接复用，退出时也不会关掉你的服务**；
-- **记住登录**：关掉窗口再打开，不用重新登录；
-- **托盘常驻**：右键图标可「显示主窗口 / 立即生成周报 / 打开导出目录 / 当前账号 / 打开日志 / 退出」；长任务（生成周报、回答中）时托盘提示会显示进度并亮起琥珀点；
-- **点窗口 X 收进托盘**（不会退出）；**再次双击 `desktop.cmd` 会把已有窗口唤出来**（不会开出两个）；
-- **端口自动换**：8123 被别的程序占着就自动往后试（8123→8127），不用手动指定；
-- **后端崩了自动重启**（退避 2s/5s/15s，最多 3 次），恢复后弹通知并刷新页面；
-- **导出走原生「另存为」**（可自己选目录与文件名），周报生成完若窗口不在前台会弹系统通知。
-
-> 细节（架构、`.cmd` 编码铁律、排查表、可选项）见 `front/desktop/README.md`。
-
-> 注意：若本机存在其他名为 `agent` 的 Python 包（如全局 venv 中的同名包），`api/server.py` 已在顶部做了 sys.path 防御（项目根优先 + 剔除冲突路径）；`main.py` 直接在项目根运行不受影响。开发顺序以 `docs/v1.0/里程碑计划.md` 为准绳。
+- 浏览器打开 **http://127.0.0.1:8123**，能看到**登录页两张卡**（「登录」与「注册」）；
+- 没有账号就切到「注册」卡：用户名 + 密码 + 确认密码 + 账号类型（个人 / 公司）→ 注册后用该密码登录；
+- 登录后进入工作台，左侧可见「工作台 / AI 助手 / 报告 / 定制助手 / 技能与工具 / 📁 工作目录 / 设置」等入口；
+- 在「AI 助手」里问一句「今天有什么科技新闻」，右栏出现工具调用进度，说明模型与工具链都通了。
 
 ---
 
-## 八、项目现状
+## 配置说明
 
-> 口径（2026-10-18 清理）：本章只讲**当前能力与版本线**。逐版本的改动细节、踩坑与实测数字在 `docs/<版本>/`；v4.0 的逐大点记录在 `docs/v4.0/Done/`；进度真值在 `docs/v4.0/v4.0规划文档.md` 的目录表。
+`.env` 的完整键名见 `.env.example`（22 项）。常用项：
 
-### 版本线
+| 变量名 | 必填 | 默认值 | 说明 | 示例 |
+| --- | --- | --- | --- | --- |
+| `LLM_MODEL_MAX` | 是 | 无 | 主模型名（OpenAI 兼容接口）。**必须选支持视觉/多模态的模型** —— 进站抓取在 JS 浮层上要靠看截图取字段，纯文本模型会反复超时 | `gpt-4o` / `qwen-vl-max` |
+| `OPENAI_API_KEY` | 是 | 无 | 模型 API Key | `sk-xxxx`（只放 `.env`，不入库） |
+| `OPENAI_BASE_URL` | 是 | 无 | 模型接入地址（兼容 OpenAI 协议的任意服务） | `https://api.openai.com/v1` |
+| `TAVILY_API_KEY` | 否 | 空 | 网络搜索密钥；不填则「联网检索」不可用 | `tvly-xxxx` |
+| `MYSQL_HOST` / `MYSQL_PORT` | 否 | 空 / `3306` | 旧的 MySQL 数据源（公司侧数据现已迁 SQLite，一般不用填） | `127.0.0.1` |
+| `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DATABASE` | 否 | 空 | 同上 | — |
+| `EMBEDDING_MODEL_PATH` | 用知识库时必填 | 空 | 本地向量模型目录（知识库与工具路由用）；不填时工具路由退回关键词匹配，知识库不可用 | `D:/LLM/bge-large-zh` |
+| `RERANKER_MODEL_PATH` | 用知识库时必填 | 空 | 重排序模型目录（周报全模式检索用） | `D:/LLM/bge-reranker-base` |
+| `EMBEDDING_DEVICE` | 否 | `cpu` | 向量模型运行设备 | `cuda` |
+| `WEATHER_CITY` | 否 | 成都 | 工作台天气卡默认城市（Open-Meteo，免 Key） | `上海` |
+| `ASR_ENABLED` / `ASR_LANG` / `ASR_MODEL_DIR` | 否 | `1` / `zh` / 空 | 语音输入开关、语言、模型目录（`ASR_MODEL_DIR` 指向本地 ASR 模型） | `1` / `zh` / `D:/LLM/asr` |
+| `QQMAIL` / `QQMSTP` | 否 | 空 | 周报邮件通道（发件邮箱 / 授权码）；只在 `.env`，界面不回显 | — |
+| `ANONYMIZED_TELEMETRY` | 否 | `false` | browser-use 匿名遥测，默认关闭 | `false` |
 
-| 版本 | 一句话 | 详细记录 |
-| --- | --- | --- |
-| v1.0 | 多智能体底座：主 Agent + 子 Agent、Web 双工作台、RAG 知识库、Digest 周报 | `docs/v1.0/` |
-| v2.0 | 上下文工程化 · 请求装配管线化 · 技能与工具（CLI 沙箱 / 自配 CLI / 能力路由） | `docs/v2.0/` |
-| v2.5 | 修复与体验：CLI 能力描述证据分层、正文跑进思考、桌面版缓存、表单视觉体系、周报阅读 | `docs/v2.5/` |
-| v3.0 / v3.1 | API/MCP 适配器 · 用户画像 · 成本表 · 价格监控 · 测试基线与路由基准 | `docs/v3.0/` · `docs/v3.1/` |
-| **v4.0** | **工作目录与写能力 · workflows · 资源下载**（下表） | `docs/v4.0/` |
-
-### v4.0 全部更新总览
-
-> 一句话主线：**让 Agent 从「会答」变成「会动手，而且手是受控的」**。面向使用者的完整介绍见 [`docs/v4.0/README.md`](docs/v4.0/README.md)。
-
-| 大点 | 做了什么 | 使用者会感觉到的变化 |
-| --- | --- | --- |
-| **01** 度量口径收口 | 统一评测与路由测评的口径，结论可复跑、可对账 | 数字不再各说各话 |
-| **02** 决策模型仲裁层 | 候选近并列时请决策模型复核一次顺序；缓存与开关按账号 | 工具更容易排对、提示词更省 |
-| **03** 账号路由测评 | 账号级测评页：池子、题目、打分全可见 | 「为什么没调那个工具」有地方查 |
-| **04 / 04 补** 数据归口与设置集中 | 用户数据统一 `user_data/`；设置页补账号安全·开关·邮件；密钥「名入库、值走 .env」 | 数据不散、密钥备份不外泄 |
-| **05** 网搜三种取法 | 只检索 / 只进站 / 先检索定位再进站；取法由工具签名固定 + 每轮次数闸 | 「给网址」和「给需求」都能用对 |
-| **06** 工作目录与写能力 | 前端可见可编辑的真实目录；内置写工具纯文字可用、自配写能力靠「/」授权；workflows 固定流程 | 文件看得见改得动；写操作有边界；常用流程能固定跑 |
-| **07** 资源下载落工作目录 | 浏览器点「下载」后文件真落进账号工作目录；回执说清下了什么 | 「帮我下下来」能真的下下来，图片还能直接显示 |
-
-### 能力总览（累计，均已实测）
-
-- **编排**：主 Agent 按「问题指向账号内对象时先用账号内工具」的顺序约束调度；子 Agent 不可递归、各自计费。
-- **工具面**：内置 `@tool` / 子 Agent 自带 / 自配 CLI·API·MCP 三族同形纳入能力目录（`CapabilityEntry`），路由与注入不感知来源。
-- **上下文**：`build_request_context` 每轮装配（SOUL 人格 + MEMORY 画像 + 技能 + 工具简报）；历史落 SQLite，按轮截断/压缩防爆窗。
-- **知识库**：自建 Chroma 每用户一库，评估 + 清洗后入库，快/全双模式。
-- **周报**：订阅 + Tavily/HN 双通道 + LLM 三关筛选 + APScheduler + WS 提醒；`strict_days` 代码层剔旧闻。
-- **工作目录与写能力**：三道代码闸（路径逃逸 / 保护名单 fail-closed / 凭据红线）；删除只进回收站；写池来源不进简报与示例。
-- **资源下载**：浏览器侧暂存 + 搬移进工作目录；单文件 100 MB 阈值只标记；下载清单回给模型。
-- **可观测与账**：工具调用落 `commands.jsonl`、成本落成本表、决策另存 `decision.jsonl`；路由质量有离线路由基准与真机探针基线。
-
-## 九、技术栈
-
-`deepagents` · `langchain` / `langchain-core` / `langchain-openai` · `langgraph` · `fastapi` / `uvicorn`（Web 服务）· `apscheduler`（M4 定时调度）· `mysql-connector-python`(legacy) · `tavily-python` · `ragflow-sdk`(v2.0) · `pydantic` · `pyyaml` · `markdown` + `pywin32`（Word 转 PDF）· 内置 `sqlite3`（个人库/账号/Digest 存储）· 前端 **Vue 3**（免构建全球构建版）
+> 上表 22 个键的完整注释见 `.env.example`（每段都写了「什么情况下必填」）。
+>
+> **密钥规矩**：真实值只放 `.env`（已 git 忽略）；界面上配置的第三方密钥会写回 `.env`，数据库里只留键名。
 
 ---
 
-## 十、里程碑与开发顺序
+## 常用命令
 
-以 `docs/v1.0/里程碑计划.md` 为起点。此后每个版本都按**六阶段**推进：占位 → 调研 → 定方案 → 实现 → 修 bug 与优化 → 记录；该版本的**规划文档**是唯一权威，进度真值只看它的目录表。
+| 用途 | 命令 |
+| --- | --- |
+| 启动 Web 服务 | `uv run python -m uvicorn api.server:app --host 127.0.0.1 --port 8123` |
+| 桌面版 | `front/desktop/desktop.cmd` |
+| CLI 交互问答 | `python main.py` |
+| CLI 子命令 | `dspro login` / `dspro list` / `dspro digest` / `dspro chat` |
+| 单元测试与静态契约 | `uv run python -m pytest tests/unit -q` |
+| 前端 harness（Node） | `node tests/harness/m4a_frontend_logic.js` |
+| 全部 harness（经 pytest 总闸） | `uv run python -m pytest tests/unit/test_harness_gate.py -q` |
+| 端到端（进程内 TestClient） | `uv run python -m pytest tests/testclient -q` |
+| 真机 / 真窗口（慢，注意额度） | `uv run python -m pytest tests/live -q` |
 
-| 阶段 | 范围 | 状态 |
-| --- | --- | --- |
-| v1.0 · M1~M4 | 多智能体底座 / Web 化 / 简报与导出 / Digest 推送 | 完成 |
-| v2.0 · M1~M5b | 上下文工程化 · 装配管线化 · RAG · 技能与工具 · 能力与检索路由 | 完成 |
-| v2.5 | 修复与体验批次 | 完成 |
-| v3.0 · M1~M6c | API/MCP 适配器 · 画像 · 计数与成本 · 价格监控 · 桌面与语音 | 完成 |
-| v3.1 · M6b | 测试基线与路由质量基准 | 完成 |
-| **v4.0 · 01~07** | 度量收口 · 决策仲裁 · 路由测评 · 数据归口 · 网搜三取法 · 工作目录与写能力 · 资源下载 | **完成** |
+> 跑测试前建议先 `unset PYTHONPATH`（避免外部同名包干扰）；真机测试会调真实模型，注意额度。
 
-> 每个大点收尾时在 `docs/<版本>/Done/` 留两篇（实现记录 + 逐文件带读），保证文档与代码同步。
+---
+
+## 目录结构
+
+```text
+deep_search_pro/
+├── main.py                  # CLI 交互入口（主 Agent + 子 Agent 装配）
+├── dspro / dspro.cmd        # 打包好的命令行入口（login / list / digest / chat）
+├── pyproject.toml / uv.lock # 依赖清单与锁文件（uv 管理）
+├── .env.example             # 环境变量示例（复制成 .env 后填）
+├── 开发者阅读指南.md         # 代码阅读顺序、思考题与逐文件讲解
+│
+├── agent/                   # 智能体核心：模型接入、请求装配、会话、思考捕获、周报引擎
+│   └── subagents/           # 4 个子 Agent 的装配
+├── api/                     # FastAPI 服务层：REST + WebSocket + 各业务 API
+├── cli/                     # CLI 版实现（dspro）
+├── prompt/prompts.yml       # 全部提示词（主 Agent / 子 Agent / 各撰写 AI）
+├── tools/                   # 内置工具 + 能力池/路由 + 执行网关
+│   └── _runtime/            # 内部实现：shell / api / mcp 驱动（外部不直接 import）
+├── rag_knowledge/           # 知识库：切分、清洗、评估、检索
+├── front/                   # 前端一切：index.html（免构建 Vue3 SPA）、教程素材、桌面壳
+├── utils/                   # 通用小工具（路径、密钥、设置、审计）
+├── scripts/                 # 运维与探针脚本（预览生成、CDP 探针、数据迁移）
+├── tests/                   # unit / harness / testclient / live / debug / fixtures
+├── docs/                    # 版本文档：v1.0 ~ v4.0（规划 / 调研 / 裁定 / 实现记录）
+├── user_data/               # ★ 账号级用户数据（不入库）：画像、技能、工作目录、背景图、向量库
+└── data/                    # 运行时数据（不入库）：personal.db、审计日志、缓存
+```
+
+---
+
+## 常见问题（FAQ）
+
+**1. 启动报端口被占用（8123）**
+`uvicorn` 会直接失败。换端口即可：`uv run python -m uvicorn api.server:app --port 8124`；桌面壳会自己从 8123 往后找可用端口。
+
+**2. `uv sync` 之后某些功能坏了（知识库/语音/桌面版）**
+`uv sync` 会按 `uv.lock` **收掉不在锁里的包**（`chromadb`、`sentence-transformers`、`torch`、`pywebview` 等是手动安装的）。日常请用 `uv pip install -e .` 或 `uv pip install <包>`，不要用 `uv sync` 清理环境。
+
+**3. Python 版本不对（3.12+）导致装不上/跑不起来**
+请用 `uv venv --python 3.11` 重建环境。部分依赖（如 Chroma 的 onnxruntime、`pywin32`）对 3.12+ 支持不全。
+
+**4. `opentelemetry` 相关导入报错**
+`pyproject.toml` 里锁了 `opentelemetry-api<1.45`（`chromadb` 依赖它内部一个已被移除的类型）。升级依赖时别放宽这一条。
+
+**5. 联网检索/进站一直失败**
+- 检索失败先查 `TAVILY_API_KEY` 是否有效、额度是否用完；
+- 进站依赖本机 Chrome：确认已安装 Chrome，且**本机 127.0.0.1 不要走系统代理**（项目内部已对 localhost 设 `NO_PROXY`，但系统级代理软件可能仍拦截）；
+- 企业网络下需要放行 `api.tavily.com`、目标站点与 `127.0.0.1`。
+
+**6. 桌面版双击没反应 / 白屏**
+先跑 `front/desktop/desktop.cmd`（带控制台，能看到原因）；常见原因是 WebView2 运行时缺失，或 `pywebview`/`pystray`/`pillow` 没装。日志在桌面外壳自己的 `desktop.log` / `backend.log`。
+
+---
+
+## 贡献与许可
+
+- 这是一个**个人自用项目**，没有对外贡献流程；如果你 fork 后要改，建议先读 [`开发者阅读指南.md`](开发者阅读指南.md) 与 `docs/` 下对应版本的规划文档（每个版本的「明确不做」清单比路线图更有用）。
+- **许可证：TODO（仓库内暂无 LICENSE 文件）** —— 在补充许可证之前，请按「保留所有权利」理解，不要直接商用或再分发。
+
+---
