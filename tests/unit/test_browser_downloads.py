@@ -141,3 +141,46 @@ def test_empty_download_note_for_download_task(monkeypatch):
     monkeypatch.setattr(bt, "_active_llm", lambda: {"model": "m", "api_key": "k", "base_url": "b", "vision": False})
     got = bt.browse_pages("点击下载按钮，把这张壁纸下下来", ["https://example.com"])
     assert "没有检测到下载文件" in (got.get("note") or "")
+
+
+def test_move_downloads_skips_empty_stage(tmp_path, monkeypatch):
+    """没下载到东西时不许在工作目录里建空 _downloads/browser_*（真机留了一串空目录）。"""
+    from tools import browser_tool as bt
+    monkeypatch.setattr("tools.workdir_tools._ctx", lambda: (tmp_path, "u", 3), raising=True)
+    stage = tmp_path / "stage_empty"
+    stage.mkdir()
+    final, moved = bt._move_downloads(str(stage), "_downloads/browser_x")
+    assert (final, moved) == ("", 0)
+    assert not (tmp_path / "_downloads").exists(), "空下载不该建目标目录"
+    assert not stage.exists(), "空暂存要清掉"
+
+
+def test_download_task_detection():
+    from tools.browser_tool import _is_download_task
+    assert _is_download_task("点下载按钮，把图存下来")
+    assert _is_download_task("click the Download button")
+    assert _is_download_task("把这张图保存到本地")
+    assert not _is_download_task("列出页面上的产品名称与价格")
+
+
+def test_download_task_gets_step_floor_and_landing_note(monkeypatch):
+    """下载任务：步数下限 12，且任务里写明最终落点（否则子 Agent 会把暂存绝对路径抄进回答）。"""
+    import json
+    from tools import browser_tool as bt
+    seen = {}
+
+    class _R:
+        returncode = 0
+        stdout = json.dumps({"ok": True, "results": [{"url": "u", "title": "t", "content": "c"}], "downloads": []})
+        stderr = ""
+
+    def fake_run(cmd, **kw):
+        seen["req"] = json.loads(kw.get("input") or "{}")
+        return _R()
+    monkeypatch.setattr(bt.subprocess, "run", fake_run)
+    monkeypatch.setattr(bt, "_download_dir", lambda: (str(bt._DL_STAGE_ROOT / "x"), "_downloads/browser_x"))
+    monkeypatch.setattr(bt, "_proxy", lambda: None)
+    monkeypatch.setattr(bt, "_active_llm", lambda: {"model": "m", "api_key": "k", "base_url": "b", "vision": False})
+    bt.browse_pages("点击下载按钮，把这张壁纸下下来", ["https://example.com"], max_steps=5)
+    assert seen["req"]["max_steps"] == 12, "下载任务步数下限 12"
+    assert "落盘说明" in seen["req"]["task"] and "_downloads/browser_x" in seen["req"]["task"]

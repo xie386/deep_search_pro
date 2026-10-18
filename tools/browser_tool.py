@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -51,6 +52,12 @@ def _human(n) -> str:
 #: `<工作目录>/_downloads/browser_<时间戳>/` 时，watchdog 报 "Download did not complete within 20
 #: seconds"，文件始终不落盘；换成项目 `_runtime/browser_dl/run_<时间戳>/` 就正常（同一次任务、同配置文件）。
 #: 根因尚未查清（与本机受限令牌/该子树的 ACL 有关，待证），先按"暂存 + 搬移"落地。
+def _is_download_task(task: str) -> bool:
+    """任务里是否在要文件（下载/保存到本地）。用于放宽步数、追加落盘说明。"""
+    t = (task or "").lower()
+    return ("下载" in (task or "")) or ("download" in t) or ("保存到" in (task or "")) or ("另存" in (task or ""))
+
+
 _DL_STAGE_ROOT = Path(__file__).resolve().parent.parent / "user_data" / "_runtime" / "browser_dl"
 
 
@@ -79,6 +86,12 @@ def _move_downloads(stage: str, rel: str) -> tuple[str, int]:
     """
     if not stage or not rel:
         return "", 0
+    stage_p = Path(stage)
+    if not stage_p.is_dir() or not any(x.is_file() for x in stage_p.rglob("*")):
+        # ★ 真机 2026-10-18：没下载到东西也建了目标目录 → 工作目录里留一串空 `_downloads/browser_*`。
+        if stage_p.is_dir():
+            shutil.rmtree(stage_p, ignore_errors=True)
+        return "", 0
     try:
         from tools.workdir_tools import _ctx as _wd_ctx
         wd, _username, _aid = _wd_ctx()
@@ -87,7 +100,6 @@ def _move_downloads(stage: str, rel: str) -> tuple[str, int]:
     except Exception as e:                                     # noqa: BLE001
         print("[browser] 建下载目标目录失败：%s" % e)
         return "", 0
-    import shutil
     moved = 0
     for src in Path(stage).rglob("*"):
         if not src.is_file():
@@ -217,11 +229,22 @@ def browse_pages(task: str, urls: list[str] | None = None, max_steps: int | None
         print(f"[browser] 目标页数超过上限，只取前 {cap} 个")
 
     timeout = max(30, _settings.get_int("BROWSER_TASK_TIMEOUT_S", 300))
+    # ★ 真机 2026-10-18：下载流程要 6~10 步，模型只给 5 步时最后一步只剩 done → 下载任务下限 12
+    _step_budget = int(max_steps or _settings.get_int("BROWSER_MAX_STEPS", 8))
+    if _is_download_task(task):
+        _step_budget = max(12, _step_budget)
     _dl_abs, _dl_rel = _download_dir()                        # 07：下载落到账号工作目录内
+    if _dl_rel and _is_download_task(task):
+        # ★ 真机 2026-10-18：子 Agent 把暂存目录的绝对路径写进回答（D:\...\_runtime\browser_dl\run_<ts>），
+        #   用户看到的是一串内部路径。这里把「最终落点」直接写进任务，让它按相对路径汇报。
+        task = (task.rstrip() + "\n\n【落盘说明】下载的文件最终会出现在当前工作目录的 `%s/` 下"
+                "（浏览器内部先写临时目录再搬过去）。汇报时请用这个相对路径，不要用任何 D:\\ 开头的绝对路径。" % _dl_rel)
     req = {
         "task": task,
         "urls": us,
-        "max_steps": int(max_steps or _settings.get_int("BROWSER_MAX_STEPS", 8)),
+        # ★ 真机 2026-10-18：下载流程（搜索 → 详情页 → 选分辨率 → Done → Continue 确认）常要 6~10 步；
+        #   模型有时只给 5 步，最后一步只剩 done，文件眼睁睁没下完。下载任务步数**下限 12**。
+        "max_steps": _step_budget,
         "headless": _settings.get_bool("BROWSER_HEADLESS", True),
         "internal_timeout_s": max(20, timeout - 15),        # 让 runner 先自己收尾（连浏览器一起杀），父进程超时只是兜底
         "llm": {"model": llm["model"], "api_key": llm["api_key"], "base_url": llm["base_url"]},
