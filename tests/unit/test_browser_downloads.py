@@ -110,3 +110,34 @@ def test_move_downloads_into_workdir_without_overwrite(monkeypatch, tmp_path):
 def test_move_downloads_noop_without_dirs():
     from tools import browser_tool as bt
     assert bt._move_downloads("", "_downloads/x") == ("", 0)
+
+
+def test_tool_docs_tell_model_how_to_download():
+    """★ 2026-10-18 真机：用户要下载壁纸，模型拿到直链后去 `curl -o`（被白名单拒），
+    完全不知道「让浏览任务点下载按钮」这条路。两处说明书必须写清。"""
+    from tools import web_workflows as ww
+    doc = ww.browse_only.description if hasattr(ww.browse_only, "description") else ww.browse_only.__doc__
+    doc = doc or ""
+    assert "点击下载" in doc and "_downloads" in doc
+    assert "curl" in doc, "必须写清 curl 不能落盘"
+
+    from tools import browser_tool as bt
+    d2 = bt.browse_pages.__doc__ or ""
+    assert "downloads" in d2 and "点击下载" in d2
+
+
+def test_empty_download_note_for_download_task(monkeypatch):
+    """要下载却一个文件都没收到时，给一句可执行的下一步提示。"""
+    import json, subprocess, types
+    from tools import browser_tool as bt
+
+    class _R:
+        returncode = 0
+        stdout = json.dumps({"ok": True, "results": [{"url": "u", "title": "t", "content": "c"}], "downloads": []})
+        stderr = ""
+    monkeypatch.setattr(bt.subprocess, "run", lambda *a, **k: _R())
+    monkeypatch.setattr(bt, "_download_dir", lambda: ("", ""))
+    monkeypatch.setattr(bt, "_proxy", lambda: None)
+    monkeypatch.setattr(bt, "_active_llm", lambda: {"model": "m", "api_key": "k", "base_url": "b", "vision": False})
+    got = bt.browse_pages("点击下载按钮，把这张壁纸下下来", ["https://example.com"])
+    assert "没有检测到下载文件" in (got.get("note") or "")

@@ -189,7 +189,12 @@ def browse_pages(task: str, urls: list[str] | None = None, max_steps: int | None
     :param task: 要在这些页面上拿什么，用自然语言写清（例：找出该商品当前售价与规格）。
     :param urls: 要打开的页面地址（**传了就直达该页**，不必让模型自己找入口）。建议 1~3 个。
     :param max_steps: 本次浏览最多多少步；不传则用设置里的默认值。
-    :return: {"ok":…, "results":[{"url","title","content"}], "urls_visited":[…], "steps":…, "seconds":…, "cost_usd":…}
+    :return: {"ok":…, "results":[{"url","title","content"}], "urls_visited":[…], "steps":…, "seconds":…, "cost_usd":…,
+              "downloads":[{"name","bytes","over_limit"}]}
+
+    ★ **文件下载**：任务里写「点击下载按钮」时，浏览器会真的把文件存到当前账号工作目录的
+      `_downloads/browser_<时间戳>/`，并把清单放进返回值的 `downloads`（tools 侧再搬一次、按需去重）。
+      下载目录由 `download_dir` 传入；取不到工作目录时退回库默认（系统临时目录），不影响浏览。
     """
     monitor.report_tool(tool_name="浏览器抓取工具",
                         args={"task": task, "urls": urls or [], "max_steps": max_steps})
@@ -298,4 +303,11 @@ def browse_pages(task: str, urls: list[str] | None = None, max_steps: int | None
         for x in [y for y in _dl if str(y.get("name", "")).lower().endswith(_img_ext)][:3]:
             got["note"] += "\n[[img:%s/%s]]" % (_dl_rel, x.get("name"))
         got["downloads"] = _dl
+    elif "下载" in (task or "") or "download" in (task or "").lower():
+        # ★ 2026-10-18 真机：用户要下载、但浏览器侧一个文件都没收到时，模型只会说"没下成"，
+        #   不知道下一步该干什么。给一句可执行的提示（任务里点名"点击下载按钮"）。
+        _hint = ("📥 这次没有检测到下载文件。若确实需要下载：请在浏览任务里明确「点击页面上的下载按钮；"
+                 "如有分辨率/格式弹窗就先选一个再确认」，或把直链交给用户自行另存。"
+                 "（curl 不能落盘：白名单只允许 GET 抓文本。）")
+        got["note"] = (_hint if not got.get("note") else (got["note"] + "\n" + _hint))
     return got
