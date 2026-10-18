@@ -581,6 +581,31 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
             monitor.report_thinking("（workflow「%s」共 %d 步，开始逐步执行）"
                                     % (_doc["name"], len(_doc["steps"])))
 
+            # ★ 2026-10-18 写能力工作流（约定在 bug 维护与优化期做）：
+            #   workflow 顶层 `write:` 声明要用的写工具集 → 本轮视为已「/」授权（与聊天里选写集同义），
+            #   并把授权说明书带进每一步提示词；声明了但账号里没有的，只提示、不中断。
+            _wf_write_text = ""
+            _prev_writes = None
+            _wf_writes = [n for n in (_doc.get("write") or []) if str(n).strip()]
+            if _wf_writes:
+                try:
+                    from api import write_pool as _wpw
+                    from utils import write_auth as _wauth
+                    _known = {str(s0.get("name")) for s0 in _wpw.write_sets(account_id)}
+                    _miss = [n for n in _wf_writes if n not in _known]
+                    if _miss:
+                        monitor.report_thinking("（workflow 声明的写工具集不存在，已跳过：%s）"
+                                                % "、".join(_miss))
+                    _wf_writes = [n for n in _wf_writes if n in _known]
+                    if _wf_writes:
+                        _prev_writes = set(_wauth.authorized())
+                        _wauth.set_selected(_prev_writes | set(_wf_writes))
+                        _wf_write_text = _wpw.compose_write_sets_text(account_id, _wf_writes)
+                        monitor.report_thinking("（本轮按 workflow 声明授权写工具集：%s）"
+                                                % "、".join(_wf_writes))
+                except Exception as _e:            # noqa: BLE001 —— 授权失败不阻断流程
+                    print("[06] workflow 写集授权失败（忽略）: %s" % _e)
+
             def _invoke_step(prompt: str, idx: int) -> str:
                 # ★ 2026-10-17：步骤上下文**最小化** —— 不带历史（状态由步骤链传）、不跑知识库源收集。
                 #   真机症状：10 步工作流跑 1 小时还停在第 3 步，每步都在重灌压缩过的旧历史。
@@ -626,7 +651,16 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
                 except Exception:                 # noqa: BLE001
                     pass
 
-            _wf_res = _wfr.run_workflow(_doc, _invoke_step, on_event=_on_wf_event)
+            try:
+                _wf_res = _wfr.run_workflow(_doc, _invoke_step, on_event=_on_wf_event,
+                                            write_text=_wf_write_text)
+            finally:
+                if _prev_writes is not None:            # 还原本轮原有的「/」选择（别污染后续步骤）
+                    try:
+                        from utils import write_auth as _wauth2
+                        _wauth2.set_selected(_prev_writes)
+                    except Exception:                   # noqa: BLE001
+                        pass
             monitor.report_thinking("（workflow 结束：%s）" % ("全部完成" if _wf_res["ok"] else
                                                               "停在第 %s 步" % _wf_res["failed_at"]))
             _wf_ans = _wf_res["answer"]

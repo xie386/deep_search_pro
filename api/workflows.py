@@ -39,6 +39,7 @@ WF_MAX_LEN = 4000        # 单个 workflow（YAML 全文）字数上限，与技
 WF_NAME_MAX = 30         # 名字长度上限（与技能一致）
 WF_MAX_STEPS = 12        # 步骤数上限：再多就不该叫"流程固定的小工具"了
 WF_MAX_USE = 6           # 单步最多引用几个工具集（防提示词/执行面爆炸）
+WF_MAX_WRITE = 7         # 一个 workflow 最多声明几个写工具集（与「/」的选择上限同量级）
 
 
 def _user_wf_dir(username: str) -> Path:
@@ -113,8 +114,20 @@ def validate_wf(content: str) -> dict:
         norm.append({"id": s.get("id") or i, "title": title[:60],
                      "use": [str(x)[:40] for x in use],
                      "output": str(s.get("output") or "").strip()[:120]})
+    # ★ 2026-10-18 写能力工作流：workflow 级 `write:` 声明本轮要授权的写工具集。
+    #   放在顶层而不是每步，是因为授权是**整轮**语义（一次「/」授权 → 整条流程可用）。
+    wsets = doc.get("write")
+    if wsets is None:
+        wsets = []
+    if isinstance(wsets, str):
+        wsets = [x.strip() for x in wsets.split(",") if x.strip()]
+    if not isinstance(wsets, list):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "write 必须是列表或逗号分隔字符串（写工具集名字）")
+    if len(wsets) > WF_MAX_WRITE:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"写工具集过多（≤{WF_MAX_WRITE} 个）")
+    wsets = [str(x)[:40] for x in wsets if str(x).strip()]
     return {"name": str(doc.get("name") or "").strip()[:WF_NAME_MAX],
-            "desc": str(doc.get("desc") or "").strip()[:120], "steps": norm}
+            "desc": str(doc.get("desc") or "").strip()[:120], "steps": norm, "write": wsets}
 
 
 def wf_summary(content: str) -> dict:

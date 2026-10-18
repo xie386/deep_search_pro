@@ -176,3 +176,30 @@ def test_success_answer_is_summarized_per_step():
 def test_step_prompt_forbids_echo_and_caps_length():
     p = wr.build_step_prompt(DOC, 0)
     assert "输出纪律" in p and "SESSION INTENT" in p and "800 字" in p and "人格设定" in p
+
+
+# ---------------------------------------------- 写能力工作流（2026-10-18 约定在 bug 维护与优化期做）
+WRITE_TXT = "【本轮经「/」授权的写工具集】\n- GitHub Issues（api 来源 `github`）：用 invoke_tool 调用"
+
+
+def test_step_prompt_carries_write_sets_text():
+    """workflow 声明的写工具集 → 每一步提示里都要带授权说明书（否则模型不知道 ref 与调用方式）。"""
+    p = wr.build_step_prompt(DOC, 0, write_text=WRITE_TXT)
+    assert "授权的写工具集" in p and "GitHub Issues" in p
+    assert "第 1/2 步" in p, "原有限制（只描述本步）不能被破坏"
+
+
+def test_step_prompt_without_write_text_unchanged():
+    assert "授权的写工具集" not in wr.build_step_prompt(DOC, 0)
+
+
+def test_run_workflow_passes_write_text_to_every_step():
+    seen = []
+
+    def inv(prompt, i):
+        seen.append(prompt)
+        return "第%d步的产出内容很充实，够长了" % (i + 1)
+
+    r = wr.run_workflow(DOC, inv, write_text=WRITE_TXT)
+    assert r["ok"] is True and len(seen) == 2
+    assert all("授权的写工具集" in p for p in seen)

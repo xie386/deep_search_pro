@@ -160,7 +160,8 @@ def _send(client: httpx.Client, req: dict) -> httpx.Response:
     return client.request(req["method"], req["url"], **kwargs)
 
 
-def call(source_cfg: dict, spec: dict, args: dict, *, transport=None) -> dict:
+def call(source_cfg: dict, spec: dict, args: dict, *, transport=None,
+         allow_image_redirect: bool = False) -> dict:
     """执行一次 API 调用。``transport`` 仅供单测注入 `httpx.MockTransport`。"""
     t0 = time.time()
     try:
@@ -184,6 +185,23 @@ def call(source_cfg: dict, spec: dict, args: dict, *, transport=None) -> dict:
                         break
                     same_host = urlparse(loc).hostname in (None, "", urlparse(req["url"]).hostname)
                     if not same_host:
+                        # ★ 2026-10-18（用户裁定「加窄放行」）：图片类 API 常 302 到 CDN。
+                        #   仅当**调用方声明这是只读能力** + 目标是安全主机 + 跳过去拿到的**确实是图片**时，
+                        #   才跟这次跳转；其余情形照旧拒（且**不携带鉴权头**，避免把 token 带给 CDN）。
+                        _host = urlparse(loc).hostname or ""
+                        _safe = True
+                        if not source_cfg.get("allow_private"):
+                            _safe = _host_is_safe(_host)[0]
+                        if allow_image_redirect and _safe and _looks_like_url(loc):
+                            _hdr = {k: v for k, v in (req.get("headers") or {}).items()
+                                    if k.lower() not in ("authorization", "x-api-key", "api-key")}
+                            _probe = dict(req, url=loc, headers=_hdr)
+                            _pr = _send(c, _probe)
+                            if (_pr.headers.get("content-type") or "").lower().startswith("image/"):
+                                req = _probe
+                                r = _pr
+                                hops += 1
+                                break
                         return {"ok": False, "status": r.status_code, "text": "", "json": None, "bytes": 0,
                                 "truncated": False, "elapsed_ms": int((time.time() - t0) * 1000),
                                 "location": loc,

@@ -264,3 +264,47 @@ def test_json_response_has_no_blob():
     out = drv.call(_cfg(), {"method": "GET", "url_template": "/v1/x", "bindings": []},
                    {}, transport=_transport({"a": 1}))
     assert out["ok"] and out["json"] == {"a": 1} and "blob" not in out
+
+
+# ---------------------------------------------- 图片类跨主机 302（2026-10-18 用户裁定「窄放行」）
+def _redirect_transport(target_ctype="image/jpeg", seen=None):
+    png = b"\xff\xd8\xff\xe0" + b"\x00" * 24
+    def handler(request: httpx.Request) -> httpx.Response:
+        if seen is not None:
+            seen.append((request.url.host, dict(request.headers)))
+        if request.url.host == "api.example.com":
+            return httpx.Response(302, headers={"location": "https://cdn.jsdelivr.net/a.jpg"})
+        return httpx.Response(200, content=png, headers={"content-type": target_ctype})
+    return httpx.MockTransport(handler)
+
+
+_IMG_SPEC = {"method": "GET", "url_template": "/api/heisi", "bindings": []}
+
+
+def test_image_redirect_allowed_when_opted_in_and_target_is_image():
+    seen = []
+    out = drv.call(_cfg(), _IMG_SPEC, {}, transport=_redirect_transport(seen=seen),
+                   allow_image_redirect=True)
+    assert out["ok"] is True and out["ctype"] == "image/jpeg" and out["blob"]
+    assert seen[-1][0] == "cdn.jsdelivr.net"
+
+
+def test_image_redirect_not_followed_by_default():
+    out = drv.call(_cfg(), _IMG_SPEC, {}, transport=_redirect_transport())
+    assert out["ok"] is False and "重定向到另一个主机" in out["error"]
+
+
+def test_redirect_to_non_image_still_refused():
+    """放行只针对「跳过去确实是图片」；跳到别的 JSON/HTML 照样拒。"""
+    out = drv.call(_cfg(), _IMG_SPEC, {}, transport=_redirect_transport("text/html"),
+                   allow_image_redirect=True)
+    assert out["ok"] is False and "重定向到另一个主机" in out["error"]
+
+
+def test_redirect_probe_does_not_leak_auth_header():
+    seen = []
+    drv.call(_cfg(auth={"type": "header", "name": "Authorization", "prefix": "Bearer ",
+                        "secret": "sk-test"}),
+             _IMG_SPEC, {}, transport=_redirect_transport(seen=seen), allow_image_redirect=True)
+    cdn_headers = [h for host, h in seen if host == "cdn.jsdelivr.net"][0]
+    assert not any(k.lower() == "authorization" for k in cdn_headers), "不能把 token 带给 CDN"

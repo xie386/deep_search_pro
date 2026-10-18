@@ -140,3 +140,19 @@ def test_create_rejects_invalid_definition(monkeypatch, tmp_path):
     with pytest.raises(HTTPException):
         wf.wf_create("tk", wf.WfReq(name="坏的", content="steps:\n  - 没有title\n"))
     assert list(d.glob("*.yml")) == []
+
+
+def test_validate_wf_accepts_write_sets():
+    v = wf.validate_wf("name: w\nwrite: [GitHub Issues, AgentOffice]\nsteps:\n  - title: t\n")
+    assert v["write"] == ["GitHub Issues", "AgentOffice"]
+
+
+def test_validate_wf_write_defaults_to_empty():
+    assert wf.validate_wf("name: w\nsteps:\n  - title: t\n")["write"] == []
+
+
+def test_validate_wf_rejects_too_many_write_sets():
+    import pytest
+    with pytest.raises(Exception) as ei:
+        wf.validate_wf("name: w\nwrite: [a,b,c,d,e,f,g,h]\nsteps:\n  - title: t\n")
+    assert "写工具集过多" in str(getattr(ei.value, "detail", ei.value))

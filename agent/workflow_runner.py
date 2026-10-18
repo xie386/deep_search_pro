@@ -62,7 +62,7 @@ def is_transient(text) -> bool:
     return any(h in t for h in TRANSIENT_HINTS)
 
 
-def build_step_prompt(doc: dict, i: int, prev_out: str = "") -> str:
+def build_step_prompt(doc: dict, i: int, prev_out: str = "", write_text: str = "") -> str:
     """把第 i 步（0 基）编成**单步任务**提示。只描述这一步，不泄漏后续步骤。"""
     steps = doc.get("steps") or []
     s = steps[i]
@@ -73,6 +73,10 @@ def build_step_prompt(doc: dict, i: int, prev_out: str = "") -> str:
         "第 %d/%d 步：%s" % (i + 1, len(steps), s.get("title") or ""),
         tool_line,
     ]
+    # ★ 2026-10-18 写能力工作流：workflow 声明的写工具集 → 每一步都带上授权说明书
+    #   （授权是整轮语义；步骤按需使用，用不到就忽略）。
+    if write_text:
+        parts.append(write_text)
     if s.get("output"):
         parts.append("本步期望产出：%s" % s["output"])
     if prev_out:
@@ -94,7 +98,7 @@ def build_step_prompt(doc: dict, i: int, prev_out: str = "") -> str:
 
 def run_workflow(doc: dict, invoke: Callable[[str, int], str], *,
                  on_event: Callable[[str, dict], None] | None = None,
-                 min_out: int = MIN_STEP_OUT) -> dict:
+                 min_out: int = MIN_STEP_OUT, write_text: str = "") -> dict:
     """逐步执行。返回 {ok, name, steps, answer, failed_at}。
 
     steps 里每项：{id, title, status: ok|failed, output, error}
@@ -123,7 +127,7 @@ def run_workflow(doc: dict, invoke: Callable[[str, int], str], *,
             _attempt = 0
             while True:
                 try:
-                    text = invoke(build_step_prompt(doc, i, prev), i) or ""
+                    text = invoke(build_step_prompt(doc, i, prev, write_text), i) or ""
                     break
                 except Exception as _e:       # noqa: BLE001
                     _attempt += 1

@@ -527,7 +527,9 @@ def invoke(ref: str, args: dict | None = None, *, account_id: int | None = None,
 
         if src_kind == "api":
             from tools._runtime import api_driver
-            out = api_driver.call(cfg, spec, args, transport=transport)
+            # 只读能力允许「302 到 CDN 取图」这一种跨主机跳转；写能力一律不跟（防把写请求带偏）
+            out = api_driver.call(cfg, spec, args, transport=transport,
+                                  allow_image_redirect=bool(cap.get("read_only", 1)))
             ms = out.get("elapsed_ms")
         elif src_kind == "mcp":
             from tools._runtime import mcp_driver
