@@ -21,6 +21,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -32,6 +33,81 @@ from api.monitor import monitor                             # noqa: E402
 from utils import settings as _settings                     # noqa: E402
 
 load_dotenv()
+
+def _human(n) -> str:
+    """字节数 → 人话（回执里给模型看）。"""
+    try:
+        n = float(n or 0)
+    except Exception:                                           # noqa: BLE001
+        return "未知大小"
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return ("%d %s" % (n, unit)) if unit == "B" else ("%.1f %s" % (n, unit))
+        n /= 1024.0
+    return "%.1f GB" % n
+
+
+#: Chrome 侧暂存下载目录。★ 真机 2026-10-18：把 `downloads_path` 直接指到
+#: `<工作目录>/_downloads/browser_<时间戳>/` 时，watchdog 报 "Download did not complete within 20
+#: seconds"，文件始终不落盘；换成项目 `_runtime/browser_dl/run_<时间戳>/` 就正常（同一次任务、同配置文件）。
+#: 根因尚未查清（与本机受限令牌/该子树的 ACL 有关，待证），先按"暂存 + 搬移"落地。
+_DL_STAGE_ROOT = Path(__file__).resolve().parent.parent / "user_data" / "_runtime" / "browser_dl"
+
+
+def _download_dir() -> tuple[str, str]:
+    """返回 `(Chrome 侧暂存目录, 最终相对工作目录的路径)`。
+
+    最终路径是 `_downloads/browser_<时间戳>/`；取不到工作目录时返回 `("", "")` ——
+    runner 退回库默认行为（系统临时目录），与改动前一致，绝不因为取不到目录而失败。
+    """
+    try:
+        from tools.workdir_tools import _ctx as _wd_ctx        # 复用「当前账号 → 工作目录」那一处解析
+        _wd, _username, _aid = _wd_ctx()
+        rel = "_downloads/browser_%s" % time.strftime("%Y%m%d_%H%M%S")
+        stage = _DL_STAGE_ROOT / time.strftime("run_%Y%m%d_%H%M%S")
+        stage.mkdir(parents=True, exist_ok=True)
+        return str(stage), rel
+    except Exception as e:                                     # noqa: BLE001
+        print("[browser] 下载目录解析失败，退回默认：%s" % e)
+        return "", ""
+
+
+def _move_downloads(stage: str, rel: str) -> tuple[str, int]:
+    """把暂存目录里的文件搬进账号工作目录的 `rel` 下，返回 `(最终目录, 搬了几个)`。
+
+    重名时加后缀（`a.pdf` → `a-2.pdf`）；移动失败不抛错，文件留在暂存目录里并如实回报。
+    """
+    if not stage or not rel:
+        return "", 0
+    try:
+        from tools.workdir_tools import _ctx as _wd_ctx
+        wd, _username, _aid = _wd_ctx()
+        dst = Path(wd) / rel
+        dst.mkdir(parents=True, exist_ok=True)
+    except Exception as e:                                     # noqa: BLE001
+        print("[browser] 建下载目标目录失败：%s" % e)
+        return "", 0
+    import shutil
+    moved = 0
+    for src in Path(stage).rglob("*"):
+        if not src.is_file():
+            continue
+        target = dst / src.name
+        n = 2
+        while target.exists():
+            target = dst / ("%s-%d%s" % (src.stem, n, src.suffix))
+            n += 1
+        try:
+            shutil.move(str(src), str(target))
+            moved += 1
+        except Exception as e:                                 # noqa: BLE001
+            print("[browser] 搬下载文件失败（%s）：%s" % (src.name, e))
+    try:
+        shutil.rmtree(stage, ignore_errors=True)               # 暂存目录用完即删（空的才删得掉）
+    except Exception:                                          # noqa: BLE001
+        pass
+    return str(dst), moved
+
 
 _ROOT = Path(__file__).resolve().parent.parent
 _VENV_PY = _ROOT / "browser_venv" / "Scripts" / "python.exe"
@@ -136,6 +212,7 @@ def browse_pages(task: str, urls: list[str] | None = None, max_steps: int | None
         print(f"[browser] 目标页数超过上限，只取前 {cap} 个")
 
     timeout = max(30, _settings.get_int("BROWSER_TASK_TIMEOUT_S", 300))
+    _dl_abs, _dl_rel = _download_dir()                        # 07：下载落到账号工作目录内
     req = {
         "task": task,
         "urls": us,
@@ -145,6 +222,7 @@ def browse_pages(task: str, urls: list[str] | None = None, max_steps: int | None
         "llm": {"model": llm["model"], "api_key": llm["api_key"], "base_url": llm["base_url"]},
         "vision": llm["vision"],
         "proxy": _proxy(),
+        "download_dir": _dl_abs,
     }
     env = dict(os.environ)
     env["ANONYMIZED_TELEMETRY"] = "false"                    # 关匿名遥测（官方 AGENTS.md 明示可关）
@@ -177,8 +255,18 @@ def browse_pages(task: str, urls: list[str] | None = None, max_steps: int | None
     except Exception as e:                                   # noqa: BLE001
         return _fail(f"浏览器子进程启动失败（{type(e).__name__}: {e}）")
 
+    # ★ 07：runner 侧也会试着删空目录；这里再兜一次 —— 真机发现 Chrome 会在收尾瞬间
+    #   写/删临时文件，runner 那一刻看到的目录非空，事后才变空，于是留了个空气泡。
+    _dl_final, _moved = ("", 0)
+    if _dl_abs:
+        _dl_final, _moved = _move_downloads(_dl_abs, _dl_rel)   # 暂存 → 工作目录（真机：Chrome 写不了中文路径）
+    try:
+        if _dl_abs and os.path.isdir(_dl_abs) and not os.listdir(_dl_abs):
+            os.rmdir(_dl_abs)
+    except Exception:                                        # noqa: BLE001
+        pass
     if p.stderr and p.stderr.strip():
-        print("[browser] runner 日志：%s" % p.stderr.strip()[-800:])
+        print("[browser] runner 日志：%s" % p.stderr.strip()[-4000:])   # 07：排障时 800 字不够
     line = ""
     for ln in (p.stdout or "").splitlines()[::-1]:            # 契约：结果在最后一行 JSON
         if ln.strip().startswith("{"):
@@ -196,4 +284,18 @@ def browse_pages(task: str, urls: list[str] | None = None, max_steps: int | None
     if not got.get("results"):
         got["note"] = ("打开了页面但没有抽到可引用内容（页面可能是 JS 动态渲染 / 需要登录）；"
                        "可改用 internet_search 或换页面。")
+    # ★ 07（2026-10-18）：把本次下载到的文件写进回执 —— 否则模型只知道自己"点了按钮"。
+    _dl = got.get("downloads") or []
+    if _dl:
+        _names = "、".join("%s（%s%s）" % (x.get("name"), _human(x.get("bytes")),
+                                          "，超限未收" if x.get("over_limit") else "") for x in _dl[:10])
+        _more = "" if len(_dl) <= 10 else "（另有 %d 个未列出）" % (len(_dl) - 10)
+        _head = "📥 本次下载 %d 个文件，已存到工作目录 `%s/`：%s%s" % (
+            len(_dl), _dl_rel or "_downloads", _names, _more)
+        got["note"] = (_head if not got.get("note") else (got["note"] + "\n" + _head))
+        # 图片类顺手附渲染标记，前端直接显示（沿用 06 的 [[img:…]] 通道）
+        _img_ext = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg")
+        for x in [y for y in _dl if str(y.get("name", "")).lower().endswith(_img_ext)][:3]:
+            got["note"] += "\n[[img:%s/%s]]" % (_dl_rel, x.get("name"))
+        got["downloads"] = _dl
     return got

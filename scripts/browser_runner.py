@@ -66,6 +66,40 @@ def _domains_of(urls: list[str]) -> list[str]:
     return out
 
 
+#: 单文件阈值：超过只在回执里标「超限未收」，**不删源文件**（方案 §07 ③.1）
+DL_MAX_BYTES = 100 * 1024 * 1024
+
+
+def _list_downloads(d: str, max_bytes: int = DL_MAX_BYTES) -> list[dict]:
+    """扫本次运行的下载目录，返回 [{name, bytes, over_limit}]（递归，够模型交代）。"""
+    out: list[dict] = []
+    if not d:
+        return out
+    try:
+        for root, _dirs, files in os.walk(d):
+            for f in files:
+                p = os.path.join(root, f)
+                try:
+                    n = os.path.getsize(p)
+                    out.append({"name": f, "bytes": n, "over_limit": n > max_bytes})
+                except OSError:
+                    continue
+    except Exception:                                          # noqa: BLE001
+        return out
+    return out
+
+
+def _drop_if_empty(d: str) -> None:
+    """本次下载目录若为空就删掉（不留空气泡）；非空保留给用户。"""
+    if not d:
+        return
+    try:
+        if os.path.isdir(d) and not os.listdir(d):
+            os.rmdir(d)
+    except Exception:                                          # noqa: BLE001
+        pass
+
+
 def _profile_base() -> str:
     """本次运行用的临时 profile 根目录：优先落在 BROWSER_USE_CONFIG_DIR（D 盘）。"""
     base = os.getenv("BROWSER_USE_CONFIG_DIR") or tempfile.gettempdir()
@@ -91,6 +125,7 @@ def _cleanup_profile(req: dict) -> None:
 
 
 def _run_once(req: dict) -> dict:
+    dl_dir = ""                                            # 07：本次运行的下载目录（未指定则留空走库默认）
     """跑一次浏览器任务，返回契约里的 dict（**绝不抛异常**，错误也走返回值）。"""
     t0 = time.time()
     task = (req.get("task") or "").strip()
@@ -153,6 +188,18 @@ def _run_once(req: dict) -> dict:
             #   （accept_downloads=False），文件写/上传类动作已在 exclude_actions 里全部摘掉。
             "args": ["--no-sandbox", "--disable-gpu"],
         }
+        # ★ 07（2026-10-18）：下载落点由调用方指定（账号工作目录下的 _downloads/browser_<时间戳>/）。
+        #   实测：`accept_downloads` 在 0.13.11 里不是下载总开关，真正起作用的是 downloads_path
+        #   （watchdog 用 CDP Browser.setDownloadBehavior 设置）。给空则退回库默认（系统临时目录）。
+        dl_dir = (req.get("download_dir") or "").strip()
+        if dl_dir:
+            try:
+                os.makedirs(dl_dir, exist_ok=True)
+                prof_kw["downloads_path"] = dl_dir
+            except Exception as e:                             # noqa: BLE001
+                _log("建下载目录失败，退回默认：%s" % e)
+                dl_dir = ""
+        _log("下载落点：%s" % (dl_dir or "库默认（系统临时目录）"))
         doms = req.get("allowed_domains") or _domains_of(urls)
         if doms:
             prof_kw["allowed_domains"] = doms
@@ -192,6 +239,7 @@ def _run_once(req: dict) -> dict:
                         except Exception as e:                 # noqa: BLE001
                             _log("收浏览器时出错（忽略）：%s" % e)
                         break
+                _drop_if_empty(dl_dir)                     # 07：没下载东西就不留空目录
 
         history = asyncio.run(_go())
     except asyncio.TimeoutError:
@@ -244,6 +292,7 @@ def _run_once(req: dict) -> dict:
         "seconds": round(history.total_duration_seconds() or (time.time() - t0), 1),
         "cost_usd": cost,
         "results": results[:8],
+        "downloads": _list_downloads(dl_dir),          # 07：本次运行下载到的文件（名字 + 体积）
         "errors": errs,
         "success": bool(history.is_successful()) if history.is_done() else None,
     }
