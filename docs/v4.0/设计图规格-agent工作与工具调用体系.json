@@ -6,7 +6,7 @@
     "locale": "zh-CN",
     "quality_profile": "showcase",
     "output": "设计图-agent工作与工具调用体系.html",
-    "viewBox": [1100, 470],
+    "viewBox": [1100, 560],
     "views": [
       {
         "id": "main-path",
@@ -24,7 +24,13 @@
         "id": "governance",
         "label": "护栏与审计",
         "focus": ["gateway", "audit", "builtin"],
-        "note": "只读闸与审计两套并行；内置工具不经网关、地址按账号隔离。"
+        "note": "只读闸与审计两套并行；写能力另有一道授权 —— 内置写工具纯文字可用，自配来源只在本轮「/」选中时放行。"
+      },
+      {
+        "id": "workdir-layer",
+        "label": "工作目录与写能力（大点 06 · 07）",
+        "focus": ["workdir", "writesets", "builtin", "gateway"],
+        "note": "工作目录是前端可见、可逐层编辑的真实目录；写入先过三道代码闸，浏览器下载落进 _downloads/。"
       }
     ]
   },
@@ -43,7 +49,10 @@
     { "id": "decision", "type": "cloud", "label": "决策模型精排", "sublabel": "decision_router.maybe_refine", "pos": [250, 375], "size": [168, 56], "tag": "复核候选顺序 · 近并列才触发 · 缓存 24h" },
     { "id": "subagents", "type": "backend", "label": "子 Agent（4 个）", "sublabel": "网搜 · 数据库 · 情报 · 周报", "pos": [500, 375], "size": [145, 56], "tag": "task 调用 · 不递归 · 各自计费" },
     { "id": "audit", "type": "database", "label": "审计与度量", "sublabel": "commands.jsonl · 成本表", "pos": [710, 375], "size": [145, 56], "tag": "含被拒 · 决策另存 decision.jsonl" },
-    { "id": "external", "type": "external", "label": "真实数据源", "sublabel": "第三方 API · MCP · 本机", "pos": [880, 300], "size": [150, 56] }
+    { "id": "external", "type": "external", "label": "真实数据源", "sublabel": "第三方 API · MCP · 本机 · 浏览器", "pos": [880, 300], "size": [150, 56] },
+
+    { "id": "workdir", "type": "database", "label": "工作目录（用户可见）", "sublabel": "主页 · 逐层树 · 保护名单 · 回收站", "pos": [30, 470], "size": [168, 56], "tag": "真实目录 · 不接管磁盘内容" },
+    { "id": "writesets", "type": "security", "label": "写工具集与「/」授权", "sublabel": "内置写 · 自配写 · workflow write:", "pos": [250, 470], "size": [168, 56], "tag": "本轮选中才放行 · 不进路由池" }
   ],
   "boundaries": [
     { "kind": "region", "label": "自配来源（每账号不同）", "wraps": ["cli", "apimcp"] }
@@ -95,11 +104,21 @@
     },
     {
       "dot": "cyan",
-      "title": "自配来源如何进池",
+      "title": "自配来源如何分池（大点 06）",
       "items": [
-        "CLI：只读清单 + 依据三选一",
-        "API/MCP：导入后逐条确认只读",
-        "派生 CapabilityEntry 才可被召回"
+        "发现时按写语义给初值：写工具默认进写池",
+        "确认过只读的能力继续留在路由池（A3 红线）",
+        "写池来源不进简报、不进示例块，只能靠「/」唤起"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "工作目录与写能力（大点 06 · 07）",
+      "items": [
+        "工作目录=前端可见的真实目录：逐层树 · 编辑 · 回收站",
+        "三道代码闸：路径逃逸 · 保护名单 fail-closed · 凭据红线",
+        "内置写工具纯文字可用；自配写能力只在本轮「/」选中时放行",
+        "workflow 顶层 write: 整轮授权；浏览器下载落 _downloads/"
       ]
     }
   ]
