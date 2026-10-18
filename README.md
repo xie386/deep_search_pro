@@ -12,7 +12,7 @@
 
 ## 功能特性
 
-- **会自己选工具的多智能体问答**：主 Agent 调度 4 个专职子 Agent（网络搜索 / 数据库 / 个人情报 / 周报）；工具分三族——内置工具、子 Agent 自带工具、你自配的 CLI·API·MCP 来源，按提问相关性挑选。
+- **会自己选工具的多智能体问答**：主 Agent 调度 3 个专职子 Agent（网络搜索 / 个人情报 / 周报）；工具分三族——内置工具、子 Agent 自带工具、你自配的 CLI·API·MCP 来源，按提问相关性挑选。
 - **三种联网取法**：「只检索」「只进指定网址」「先检索定位再进站深抓」，由工具签名约束，每轮检索次数有上限。
 - **工作目录可见可编辑**：左栏「📁 工作目录」能逐层浏览、直接改文本、预览 docx/xlsx、删除进回收站可还原。
 - **写能力有边界**：内置写工具（建/改/删文件）用人话直接可用；你自配来源的写操作必须在输入框用 `/` 选中对应「写工具集」才放行，且只对那一轮生效。
@@ -115,8 +115,6 @@ dspro --help        # 打包好的 CLI 子命令（登录、列数据、生成�
 | `OPENAI_API_KEY` | 是 | 无 | 模型 API Key | `sk-xxxx`（只放 `.env`，不入库） |
 | `OPENAI_BASE_URL` | 是 | 无 | 模型接入地址（兼容 OpenAI 协议的任意服务） | `https://api.openai.com/v1` |
 | `TAVILY_API_KEY` | 否 | 空 | 网络搜索密钥；不填则「联网检索」不可用 | `tvly-xxxx` |
-| `MYSQL_HOST` / `MYSQL_PORT` | 否 | 空 / `3306` | 旧的 MySQL 数据源（公司侧数据现已迁 SQLite，一般不用填） | `127.0.0.1` |
-| `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DATABASE` | 否 | 空 | 同上 | — |
 | `EMBEDDING_MODEL_PATH` | 用知识库时必填 | 空 | 本地向量模型目录（知识库与工具路由用）；不填时工具路由退回关键词匹配，知识库不可用 | `D:/LLM/bge-large-zh` |
 | `RERANKER_MODEL_PATH` | 用知识库时必填 | 空 | 重排序模型目录（周报全模式检索用） | `D:/LLM/bge-reranker-base` |
 | `EMBEDDING_DEVICE` | 否 | `cpu` | 向量模型运行设备 | `cuda` |
