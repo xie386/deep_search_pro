@@ -440,7 +440,10 @@ def _save_tool_image(account_id: int | None, ref: str, blob: bytes, ctype: str) 
         path = wd / "_tool_images" / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(blob)
-        return ("🖼 接口返回了一张图片（%s，%d 字节），已存到工作目录 `%s`，前端会直接显示。\n"
+        # ★ 2026-10-18 真机：标记只有在**回答正文**里才会被前端渲染（工具回显区不渲染），
+        #   所以要明确要求模型原样带上这一行，否则模型只会转述"拿到一个链接"。
+        return ("🖼 接口返回了一张图片（%s，%d 字节），已存到工作目录 `%s`。\n"
+                "请把下面这一行**原样**放进你的回答里（前端会把它显示成图片，别改写、别加代码块）：\n"
                 "[[img:%s]]" % (ctype or "image", len(blob), rel, rel))
     except Exception as e:                    # noqa: BLE001 —— 落盘失败只降级，不影响调用结果
         return "🖼 接口返回了一张图片（%s，%d 字节），但落盘失败：%s" % (ctype or "image", len(blob), e)
