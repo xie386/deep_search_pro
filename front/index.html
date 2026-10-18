@@ -7271,11 +7271,13 @@ createApp({
     async function wfOpen(file) {
       const r = await fetch('/api/workflows/get?name=' + encodeURIComponent(file) +
                             '&token=' + encodeURIComponent(token.value));
-      if (!r.ok) return;
+      // ★ 2026-10-18 真机：读失败原来是静默 return —— 用户只看到"编辑框空白"，以为文件丢了。
+      if (!r.ok) { showToast('读不到 workflow「' + file + '」（HTTP ' + r.status + '）', true); return; }
       const d = await r.json();
       wfActive.value = d.name || file;
       wfContent.value = d.content || '';
       wfNewName.value = wfActive.value;
+      if (!wfContent.value) showToast('workflow「' + wfActive.value + '」内容为空', true);
     }
     async function wfCreate() {
       const nm = (wfNewName.value || '').trim();

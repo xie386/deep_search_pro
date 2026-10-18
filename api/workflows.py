@@ -73,6 +73,27 @@ def _wf_path(username: str, name: str) -> Path:
     return _user_wf_dir(username) / f"{wf_safe_name(name)}.yml"
 
 
+def _wf_path_existing(username: str, name: str) -> Path:
+    """在「规范名」之外，再按**原始文件名**找一次。
+
+    ★ 2026-10-18 真机报障：手工放进来的文件起名带空格（`GitHub issue 周报归档.yml`）——
+      列表能列出来（读目录），但按名字读/存/删都被 `wf_safe_name` 规范成下划线 → 找不到 →
+      编辑框空白。这里做一次兜底，避免"看着有、点开空"。
+    """
+    p = _wf_path(username, name)
+    if p.exists():
+        return p
+    raw = (name or "").strip().replace("\\", "/").split("/")[-1]
+    for ext in (".yml", ".yaml", ".md"):
+        if raw.lower().endswith(ext):
+            raw = raw[: -len(ext)]
+    if raw:
+        alt = _user_wf_dir(username) / f"{raw}.yml"
+        if alt.exists():
+            return alt
+    return p
+
+
 class WfReq(BaseModel):
     name: str
     content: str = ""
@@ -159,7 +180,7 @@ def wf_list(token: str) -> dict:
 
 def wf_get(token: str, name: str) -> dict:
     user = _username_by_token(token)
-    p = _wf_path(user, name)
+    p = _wf_path_existing(user, name)
     return {"name": p.stem, "content": p.read_text(encoding="utf-8") if p.exists() else ""}
 
 
@@ -178,14 +199,14 @@ def wf_save(token: str, req: WfReq) -> dict:
     """保存（不存在则创建）；同样创建即校验。"""
     user = _username_by_token(token)
     validate_wf(req.content)
-    p = _wf_path(user, req.name)
+    p = _wf_path_existing(user, req.name)
     p.write_text(req.content or "", encoding="utf-8")
     return {"ok": True, "name": p.stem}
 
 
 def wf_delete(token: str, name: str) -> dict:
     user = _username_by_token(token)
-    p = _wf_path(user, name)
+    p = _wf_path_existing(user, name)
     if not p.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"workflow「{name}」不存在")
     p.unlink()

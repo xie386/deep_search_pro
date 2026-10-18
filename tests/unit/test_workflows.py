@@ -156,3 +156,22 @@ def test_validate_wf_rejects_too_many_write_sets():
     with pytest.raises(Exception) as ei:
         wf.validate_wf("name: w\nwrite: [a,b,c,d,e,f,g,h]\nsteps:\n  - title: t\n")
     assert "写工具集过多" in str(getattr(ei.value, "detail", ei.value))
+
+
+def test_wf_get_falls_back_to_raw_filename(tmp_path, monkeypatch):
+    """★ 2026-10-18 真机：手工放进来的文件名字带空格（`GitHub issue 周报归档.yml`）——
+    列表列得出来，但按名字读会被规范化成下划线 → 编辑框空白。要能按原始文件名兜底。"""
+    from api import workflows as wf
+    monkeypatch.setattr(wf, "_username_by_token", lambda tok: "u1")
+    monkeypatch.setattr(wf, "_user_doc_dir", lambda u: tmp_path)
+    d = tmp_path / "workflows"
+    d.mkdir(parents=True, exist_ok=True)
+    body = "name: x\nsteps:\n  - title: t\n"
+    (d / "GitHub issue 周报归档.yml").write_text(body, encoding="utf-8")
+
+    r = wf.wf_get("t", "GitHub issue 周报归档")
+    assert r["content"] == body, "按原始文件名要能读到"
+    assert wf.wf_get("t", "GitHub issue 周报归档.yml")["content"] == body
+    # 规范名（下划线）直接命中时也应正常
+    (d / "规范名.yml").write_text(body, encoding="utf-8")
+    assert wf.wf_get("t", "规范名")["content"] == body
