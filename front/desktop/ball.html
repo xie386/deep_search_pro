@@ -37,9 +37,9 @@
   .menu .mi .t{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .menu .mi .n{flex:0 0 auto;color:#9fb2a5;font-size:11px}
   .menu .empty{color:#9fb2a5;font-size:12px;padding:8px}
-  header button{width:26px;height:26px;border:0;border-radius:7px;background:transparent;color:#b9c6bd;
+  header.bar > button:not(.sess){width:26px;height:26px;border:0;border-radius:7px;background:transparent;color:#b9c6bd;
     font-size:14px;cursor:pointer;flex:0 0 26px;line-height:1}
-  header button:hover{background:rgba(255,255,255,.12);color:#fff}
+  header.bar > button:not(.sess):hover{background:rgba(255,255,255,.12);color:#fff}
   header .sp{flex:0 0 2px}
   main{flex:1 1 auto;min-height:0;overflow-y:auto;padding:12px 10px 4px;display:flex;flex-direction:column;gap:8px}
   .row{display:flex}
@@ -57,6 +57,20 @@
   #send{flex:0 0 auto;height:34px;padding:0 14px;border:0;border-radius:10px;background:var(--accent);
     color:#fff;font-size:13px;cursor:pointer}
   #send.stop{background:#b4453f}
+  /* 页内弹层：不用原生 confirm/prompt —— 它们会阻塞渲染进程，无边框窗里看起来就是「未响应」 */
+  .modal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:18px}
+  .modal[hidden]{display:none}
+  .mbox{width:100%;max-width:310px;background:#1b241d;color:#e8f0ea;border:1px solid rgba(255,255,255,.14);
+    border-radius:11px;box-shadow:0 16px 34px rgba(0,0,0,.5);padding:14px}
+  .mtitle{font-size:13px;line-height:1.5;margin-bottom:10px}
+  .mbox textarea{width:100%;border:1px solid rgba(255,255,255,.18);border-radius:8px;background:#101710;
+    color:#e8f0ea;font:inherit;font-size:13px;padding:7px 9px;outline:none;resize:none;margin-bottom:10px}
+  .mbtns{display:flex;justify-content:flex-end;gap:8px}
+  .mbtns button{height:28px;padding:0 12px;border:0;border-radius:8px;font:inherit;font-size:12.5px;cursor:pointer}
+  #mNo{background:rgba(255,255,255,.10);color:#cfdcd2}
+  #mNo:hover{background:rgba(255,255,255,.18)}
+  #mYes{background:#4f8f5c;color:#fff}
+  #mYes:hover{background:#5aa069}
   #send:disabled{opacity:.55;cursor:default}
   .empty{color:var(--muted);font-size:12.5px;text-align:center;margin-top:18px}
 </style>
@@ -81,6 +95,13 @@
     <button id="send">发送</button>
   </footer>
 
+  <div id="modal" class="modal" hidden>
+    <div class="mbox">
+      <div class="mtitle" id="mTitle"></div>
+      <textarea id="mInput" rows="2" hidden></textarea>
+      <div class="mbtns"><button id="mNo" type="button">取消</button><button id="mYes" type="button">确定</button></div>
+    </div>
+  </div>
 <script>
 (function () {
   'use strict';
@@ -225,7 +246,7 @@
   async function renameSession() {
     if (!thread) return;
     const cur = (sessions.find((s) => s.thread_id === thread) || {}).title || '新对话';
-    const t = prompt('会话标题（≤30 字）', cur);
+    const t = await ask('text', '会话标题（≤30 字）', titleOf(thread));
     if (t == null) return;
     await api('/api/chat/sessions/' + encodeURIComponent(thread) + '?title=' + encodeURIComponent(t.trim()),
               { method: 'PATCH' });
@@ -234,12 +255,36 @@
 
   async function delSession() {
     if (!thread) return;
-    if (!confirm('删除这个会话？消息会一起删除，不能恢复。')) return;
+    if (!(await ask('ok', '删除这个会话？消息会一起删除，不能恢复。'))) return;
     await api('/api/chat/sessions/' + encodeURIComponent(thread), { method: 'DELETE' });
     localStorage.removeItem(SES_KEY);
     thread = '';
     await loadSessions();
   }
+
+  // 页内弹层（替代 confirm/prompt）
+  const modal = $('modal'), mTitle = $('mTitle'), mInput = $('mInput');
+  let _mResolve = null;
+  function ask(kind, title, def) {
+    return new Promise((resolve) => {
+      _mResolve = resolve;
+      mTitle.textContent = title;
+      mInput.hidden = (kind !== 'text');
+      if (kind === 'text') mInput.value = def || '';
+      modal.hidden = false;
+      setTimeout(() => { (kind === 'text' ? mInput : $('mYes')).focus(); }, 30);
+    });
+  }
+  function closeAsk(v) {
+    modal.hidden = true;
+    const r = _mResolve; _mResolve = null;
+    if (r) r(v);
+  }
+  $('mYes').addEventListener('click', () => closeAsk(mInput.hidden ? true : mInput.value));
+  $('mNo').addEventListener('click', () => closeAsk(mInput.hidden ? false : null));
+  mInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); closeAsk(mInput.value); }
+  });
 
   function autoGrow() {
     inp.style.height = 'auto';
@@ -252,6 +297,11 @@
   inp.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
   });
+  // 握把拖动：调 Python 走系统拖窗（easy_drag 已关，避免整窗 mousedown 被当成拖拽）
+  document.querySelector('.grip').addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    try { window.pywebview.api.panel_drag(); } catch (err) {}
+  });
   sessBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     if (sessMenu.hidden) { renderMenu(); sessMenu.hidden = false; } else { closeMenu(); }
@@ -259,14 +309,15 @@
   sessMenu.addEventListener('click', (e) => e.stopPropagation());
   document.addEventListener('click', closeMenu);
   $('newS').addEventListener('click', () => newSession().catch((e) => addTip('新建失败：' + e.message)));
-  $('renS').addEventListener('click', () => renameSession().catch((e) => alert('重命名失败：' + e.message)));
-  $('delS').addEventListener('click', () => delSession().catch((e) => alert('删除失败：' + e.message)));
+  $('renS').addEventListener('click', () => renameSession().catch((e) => addTip('重命名失败：' + e.message)));
+  $('delS').addEventListener('click', () => delSession().catch((e) => addTip('删除失败：' + e.message)));
   $('close').addEventListener('click', () => {
     try { window.pywebview.api.ball_hide(); } catch (e) {}
   });
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    if (!sessMenu.hidden) { closeMenu(); return; }     // Esc 先关下拉，再关面板
+    if (!modal.hidden) { closeAsk(null); return; }      // Esc 先关弹层
+    if (!sessMenu.hidden) { closeMenu(); return; }      // 再关下拉，最后关面板
     try { window.pywebview.api.ball_hide(); } catch (err) {}
   });
 

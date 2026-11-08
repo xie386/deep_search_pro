@@ -5052,6 +5052,16 @@ createApp({
     function desktopApi() {
       return (IS_DESKTOP && window.pywebview && window.pywebview.api) ? window.pywebview.api : null;
     }
+    // v4.1-01：登录态回报（等 api 就绪，最多约 15 秒；就绪后只报一次）
+    function reportAuthWhenReady(left) {
+      const n = (left == null) ? 50 : left;
+      const a = desktopApi();
+      if (a && a.auth_state) {
+        try { a.auth_state(!!token.value, username.value || ''); } catch (e) {}
+        return;
+      }
+      if (n > 0) setTimeout(() => reportAuthWhenReady(n - 1), 300);
+    }
 
     // ★ 统一的「把某个 URL 保存成文件」入口（全站导出/下载都走它）
     //   桌面版：fetch 回字节 → base64 → 原生「另存为」（**WebView2 不支持浏览器式下载，
@@ -9036,8 +9046,9 @@ createApp({
           loadVoicePacks(); loadSessions(); loadKbStatus(); loadSkills(); loadAsrStatus(); loadWorkdirs(); loadPickData();  // ★ 06 loadDecRouter();
         }
       }
-      // v4.1-01：把当前登录态告诉外壳（token 失效时 verifySession 已清空，这里会报 false）
-      try { const _a = desktopApi(); if (_a && _a.auth_state) _a.auth_state(!!token.value, username.value || ''); } catch (e) {}
+      // v4.1-01：把当前登录态告诉外壳。★ 必须等 window.pywebview.api 注入后再报：
+      //   「记住登录」时页面直进账号界面，此刻 api 还没注入，直接调会被静默跳过 → 球不出现。
+      reportAuthWhenReady();
       wxStart();
     });
 

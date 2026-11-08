@@ -201,8 +201,17 @@ def _refresh_panel() -> None:
     """让面板页重新读一次 localStorage 的 token（登录/换号后必须做，否则一直显示未登录）。"""
     if _PANEL is None:
         return
+    # ★ 不能 evaluate_js 一个返回 Promise 的表达式：pywebview 会等结果，GUI 线程直接卡死
+    #   （实测表现为「Python 未响应」）。用 run_js 只投递不等待。
+    js = "try{window.ballRefresh&&window.ballRefresh()}catch(e){}"
     try:
-        _PANEL.evaluate_js("window.ballRefresh && window.ballRefresh()")
+        if hasattr(_PANEL, "run_js"):
+            _PANEL.run_js(js)
+            return
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        _PANEL.evaluate_js("(function(){%s;return 1})()" % js)
         return
     except Exception:  # noqa: BLE001  页面还没加载好时退回重载
         pass
@@ -315,8 +324,7 @@ def _toggle_panel(show=None) -> None:
             if rect is not None:
                 _PANEL.resize(rect.w, rect.h)
                 _PANEL.move(rect.x, rect.y)
-            _refresh_panel()          # 展开前再刷一次（登录/换号后立即正确）
-            _PANEL.show()
+            _PANEL.show()             # 不做同步刷新：页面每 1.5s 自己比对 token，避免卡 GUI 线程
             try:
                 _PANEL.on_top = True
             except Exception:  # noqa: BLE001
@@ -871,6 +879,22 @@ class DesktopApi:
         """面板右上角 × / Esc：只收起面板，不退出应用。"""
         _toggle_panel(False)
         return True
+
+    def panel_drag(self):
+        """按住握把拖动面板：交给 Windows 自己的窗口拖动循环（不用 pywebview 的 JS 拖窗）。"""
+        if _PANEL is None:
+            return {"ok": False, "error": "panel_missing"}
+        try:
+            import ctypes
+            hwnd = int(_PANEL.native.Handle)
+            user32 = ctypes.windll.user32
+            user32.ReleaseCapture()
+            # WM_NCLBUTTONDOWN(0x00A1) + HTCAPTION(2)：标准无边框拖窗做法
+            user32.SendMessageW(ctypes.c_void_p(hwnd), 0x00A1, 2, 0)
+            return {"ok": True}
+        except Exception as e:  # noqa: BLE001
+            log("[球] 面板拖动失败：%s" % e)
+            return {"ok": False, "error": str(e)}
 
     def ball_open(self):
         _toggle_panel(True)
@@ -1604,7 +1628,9 @@ def main():
             panel = webview.create_window(
                 APP_TITLE + " · 对话", html_loading, width=380, height=560,
                 min_size=(320, 420), frameless=True, on_top=True, hidden=True,
-                focus=False, easy_drag=True, js_api=DesktopApi(),
+                # ★ easy_drag=True 会让 pywebview 给「整个窗口」挂 mousedown 拖窗：
+                #   点任何控件都可能进入系统拖动循环 → 界面「未响应」。拖动改由握把调 panel_drag()。
+                focus=False, easy_drag=False, js_api=DesktopApi(),
             )
             _set_panel(panel)
             log("[球] 面板窗已创建（隐藏；尺寸 380x560）")
