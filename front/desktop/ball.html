@@ -16,7 +16,11 @@
     background:#161d18;color:#dfe8e1;user-select:none}
   header .dot{width:8px;height:8px;border-radius:50%;background:#e2892b;flex:0 0 8px}
   header select{flex:1 1 auto;min-width:0;height:26px;border-radius:7px;border:1px solid rgba(255,255,255,.16);
-    background:rgba(255,255,255,.08);color:#e8f0ea;font-size:12.5px;padding:0 6px;outline:none}
+    background:rgba(255,255,255,.08);color:#e8f0ea;font-size:12.5px;padding:0 6px;outline:none;
+    color-scheme:dark}
+  /* 原生下拉的弹出层不吃父级配色：option 必须显式上色，否则未悬浮项会在白底上看不清 */
+  header select option{background:#1b241d;color:#e8f0ea}
+  header select option:checked{background:#2f4436;color:#ffffff}
   header button{width:26px;height:26px;border:0;border-radius:7px;background:transparent;color:#b9c6bd;
     font-size:14px;cursor:pointer;flex:0 0 26px;line-height:1}
   header button:hover{background:rgba(255,255,255,.12);color:#fff}
@@ -220,6 +224,20 @@
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { try { window.pywebview.api.ball_hide(); } catch (err) {} }
   });
+
+  // 面板是先于登录加载的：token 变化（登录/换号/登出）时自己刷新一次
+  let _tok = TOKEN();
+  function refresh() {
+    _tok = TOKEN();
+    if (!_tok) {
+      sessions = []; thread = ''; sessSel.innerHTML = '';
+      addTip('请先登录桌面版，再用悬浮球对话。');
+      return Promise.resolve();
+    }
+    return loadSessions().catch((e) => addTip('加载会话失败：' + e.message));
+  }
+  window.ballRefresh = refresh;          // 外壳在 auth_state / 展开面板时调它
+  setInterval(() => { if (TOKEN() !== _tok) refresh(); }, 1500);
 
   if (!TOKEN()) addTip('请先登录桌面版，再用悬浮球对话。');
   else loadSessions().catch((e) => addTip('加载会话失败：' + e.message));

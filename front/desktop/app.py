@@ -77,6 +77,7 @@ _PENDING_OPEN = {"open": False}    # GUI 未就绪时点球的意图，就绪后
 _BALL_CFG = {"enabled": False, "size": 64, "opacity": 100, "on_top": True,
              "hotkey": "Ctrl+Alt+Space"}
 _BALL_LOGGED_IN = False            # 页面回报的登录态：球随登录态存在（bug2）
+_PANEL_URL = ""                    # 面板页地址（登录后要重载一次，让 token 生效）
 _OWN_BACKEND = False                       # 后端是"本外壳起的"(True) 还是"复用别人现成的"(False)
 _backend_owner = None                      # 真正监听端口的进程 pid（可能是 Popen 子进程的"孙子"）
 _tray_status = ""                          # 托盘提示里的附加状态（如"正在生成周报…"）
@@ -196,6 +197,22 @@ def _set_ball_cfg(cfg: dict) -> None:
     _BALL_CFG = dict(cfg)
 
 
+def _refresh_panel() -> None:
+    """让面板页重新读一次 localStorage 的 token（登录/换号后必须做，否则一直显示未登录）。"""
+    if _PANEL is None:
+        return
+    try:
+        _PANEL.evaluate_js("window.ballRefresh && window.ballRefresh()")
+        return
+    except Exception:  # noqa: BLE001  页面还没加载好时退回重载
+        pass
+    try:
+        if _PANEL_URL:
+            _PANEL.load_url(_PANEL_URL + "?t=" + str(int(time.time())))
+    except Exception as e:  # noqa: BLE001
+        log("[球] 面板刷新失败：%s" % e)
+
+
 def _stop_ball() -> None:
     global _BALL
     if _BALL is None:
@@ -242,6 +259,7 @@ def _on_auth_state(logged_in: bool, username: str = "") -> None:
                               ("（%s）" % username) if username else ""))
     if logged_in:
         _start_ball()
+        _refresh_panel()
         return
     if _PANEL is not None:
         try:
@@ -297,6 +315,7 @@ def _toggle_panel(show=None) -> None:
             if rect is not None:
                 _PANEL.resize(rect.w, rect.h)
                 _PANEL.move(rect.x, rect.y)
+            _refresh_panel()          # 展开前再刷一次（登录/换号后立即正确）
             _PANEL.show()
             try:
                 _PANEL.on_top = True
@@ -1604,6 +1623,7 @@ def main():
             if panel is not None:
                 try:
                     panel_url = base_url.rstrip("/") + "/front/desktop/ball.html"
+                    globals()["_PANEL_URL"] = panel_url
                     panel.load_url(panel_url)
                     log("[球] 面板页加载 %s" % panel_url)
                 except Exception as e:  # noqa: BLE001
@@ -1681,6 +1701,15 @@ def main():
         if os.environ.get("ZX_BALL_FAKE_LOGIN") == "1":
             # 仅真机自检：真实登录由页面回报 auth_state，测试 profile 没有账号
             _on_auth_state(True, "selftest")
+        _tok = os.environ.get("ZX_BALL_TEST_TOKEN")
+        if _tok:
+            # 仅真机自检：把临时账号的 token 注入主窗 localStorage，走完整「登录→起球→面板」链路
+            try:
+                window.evaluate_js("localStorage.setItem('zx_token', %r); localStorage.setItem('zx_user', 'selftest')" % _tok)
+                window.load_url(url)
+                log("[球] 测试 token 已注入，等待页面按登录态起球")
+            except Exception as e:  # noqa: BLE001
+                log("[球] 测试 token 注入失败：%s" % e)
         if _PENDING_OPEN.get("open"):
             _PENDING_OPEN["open"] = False
             _toggle_panel(True)
