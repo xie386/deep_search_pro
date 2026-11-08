@@ -1579,6 +1579,12 @@ def main():
     except ImportError:
         log("缺少 pywebview：请先执行  uv pip install pywebview")
         return 2
+    # ★ v4.1-01：只有「直接命中拖动区元素」才算拖窗。
+    #   否则点到拖动区里的子控件（下拉/按钮）也会触发拖窗，和无边框窗里的弹层叠加会把进程拖崩。
+    try:
+        webview.settings["DRAG_REGION_DIRECT_TARGET_ONLY"] = True
+    except Exception:  # noqa: BLE001
+        pass
 
     # ★ 后端就绪后才开正式窗口；期间先展示一个带进度的加载页（避免白屏让人觉得卡死）
     # _LOADING_HTML 有 3 个占位符：<title> / logo / 端口

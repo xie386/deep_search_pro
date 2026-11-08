@@ -7,20 +7,36 @@
   :root{
     --ink:#1d2a22; --muted:#6c7d71; --line:rgba(30,60,40,.12);
     --bg:#f5f8f3; --panel:#ffffff; --user:#dcecdc; --accent:#4f8f5c;
+    --bar:#161d18; --bar-ink:#dfe8e1;
   }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
     font:13.5px/1.55 "Microsoft YaHei","Segoe UI",system-ui,sans-serif;overflow:hidden}
   body{display:flex;flex-direction:column;min-height:0}
-  header.bar{flex:0 0 40px;height:40px;display:flex;align-items:center;gap:6px;padding:0 8px 0 12px;
-    background:#161d18;color:#dfe8e1;user-select:none}
-  header .dot{width:8px;height:8px;border-radius:50%;background:#e2892b;flex:0 0 8px}
-  header select{flex:1 1 auto;min-width:0;height:26px;border-radius:7px;border:1px solid rgba(255,255,255,.16);
-    background:rgba(255,255,255,.08);color:#e8f0ea;font-size:12.5px;padding:0 6px;outline:none;
-    color-scheme:dark}
-  /* 原生下拉的弹出层不吃父级配色：option 必须显式上色，否则未悬浮项会在白底上看不清 */
-  header select option{background:#1b241d;color:#e8f0ea}
-  header select option:checked{background:#2f4436;color:#ffffff}
+  header.bar{position:relative;flex:0 0 40px;height:40px;display:flex;align-items:center;gap:6px;
+    padding:0 8px 0 6px;background:var(--bar);color:var(--bar-ink);user-select:none}
+  header .grip{width:20px;height:26px;display:flex;align-items:center;justify-content:center;
+    color:#7f8f84;font-size:13px;cursor:move;flex:0 0 20px;letter-spacing:-1px}
+  header .grip:hover{color:#cfe0d4}
+  header .sess{flex:1 1 auto;min-width:0;height:26px;display:flex;align-items:center;gap:6px;
+    border:1px solid rgba(255,255,255,.16);border-radius:7px;background:rgba(255,255,255,.08);
+    color:#e8f0ea;font:inherit;font-size:12.5px;padding:0 8px;cursor:pointer;text-align:left}
+  header .sess:hover{background:rgba(255,255,255,.14)}
+  header .sess span{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  header .sess i{font-style:normal;color:#9fb2a5;font-size:11px}
+
+  /* 自绘会话下拉：不用原生 select —— 无边框窗里打开系统弹层会把进程拖崩 */
+  .menu{position:absolute;top:42px;left:28px;right:8px;z-index:90;max-height:300px;overflow-y:auto;
+    background:#1b241d;border:1px solid rgba(255,255,255,.14);border-radius:9px;
+    box-shadow:0 10px 26px rgba(0,0,0,.45);padding:4px}
+  .menu[hidden]{display:none}
+  .menu .mi{display:flex;align-items:center;gap:8px;width:100%;border:0;background:transparent;
+    color:#e8f0ea;font:inherit;font-size:12.5px;text-align:left;padding:7px 8px;border-radius:6px;cursor:pointer}
+  .menu .mi:hover{background:rgba(255,255,255,.10)}
+  .menu .mi.on{background:#2f4436;color:#fff}
+  .menu .mi .t{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .menu .mi .n{flex:0 0 auto;color:#9fb2a5;font-size:11px}
+  .menu .empty{color:#9fb2a5;font-size:12px;padding:8px}
   header button{width:26px;height:26px;border:0;border-radius:7px;background:transparent;color:#b9c6bd;
     font-size:14px;cursor:pointer;flex:0 0 26px;line-height:1}
   header button:hover{background:rgba(255,255,255,.12);color:#fff}
@@ -46,9 +62,13 @@
 </style>
 </head>
 <body>
-  <header class="bar pywebview-drag-region">
-    <span class="dot"></span>
-    <select id="sess" title="切换会话"></select>
+  <header class="bar">
+    <!-- 只有这个握把是拖动区；点下拉/按钮时绝不拖窗（无边框窗里拖窗+弹层会崩） -->
+    <span class="grip pywebview-drag-region" title="按住拖动面板">⠿</span>
+    <button id="sessBtn" class="sess" title="切换会话">
+      <span id="sessName">（加载中）</span><i>▾</i>
+    </button>
+    <div id="sessMenu" class="menu" hidden></div>
     <button id="newS" title="新建会话">＋</button>
     <button id="renS" title="重命名会话">✎</button>
     <button id="delS" title="删除会话">🗑</button>
@@ -65,7 +85,8 @@
 (function () {
   'use strict';
   const $ = (id) => document.getElementById(id);
-  const msgs = $('msgs'), inp = $('inp'), sendBtn = $('send'), sessSel = $('sess');
+  const msgs = $('msgs'), inp = $('inp'), sendBtn = $('send');
+  const sessBtn = $('sessBtn'), sessName = $('sessName'), sessMenu = $('sessMenu');
   const TOKEN = () => localStorage.getItem('zx_token') || '';
   const SES_KEY = 'ball_thread';
   let thread = '', busy = false, sessions = [];
@@ -95,28 +116,49 @@
   }
   function clearMsgs() { msgs.innerHTML = ''; }
 
-  async function loadSessions() {
-    if (!TOKEN()) { addTip('请先登录桌面版，再用悬浮球对话。'); return; }
-    const d = await api('/api/chat/sessions');
-    sessions = d.items || [];
-    sessSel.innerHTML = '';
+  // ── 会话下拉（自绘）──────────────────────────────────────────
+  function titleOf(tid) {
+    const s = sessions.find((x) => x.thread_id === tid);
+    return (s && s.title) || '新对话';
+  }
+  function closeMenu() { sessMenu.hidden = true; }
+  function renderMenu() {
+    sessMenu.innerHTML = '';
     if (!sessions.length) {
-      const o = document.createElement('option');
-      o.value = ''; o.textContent = '（还没有会话）';
-      sessSel.appendChild(o);
-      thread = '';
+      const d = document.createElement('div');
+      d.className = 'empty';
+      d.textContent = TOKEN() ? '（还没有会话，点「＋」新建）' : '（未登录）';
+      sessMenu.appendChild(d);
       return;
     }
     for (const s of sessions) {
-      const o = document.createElement('option');
-      o.value = s.thread_id;
-      o.textContent = (s.title || '新对话') + (s.message_count ? '   · ' + s.message_count : '');
-      sessSel.appendChild(o);
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'mi' + (s.thread_id === thread ? ' on' : '');
+      const t = document.createElement('span'); t.className = 't';
+      t.textContent = s.title || '新对话';
+      const n = document.createElement('span'); n.className = 'n';
+      n.textContent = s.message_count ? String(s.message_count) : '';
+      b.appendChild(t); b.appendChild(n);
+      b.addEventListener('click', () => { closeMenu(); setThread(s.thread_id); });
+      sessMenu.appendChild(b);
     }
+  }
+  function setThread(tid) {
+    thread = tid || '';
+    if (thread) localStorage.setItem(SES_KEY, thread);
+    sessName.textContent = thread ? titleOf(thread) : '（还没有会话）';
+    renderMenu();
+    loadMessages().catch((e) => addTip('读消息失败：' + e.message));
+  }
+
+  async function loadSessions() {
+    if (!TOKEN()) { sessName.textContent = '（未登录）'; renderMenu(); addTip('请先登录桌面版，再用悬浮球对话。'); return; }
+    const d = await api('/api/chat/sessions');
+    sessions = d.items || [];
+    if (!sessions.length) { thread = ''; sessName.textContent = '（还没有会话）'; renderMenu(); return; }
     const saved = localStorage.getItem(SES_KEY);
-    thread = sessions.some((s) => s.thread_id === saved) ? saved : sessions[0].thread_id;
-    sessSel.value = thread;
-    await loadMessages();
+    setThread(sessions.some((s) => s.thread_id === saved) ? saved : sessions[0].thread_id);
   }
 
   function addTip(text) { clearMsgs(); addRow('tip', text); }
@@ -210,11 +252,12 @@
   inp.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
   });
-  sessSel.addEventListener('change', () => {
-    thread = sessSel.value;
-    if (thread) localStorage.setItem(SES_KEY, thread);
-    loadMessages().catch((e) => addTip('读消息失败：' + e.message));
+  sessBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (sessMenu.hidden) { renderMenu(); sessMenu.hidden = false; } else { closeMenu(); }
   });
+  sessMenu.addEventListener('click', (e) => e.stopPropagation());
+  document.addEventListener('click', closeMenu);
   $('newS').addEventListener('click', () => newSession().catch((e) => addTip('新建失败：' + e.message)));
   $('renS').addEventListener('click', () => renameSession().catch((e) => alert('重命名失败：' + e.message)));
   $('delS').addEventListener('click', () => delSession().catch((e) => alert('删除失败：' + e.message)));
@@ -222,7 +265,9 @@
     try { window.pywebview.api.ball_hide(); } catch (e) {}
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { try { window.pywebview.api.ball_hide(); } catch (err) {} }
+    if (e.key !== 'Escape') return;
+    if (!sessMenu.hidden) { closeMenu(); return; }     // Esc 先关下拉，再关面板
+    try { window.pywebview.api.ball_hide(); } catch (err) {}
   });
 
   // 面板是先于登录加载的：token 变化（登录/换号/登出）时自己刷新一次
@@ -230,7 +275,9 @@
   function refresh() {
     _tok = TOKEN();
     if (!_tok) {
-      sessions = []; thread = ''; sessSel.innerHTML = '';
+      sessions = []; thread = '';
+      sessName.textContent = '（未登录）';
+      renderMenu();
       addTip('请先登录桌面版，再用悬浮球对话。');
       return Promise.resolve();
     }
@@ -239,7 +286,7 @@
   window.ballRefresh = refresh;          // 外壳在 auth_state / 展开面板时调它
   setInterval(() => { if (TOKEN() !== _tok) refresh(); }, 1500);
 
-  if (!TOKEN()) addTip('请先登录桌面版，再用悬浮球对话。');
+  if (!TOKEN()) refresh();
   else loadSessions().catch((e) => addTip('加载会话失败：' + e.message));
   inp.focus();
 })();
