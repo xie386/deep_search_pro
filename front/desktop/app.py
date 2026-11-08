@@ -1735,10 +1735,17 @@ def main():
             _on_auth_state(True, "selftest")
         _tok = os.environ.get("ZX_BALL_TEST_TOKEN")
         if _tok:
-            # 仅真机自检：把临时账号的 token 注入主窗 localStorage，走完整「登录→起球→面板」链路
+            # 仅真机自检：把临时账号的 token 写进主窗 localStorage 再重载页面，
+            # 模拟「记住登录」启动。★ 只用 run_js（投递不等待）：在 loaded 回调线程里
+            # 调 evaluate_js/load_url 会抛 WebViewException('Main window failed to start')。
+            js = ("try{localStorage.setItem('zx_token', %r);"
+                  "localStorage.setItem('zx_user', 'selftest');"
+                  "setTimeout(function(){location.reload()},150)}catch(e){}" % _tok)
             try:
-                window.evaluate_js("localStorage.setItem('zx_token', %r); localStorage.setItem('zx_user', 'selftest')" % _tok)
-                window.load_url(url)
+                if hasattr(window, "run_js"):
+                    window.run_js(js)
+                else:
+                    window.evaluate_js(js)
                 log("[球] 测试 token 已注入，等待页面按登录态起球")
             except Exception as e:  # noqa: BLE001
                 log("[球] 测试 token 注入失败：%s" % e)
