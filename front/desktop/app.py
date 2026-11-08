@@ -74,6 +74,9 @@ _PANEL = None                      # 对话面板窗（pywebview Window）
 _PANEL_SHOWN = False
 _UI_READY = threading.Event()      # GUI 循环起来、主窗 loaded 之后置位
 _PENDING_OPEN = {"open": False}    # GUI 未就绪时点球的意图，就绪后补执行
+_BALL_CFG = {"enabled": False, "size": 64, "opacity": 100, "on_top": True,
+             "hotkey": "Ctrl+Alt+Space"}
+_BALL_LOGGED_IN = False            # 页面回报的登录态：球随登录态存在（bug2）
 _OWN_BACKEND = False                       # 后端是"本外壳起的"(True) 还是"复用别人现成的"(False)
 _backend_owner = None                      # 真正监听端口的进程 pid（可能是 Popen 子进程的"孙子"）
 _tray_status = ""                          # 托盘提示里的附加状态（如"正在生成周报…"）
@@ -188,6 +191,67 @@ def _set_ball(ball):
     _BALL = ball
 
 
+def _set_ball_cfg(cfg: dict) -> None:
+    global _BALL_CFG
+    _BALL_CFG = dict(cfg)
+
+
+def _stop_ball() -> None:
+    global _BALL
+    if _BALL is None:
+        return
+    try:
+        _BALL.stop()
+        log("[球] 已停止（跟随登录态）")
+    except Exception as e:  # noqa: BLE001
+        log("[球] 停止异常：%s" % e)
+    _BALL = None
+
+
+def _start_ball() -> None:
+    """只有「设置开启 + 已登录 + 还没起」才启动；重复调用安全。"""
+    if not _BALL_CFG.get("enabled") or not _BALL_LOGGED_IN or _BALL is not None:
+        return
+    try:
+        from ball_window import BallWindow
+        ball = BallWindow(
+            size=int(_BALL_CFG.get("size", 64)), opacity=int(_BALL_CFG.get("opacity", 100)),
+            hotkey=str(_BALL_CFG.get("hotkey", "Ctrl+Alt+Space")),
+            on_click=lambda: _toggle_panel(),
+            on_hotkey=lambda: _toggle_panel(),
+            menu=[("打开对话面板", lambda: _toggle_panel(True)),
+                  ("显示主窗口", lambda: globals().get("_on_show_trampoline", lambda: None)()),
+                  ("退出", lambda: globals().get("_on_quit_trampoline", lambda: None)())],
+            log=log,
+        )
+        if ball.start():
+            _set_ball(ball)
+            log("[球] 已启动：%d 逻辑像素，倍率 %.2f，快捷键 %s"
+                % (ball.size, ball.scale, _BALL_CFG.get("hotkey")))
+        else:
+            log("[球] 启动失败（主窗口不受影响）")
+    except Exception as e:  # noqa: BLE001
+        log("[球] 启动异常：%s" % e)
+
+
+def _on_auth_state(logged_in: bool, username: str = "") -> None:
+    """页面回报登录态：登录后按设置起球，退出登录立刻收球并关面板（bug2）。"""
+    global _BALL_LOGGED_IN, _PANEL_SHOWN
+    _BALL_LOGGED_IN = bool(logged_in)
+    log("[球] 登录态：%s%s" % ("已登录" if logged_in else "未登录",
+                              ("（%s）" % username) if username else ""))
+    if logged_in:
+        _start_ball()
+        return
+    if _PANEL is not None:
+        try:
+            _PANEL.hide()
+        except Exception:  # noqa: BLE001
+            pass
+        _PANEL_SHOWN = False
+    _stop_ball()
+
+
 def _load_ball_cfg() -> dict:
     """读悬浮球设置（settings 表 → 默认值）。读不到不影响主窗口。"""
     cfg = {"enabled": False, "size": 64, "opacity": 100, "on_top": True, "hotkey": "Ctrl+Alt+Space"}
@@ -216,6 +280,9 @@ def _toggle_panel(show=None) -> None:
     global _PANEL_SHOWN
     if _PANEL is None:
         log("[球] 面板未创建（悬浮球未启用）")
+        return
+    if _BALL is None:
+        log("[球] 未登录或已收起，暂不展开面板")
         return
     want = (not _PANEL_SHOWN) if show is None else bool(show)
     if want == _PANEL_SHOWN:
@@ -790,6 +857,11 @@ class DesktopApi:
         _toggle_panel(True)
         return True
 
+    def auth_state(self, logged_in: bool = False, username: str = ""):
+        """页面回报登录态（登录/登出/启动校验后各调一次）——球据此存在或消失。"""
+        _on_auth_state(bool(logged_in), username or "")
+        return True
+
     def ball_state(self, state: str = "idle"):
         """页面把回答状态回传给球：idle / busy / alert。"""
         try:
@@ -945,9 +1017,8 @@ def start_tray(on_show, on_quit) -> bool:
                 MenuItem("显示主窗口", lambda: on_show(), default=True),
                 MenuItem(lambda item: ("隐藏悬浮球" if (_BALL is not None and _BALL.visible)
                                        else "显示悬浮球"),
-                         lambda: (_BALL.toggle() if _BALL is not None else None),
-                         enabled=_BALL is not None),
-                MenuItem("打开对话面板", lambda: _toggle_panel(True), enabled=_PANEL is not None),
+                         lambda: (_BALL.toggle() if _BALL is not None else None)),
+                MenuItem("打开对话面板", lambda: _toggle_panel(True)),
                 Menu.SEPARATOR,
                 MenuItem("立即生成周报", lambda: _tray_run_digest()),
                 MenuItem("打开导出目录", lambda: _tray_open_output()),
@@ -1500,6 +1571,7 @@ def main():
 
     # ★ v4.1-01：悬浮球与对话面板（设置里启用才创建；面板建好即隐藏，点球才展开）
     _ball_cfg = _load_ball_cfg()
+    _set_ball_cfg(_ball_cfg)
     _ball_on = bool(_ball_cfg["enabled"]) and not args.selftest
     panel = None
     if _ball_on:
@@ -1531,8 +1603,9 @@ def main():
                 pass
             if panel is not None:
                 try:
-                    panel.load_url(url + "&ball=1&embed=1")
-                    log("[球] 面板页加载 %s&ball=1&embed=1" % url)
+                    panel_url = base_url.rstrip("/") + "/front/desktop/ball.html"
+                    panel.load_url(panel_url)
+                    log("[球] 面板页加载 %s" % panel_url)
                 except Exception as e:  # noqa: BLE001
                     log("[球] 面板页加载失败：%s" % e)
         threading.Thread(target=_nav_to_real, daemon=True).start()
@@ -1558,8 +1631,8 @@ def main():
         except Exception:  # noqa: BLE001
             pass
         try:
-            if _tray_icon is not None:
-                _tray_icon.stop()
+            if _PANEL is not None:      # bug1：面板窗也是顶层窗，不收掉进程会赖着不退
+                _PANEL.destroy()
         except Exception:  # noqa: BLE001
             pass
         try:
@@ -1581,6 +1654,18 @@ def main():
                 on_closing._hinted = True
                 _notify(APP_TITLE, "已收进托盘（右键托盘图标可退出或生成周报）")
             return False
+        # ★ v4.1-01 bug1：真退出时要连同面板窗与球一起收掉，
+        #   否则 pywebview 只要还有一个顶层窗就不会退出（表现为"主窗和球都没了，面板还杵着"）。
+        try:
+            if _PANEL is not None:
+                _PANEL.destroy()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            if _BALL is not None:
+                _BALL.stop()
+        except Exception:  # noqa: BLE001
+            pass
         return True
 
     try:
@@ -1593,6 +1678,9 @@ def main():
             return
         _UI_READY.set()
         log("[球] GUI 就绪（面板可以展开了）")
+        if os.environ.get("ZX_BALL_FAKE_LOGIN") == "1":
+            # 仅真机自检：真实登录由页面回报 auth_state，测试 profile 没有账号
+            _on_auth_state(True, "selftest")
         if _PENDING_OPEN.get("open"):
             _PENDING_OPEN["open"] = False
             _toggle_panel(True)
@@ -1602,27 +1690,9 @@ def main():
     except Exception as e:  # noqa: BLE001
         log("[球] 注册 loaded 事件失败：%s" % e)
 
-    if _ball_on:
-        try:
-            from ball_window import BallWindow
-            ball = BallWindow(
-                size=int(_ball_cfg["size"]), opacity=int(_ball_cfg["opacity"]),
-                hotkey=str(_ball_cfg["hotkey"]),
-                on_click=lambda: _toggle_panel(),
-                on_hotkey=lambda: _toggle_panel(),
-                menu=[("打开对话面板", lambda: _toggle_panel(True)),
-                      ("显示主窗口", on_show),
-                      ("退出", on_quit)],
-                log=log,
-            )
-            if ball.start():
-                _set_ball(ball)
-                log("[球] 已启动：%d 逻辑像素，倍率 %.2f，快捷键 %s"
-                    % (ball.size, ball.scale, _ball_cfg["hotkey"]))
-            else:
-                log("[球] 启动失败（主窗口不受影响）")
-        except Exception as e:  # noqa: BLE001
-            log("[球] 启动异常：%s" % e)
+    # 球不在启动时拉起：等页面回报登录态（见 DesktopApi.auth_state）
+    globals()["_on_show_trampoline"] = on_show
+    globals()["_on_quit_trampoline"] = on_quit
 
     if not args.no_tray:
         start_tray(on_show, on_quit)
@@ -1666,6 +1736,11 @@ def main():
         try:
             if _BALL is not None:
                 _BALL.stop()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            if _PANEL is not None:
+                _PANEL.destroy()
         except Exception:  # noqa: BLE001
             pass
         try:

@@ -15,6 +15,7 @@ import ctypes
 import json
 import re
 import threading
+import time
 from ctypes import wintypes as w
 from pathlib import Path
 
@@ -311,6 +312,7 @@ class BallWindow:
         work = _work_area_logical(self.scale)
         rect = self._load_rect(work)
         self._rect = rect
+        self.log("[球] 落点 work=%s rect=%s size=%d scale=%.2f" % (work, rect, self.size, self.scale))
         px = logical_to_physical(self.size, self.scale)
         ex = WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST
         self.hwnd = user32.CreateWindowExW(
@@ -501,6 +503,9 @@ class BallWindow:
     def _load_rect(self, work: Rect) -> Rect:
         try:
             data = json.loads(self.state_path.read_text(encoding="utf-8"))
+            # saved_at = 新格式标记；旧文件（含被探针误写成的 0,0）一律不认，回默认落点
+            if not data.get("saved_at"):
+                return default_ball_rect(self.size, work)
             rect = Rect(int(data["x"]), int(data["y"]), self.size, self.size)
             if work.x <= rect.x <= work.right - self.size and work.y <= rect.y <= work.bottom - self.size:
                 return rect
@@ -512,7 +517,8 @@ class BallWindow:
         try:
             self.state_path.parent.mkdir(parents=True, exist_ok=True)
             self.state_path.write_text(json.dumps(
-                {"x": self._rect.x, "y": self._rect.y, "size": self.size},
+                {"x": self._rect.x, "y": self._rect.y, "size": self.size,
+                 "saved_at": int(time.time())},
                 ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception as e:         # noqa: BLE001
             self.log("[球] 落点保存失败：%s" % e)
