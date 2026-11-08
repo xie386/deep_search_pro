@@ -7584,6 +7584,33 @@ createApp({
         if (r.ok) sessions.value = (await r.json()).items || [];
       } catch (e) { /* 静默 */ }
     }
+    // v4.1-01：主窗与悬浮面板同源共享 localStorage，任一侧增删改会话后通知对侧刷新
+    function pingSessions() {
+      try { localStorage.setItem('zx_sessions_rev', String(Date.now())); } catch (e) {}
+    }
+    // 对话内容同步：一侧发完消息 → 通知对侧（若正在看同一会话）重新拉消息
+    function pingChat(tid) {
+      if (!tid) return;
+      try { localStorage.setItem('zx_chat_rev', JSON.stringify({ thread: tid, ts: Date.now() })); } catch (e) {}
+    }
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'zx_chat_rev') {
+        let p = {};
+        try { p = JSON.parse(e.newValue || '{}'); } catch (err) { return; }
+        if (!p.thread || p.thread !== activeThread.value) return;   // 不是当前会话：只靠列表同步
+        if (loading.value) return;                                   // 本窗正在回答，别打断
+        loadThreadMessages(p.thread).then((ok) => { if (ok) showToast('已同步另一窗口的对话'); });
+        return;
+      }
+      if (e.key !== 'zx_sessions_rev') return;
+      loadSessions().then(() => {
+        const t = activeThread.value;
+        if (t && !sessions.value.some((s) => s.thread_id === t)) {
+          activeThread.value = ''; messages.value = [];
+        }
+        showToast('会话列表已同步');
+      });
+    });
     async function newSession() {
       try {
         const r = await fetch('/api/chat/sessions?token=' + encodeURIComponent(token.value), { method: 'POST' });
@@ -7594,18 +7621,15 @@ createApp({
         thinkingText.value = '';
         connectWS(d.thread_id);    // 新会话 → WS 对准新 UUID
         await loadSessions();
+        pingSessions();            // 通知悬浮面板刷新
         await nextTick(); scrollToBottom();
       } catch (e) { showToast('新建会话出错：' + e.message, true); }
     }
-    async function switchSession(tid) {
-      loadUsage();            // M4-5：换会话就刷新本会话用量
-      if (loading.value) return;
-      activeThread.value = tid;
-      connectWS(tid);              // 切换会话 → WS 重连到该会话 UUID
-      monitor.value = []; thinkingText.value = '';  // 右栏重置为当前会话进度
+    // 只负责「按 thread_id 拉消息并渲染」——切换会话与跨窗同步都用它
+    async function loadThreadMessages(tid) {
       try {
         const r = await fetch('/api/chat/sessions/' + encodeURIComponent(tid) + '?token=' + encodeURIComponent(token.value));
-        if (!r.ok) { showToast('加载会话失败', true); return; }
+        if (!r.ok) { showToast('加载会话失败', true); return false; }
         const items = (await r.json()).messages || [];
         const msgs = [];
         for (const m of items) {
@@ -7628,18 +7652,30 @@ createApp({
         }
         messages.value = msgs;
         await nextTick(); scrollToBottom();
-      } catch (e) { showToast('加载会话出错：' + e.message, true); }
+        return true;
+      } catch (e) { showToast('加载会话出错：' + e.message, true); return false; }
+    }
+
+    async function switchSession(tid) {
+      loadUsage();            // M4-5：换会话就刷新本会话用量
+      if (loading.value) return;
+      activeThread.value = tid;
+      connectWS(tid);              // 切换会话 → WS 重连到该会话 UUID
+      monitor.value = []; thinkingText.value = '';  // 右栏重置为当前会话进度
+      await loadThreadMessages(tid);
     }
     async function delSession(s) {
       if (!confirm('删除会话「' + (s.title || '新对话') + '」？此操作不可恢复。')) return;
       try {
         const r = await fetch('/api/chat/sessions/' + encodeURIComponent(s.thread_id) + '?token=' + encodeURIComponent(token.value), { method: 'DELETE' });
-        if (r.ok) {
+        // 404 = 另一侧已经删掉了，按「已删除」处理并刷新，不要报「删除失败」
+        if (r.ok || r.status === 404) {
           if (activeThread.value === s.thread_id) {
             activeThread.value = ''; messages.value = [];
             connectWS('');  // 回退 username 通道
           }
           await loadSessions();
+          pingSessions();
         } else showToast('删除失败', true);
       } catch (e) { showToast('删除出错：' + e.message, true); }
     }
@@ -7648,7 +7684,8 @@ createApp({
       if (!t || !t.trim()) return;
       try {
         const r = await fetch('/api/chat/sessions/' + encodeURIComponent(s.thread_id) + '?token=' + encodeURIComponent(token.value) + '&title=' + encodeURIComponent(t.trim()), { method: 'PATCH' });
-        if (r.ok) await loadSessions(); else showToast('重命名失败', true);
+        if (r.ok || r.status === 404) { await loadSessions(); pingSessions(); }
+        else showToast('重命名失败', true);
       } catch (e) { showToast('重命名出错：' + e.message, true); }
     }
     function fmtTime(ts) {
@@ -8904,6 +8941,7 @@ createApp({
           }
           if (data.thread_id && !activeThread.value) activeThread.value = data.thread_id; // 旧版直发自动归档
           await loadSessions();  // 标题/消息数/时间已变，刷新列表
+          pingSessions(); pingChat(activeThread.value);   // 通知悬浮面板：列表 + 该会话有新消息
           if (cut) showToast('已中断本轮回答');
         }
       } catch (e) {

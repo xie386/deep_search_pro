@@ -120,7 +120,11 @@
     const sep = path.indexOf('?') >= 0 ? '&' : '?';
     return fetch(path + sep + 'token=' + encodeURIComponent(t), opt || {}).then(async (r) => {
       const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
+      if (!r.ok) {
+        const err = new Error(d.detail || ('HTTP ' + r.status));
+        err.status = r.status;      // 404 要能被上层识别成「已经被删了」
+        throw err;
+      }
       return d;
     });
   }
@@ -232,6 +236,7 @@
       setBusy(false);
       msgs.scrollTop = msgs.scrollHeight;
       loadSessions().catch(() => {});
+      pingSessions(); pingChat(thread);   // 通知主窗：会话列表 + 该会话有新消息
     }
   }
 
@@ -240,6 +245,7 @@
     thread = d.thread_id || d.id || '';
     if (thread) localStorage.setItem(SES_KEY, thread);
     await loadSessions();
+    pingSessions();
     return thread;
   }
 
@@ -248,18 +254,28 @@
     const cur = (sessions.find((s) => s.thread_id === thread) || {}).title || '新对话';
     const t = await ask('text', '会话标题（≤30 字）', titleOf(thread));
     if (t == null) return;
-    await api('/api/chat/sessions/' + encodeURIComponent(thread) + '?title=' + encodeURIComponent(t.trim()),
-              { method: 'PATCH' });
+    try {
+      await api('/api/chat/sessions/' + encodeURIComponent(thread) + '?title=' + encodeURIComponent(t.trim()),
+                { method: 'PATCH' });
+    } catch (e) {
+      if (e.status !== 404) throw e;      // 已被另一边删掉：照常刷新即可
+    }
     await loadSessions();
+    pingSessions();
   }
 
   async function delSession() {
     if (!thread) return;
     if (!(await ask('ok', '删除这个会话？消息会一起删除，不能恢复。'))) return;
-    await api('/api/chat/sessions/' + encodeURIComponent(thread), { method: 'DELETE' });
+    try {
+      await api('/api/chat/sessions/' + encodeURIComponent(thread), { method: 'DELETE' });
+    } catch (e) {
+      if (e.status !== 404) throw e;      // 已被主窗删掉：按已删除处理
+    }
     localStorage.removeItem(SES_KEY);
     thread = '';
     await loadSessions();
+    pingSessions();
   }
 
   // 页内弹层（替代 confirm/prompt）
@@ -334,6 +350,21 @@
     }
     return loadSessions().catch((e) => addTip('加载会话失败：' + e.message));
   }
+  // v4.1-01：与主窗同步（同源共享 localStorage，storage 事件只在「另一个窗口」触发）
+  function pingSessions() {
+    try { localStorage.setItem('zx_sessions_rev', String(Date.now())); } catch (e) {}
+  }
+  function pingChat(tid) {
+    if (!tid) return;
+    try { localStorage.setItem('zx_chat_rev', JSON.stringify({ thread: tid, ts: Date.now() })); } catch (e) {}
+  }
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'zx_sessions_rev') { loadSessions().catch(() => {}); return; }
+    if (e.key !== 'zx_chat_rev' || busy) return;      // 本窗正在回答时不打断
+    let p = {};
+    try { p = JSON.parse(e.newValue || '{}'); } catch (err) { return; }
+    if (p.thread && p.thread === thread) loadMessages().catch(() => {});
+  });
   window.ballRefresh = refresh;          // 外壳在 auth_state / 展开面板时调它
   setInterval(() => { if (TOKEN() !== _tok) refresh(); }, 1500);
 
