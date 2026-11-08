@@ -142,6 +142,19 @@ SPECS: tuple[dict, ...] = (
          label="「/」workflow 单轮上限", help="workflow 一次最多能选几个（上限 7）。"),
     dict(key="BROWSER_HEADLESS", kind="switch", default="1", group="browser",
          label="无头运行浏览器", help="默认无头（不弹窗口）；排查页面问题时关掉它，观察真实浏览器行为。"),
+    # ---------------- v4.1-01 悬浮球（桌面壳读取；改完重启外壳生效） ----------------
+    dict(key="BALL_ENABLED", kind="switch", default="0", group="switches",
+         label="桌面悬浮球",
+         help="桌面上常驻一颗悬浮球，点它展开对话面板（仅桌面版；改完重启外壳生效）。"),
+    dict(key="BALL_SIZE", kind="number", default="64", group="switches", min=32, max=96,
+         label="悬浮球尺寸（逻辑像素）", help="32~96，默认 64；越大越显眼、也越挡桌面。"),
+    dict(key="BALL_OPACITY", kind="number", default="100", group="switches", min=40, max=100,
+         label="悬浮球不透明度（%）", help="40~100，默认 100；调低会让球更“淡”。"),
+    dict(key="BALL_ON_TOP", kind="switch", default="1", group="switches",
+         label="悬浮球置顶", help="关掉后球会被其它窗口盖住（一般不需要关）。"),
+    dict(key="BALL_HOTKEY", kind="text", default="Ctrl+Alt+Space", group="switches",
+         label="悬浮球快捷键",
+         help="展开/收起对话面板的全局快捷键，如 Ctrl+Alt+Space；改完重启外壳生效。"),
 )
 
 SPEC_BY_KEY = {s["key"]: s for s in SPECS}

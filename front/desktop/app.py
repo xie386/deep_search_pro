@@ -68,6 +68,12 @@ _tray_icon = None
 _quitting = threading.Event()
 _really_quit = threading.Event()           # 托盘菜单「退出」会置位：此时点 X 才真的关窗口
 _SAVE_DIR_OVERRIDE: str = ""               # 测试模式：原生「另存为」直接写这个目录（不弹窗）
+# ★ v4.1-01 悬浮球：模块级句柄（托盘回调、DesktopApi、退出清理都要用）
+_BALL = None                       # BallWindow 实例；未启用或启动失败时为 None
+_PANEL = None                      # 对话面板窗（pywebview Window）
+_PANEL_SHOWN = False
+_UI_READY = threading.Event()      # GUI 循环起来、主窗 loaded 之后置位
+_PENDING_OPEN = {"open": False}    # GUI 未就绪时点球的意图，就绪后补执行
 _OWN_BACKEND = False                       # 后端是"本外壳起的"(True) 还是"复用别人现成的"(False)
 _backend_owner = None                      # 真正监听端口的进程 pid（可能是 Popen 子进程的"孙子"）
 _tray_status = ""                          # 托盘提示里的附加状态（如"正在生成周报…"）
@@ -170,6 +176,71 @@ def _should_close_to_tray(tray_active: bool, really_quit: bool) -> bool:
     ★ 关键：**托盘不可用时必须放行关闭**，否则用户没有退出的手段（窗口关不掉 = 只能杀进程）。
     """
     return bool(CLOSE_TO_TRAY and tray_active and not really_quit)
+
+
+def _set_panel(panel):
+    global _PANEL
+    _PANEL = panel
+
+
+def _set_ball(ball):
+    global _BALL
+    _BALL = ball
+
+
+def _load_ball_cfg() -> dict:
+    """读悬浮球设置（settings 表 → 默认值）。读不到不影响主窗口。"""
+    cfg = {"enabled": False, "size": 64, "opacity": 100, "on_top": True, "hotkey": "Ctrl+Alt+Space"}
+    try:
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
+        from utils import settings as st
+        cfg["enabled"] = st.get_bool("BALL_ENABLED", False)
+        cfg["size"] = max(32, min(96, st.get_int("BALL_SIZE", 64)))
+        cfg["opacity"] = max(40, min(100, st.get_int("BALL_OPACITY", 100)))
+        cfg["on_top"] = st.get_bool("BALL_ON_TOP", True)
+        cfg["hotkey"] = st.get("BALL_HOTKEY", "Ctrl+Alt+Space") or "Ctrl+Alt+Space"
+    except Exception as e:  # noqa: BLE001
+        log("[球] 读设置失败，用默认值（不启用）：%s" % e)
+    # 真机自检用：真实开关在数据库里，测试不该改用户数据，所以留一个环境变量强制入口
+    if os.environ.get("ZX_BALL_FORCE") == "1":
+        cfg["enabled"] = True
+        cfg["size"] = int(os.environ.get("ZX_BALL_SIZE", cfg["size"]))
+        cfg["opacity"] = int(os.environ.get("ZX_BALL_OPACITY", cfg["opacity"]))
+        cfg["hotkey"] = os.environ.get("ZX_BALL_HOTKEY", cfg["hotkey"])
+    return cfg
+
+
+def _toggle_panel(show=None) -> None:
+    """展开/收起对话面板。球单击、托盘菜单、面板上的 × 与 Esc 都走这里。"""
+    global _PANEL_SHOWN
+    if _PANEL is None:
+        log("[球] 面板未创建（悬浮球未启用）")
+        return
+    want = (not _PANEL_SHOWN) if show is None else bool(show)
+    if want == _PANEL_SHOWN:
+        return
+    if not _UI_READY.is_set():
+        _PENDING_OPEN["open"] = want
+        return
+    try:
+        if want:
+            w, h = 380, 560
+            rect = _BALL.panel_rect(w, h)[0] if _BALL is not None else None
+            if rect is not None:
+                _PANEL.resize(rect.w, rect.h)
+                _PANEL.move(rect.x, rect.y)
+            _PANEL.show()
+            try:
+                _PANEL.on_top = True
+            except Exception:  # noqa: BLE001
+                pass
+        else:
+            _PANEL.hide()
+        _PANEL_SHOWN = want
+        log("[球] 面板%s" % ("展开" if want else "收起"))
+    except Exception as e:  # noqa: BLE001
+        log("[球] 面板切换失败：%s" % e)
 
 
 def _force_utf8_stdio():
@@ -710,6 +781,24 @@ class DesktopApi:
         except Exception:
             return False
 
+    def ball_hide(self):
+        """面板右上角 × / Esc：只收起面板，不退出应用。"""
+        _toggle_panel(False)
+        return True
+
+    def ball_open(self):
+        _toggle_panel(True)
+        return True
+
+    def ball_state(self, state: str = "idle"):
+        """页面把回答状态回传给球：idle / busy / alert。"""
+        try:
+            if _BALL is not None:
+                _BALL.set_state(state or "idle")
+        except Exception:  # noqa: BLE001
+            pass
+        return True
+
     def info(self) -> dict:
         """外壳信息（页面可用来显示"桌面版"标识）。"""
         return {
@@ -854,6 +943,11 @@ def start_tray(on_show, on_quit) -> bool:
             "zx_intel", _make_icon_image(), _tray_title(),
             menu=Menu(
                 MenuItem("显示主窗口", lambda: on_show(), default=True),
+                MenuItem(lambda item: ("隐藏悬浮球" if (_BALL is not None and _BALL.visible)
+                                       else "显示悬浮球"),
+                         lambda: (_BALL.toggle() if _BALL is not None else None),
+                         enabled=_BALL is not None),
+                MenuItem("打开对话面板", lambda: _toggle_panel(True), enabled=_PANEL is not None),
                 Menu.SEPARATOR,
                 MenuItem("立即生成周报", lambda: _tray_run_digest()),
                 MenuItem("打开导出目录", lambda: _tray_open_output()),
@@ -1403,6 +1497,22 @@ def main():
         APP_TITLE, html_loading, width=1280, height=820, min_size=(1000, 640),
         js_api=DesktopApi(), text_select=True,
     )
+
+    # ★ v4.1-01：悬浮球与对话面板（设置里启用才创建；面板建好即隐藏，点球才展开）
+    _ball_cfg = _load_ball_cfg()
+    _ball_on = bool(_ball_cfg["enabled"]) and not args.selftest
+    panel = None
+    if _ball_on:
+        try:
+            panel = webview.create_window(
+                APP_TITLE + " · 对话", html_loading, width=380, height=560,
+                min_size=(320, 420), frameless=True, on_top=True, hidden=True,
+                focus=False, easy_drag=True, js_api=DesktopApi(),
+            )
+            _set_panel(panel)
+            log("[球] 面板窗已创建（隐藏；尺寸 380x560）")
+        except Exception as e:  # noqa: BLE001
+            log("[球] 面板窗创建失败：%s" % e)
     if args.debug:
         try:
             window.events.loaded += lambda: window.evaluate_js("")
@@ -1419,6 +1529,12 @@ def main():
                 window.load_url(url)
             except Exception:
                 pass
+            if panel is not None:
+                try:
+                    panel.load_url(url + "&ball=1&embed=1")
+                    log("[球] 面板页加载 %s&ball=1&embed=1" % url)
+                except Exception as e:  # noqa: BLE001
+                    log("[球] 面板页加载失败：%s" % e)
         threading.Thread(target=_nav_to_real, daemon=True).start()
     else:
         _notify(APP_TITLE, "后端启动失败，请查看日志")
@@ -1436,6 +1552,11 @@ def main():
     def on_quit():
         _really_quit.set()               # ★ 先在托盘退出路径置位，X 才会真的关窗
         _quitting.set()
+        try:
+            if _BALL is not None:
+                _BALL.stop()
+        except Exception:  # noqa: BLE001
+            pass
         try:
             if _tray_icon is not None:
                 _tray_icon.stop()
@@ -1466,6 +1587,42 @@ def main():
         window.events.closing += on_closing
     except Exception as e:  # noqa: BLE001
         log("[窗口] 注册关闭事件失败（点 X 将直接退出）：%s" % e)
+
+    def _mark_ui_ready():
+        if _UI_READY.is_set():
+            return
+        _UI_READY.set()
+        log("[球] GUI 就绪（面板可以展开了）")
+        if _PENDING_OPEN.get("open"):
+            _PENDING_OPEN["open"] = False
+            _toggle_panel(True)
+
+    try:
+        window.events.loaded += _mark_ui_ready
+    except Exception as e:  # noqa: BLE001
+        log("[球] 注册 loaded 事件失败：%s" % e)
+
+    if _ball_on:
+        try:
+            from ball_window import BallWindow
+            ball = BallWindow(
+                size=int(_ball_cfg["size"]), opacity=int(_ball_cfg["opacity"]),
+                hotkey=str(_ball_cfg["hotkey"]),
+                on_click=lambda: _toggle_panel(),
+                on_hotkey=lambda: _toggle_panel(),
+                menu=[("打开对话面板", lambda: _toggle_panel(True)),
+                      ("显示主窗口", on_show),
+                      ("退出", on_quit)],
+                log=log,
+            )
+            if ball.start():
+                _set_ball(ball)
+                log("[球] 已启动：%d 逻辑像素，倍率 %.2f，快捷键 %s"
+                    % (ball.size, ball.scale, _ball_cfg["hotkey"]))
+            else:
+                log("[球] 启动失败（主窗口不受影响）")
+        except Exception as e:  # noqa: BLE001
+            log("[球] 启动异常：%s" % e)
 
     if not args.no_tray:
         start_tray(on_show, on_quit)
@@ -1506,6 +1663,11 @@ def main():
         webview.start(debug=args.debug, private_mode=False, storage_path=str(_storage), icon=_icon)   # 阻塞至窗口关闭
     finally:
         _quitting.set()
+        try:
+            if _BALL is not None:
+                _BALL.stop()
+        except Exception:  # noqa: BLE001
+            pass
         try:
             if _tray_icon is not None:
                 _tray_icon.stop()

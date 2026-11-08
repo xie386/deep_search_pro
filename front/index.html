@@ -1112,6 +1112,26 @@
     .col-left { width: 240px; background: rgba(84,170,105,.22); backdrop-filter: blur(10px); border-right: 1px solid var(--line); padding: 16px 14px; overflow-y: auto; }
     .col-mid { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
     .col-right { width: 320px; background: rgba(84,170,105,.22); backdrop-filter: blur(10px); border-left: 1px solid var(--line); padding: 14px 12px; overflow-y: auto; }
+
+    /* ── v4.1-01 悬浮球紧凑模式：面板窗 380×560，只留对话 ───────────────── */
+    .ball-bar { display: none; }
+    .ball-mode .topbar { display: none !important; }
+    .ball-mode .col-left, .ball-mode .col-fold, .ball-mode .col-right { display: none !important; }
+    .ball-mode .col-mid { width: 100%; }
+    .ball-mode .ball-bar {
+      display: flex; align-items: center; gap: 8px; height: 40px; flex: 0 0 40px;
+      padding: 0 8px 0 14px; background: rgba(16, 22, 18, .92);
+      border-bottom: 1px solid var(--line); user-select: none;
+      position: relative; z-index: 60;
+    }
+    .ball-mode .ball-bar .t { flex: 1; font-size: 12.5px; color: var(--muted); letter-spacing: .3px; }
+    .ball-mode .ball-bar .x {
+      width: 26px; height: 26px; border-radius: 8px; display: flex; align-items: center;
+      justify-content: center; color: var(--muted); cursor: pointer; font-size: 16px;
+    }
+    .ball-mode .ball-bar .x:hover { background: rgba(255,255,255,.08); color: #fff; }
+    .ball-mode .chat-scroll { padding-left: 8px; padding-right: 8px; }
+    .ball-mode .input-bar { padding: 8px 8px 10px; }
     .col-left h3 {
       font-size: 11.5px; color: var(--muted); margin: 18px 0 10px;
       text-transform: uppercase; letter-spacing: 2px; display: flex; align-items: center; gap: 8px;
@@ -2171,6 +2191,14 @@
 </head>
 <body>
 <div id="app">
+  <!-- v4.1-01：悬浮球面板的拖拽条。挂在 #app 根层（登录页也要有），仅 .ball-mode 显示；
+      拖动由 pywebview 的 drag-region 接管，× 只收起面板不退出。 -->
+  <div class="ball-bar pywebview-drag-region">
+   <span class="t">智选情报官</span>
+   <span class="x" title="收起（Esc）"
+         onmousedown="event.stopPropagation()"
+         onclick="try{window.pywebview.api.ball_hide()}catch(e){}">×</span>
+  </div>
   <!-- 全局提示条：必须放在 #app 根层、且在 login-wrap 的 v-if 之前（原来在 <template v-else> 里，登录页看不到 -> 注册成功提示消失；夹在 v-if 与 v-else 之间会编译报错） -->
     <div class="toast" v-if="toast" :class="{err: toastErr}">{{ toast }}</div>
   <!-- ============ 登录页 ============ -->
@@ -5038,6 +5066,24 @@ createApp({
     // 桌面外壳加载页面时带 ?desktop=1。**用 URL 判断而不是 window.pywebview**：
     // URL 在 setup 阶段同步可读，而 pywebview 是页面加载后才异步注入的（时序坑）。
     const IS_DESKTOP = /[?&]desktop=1/.test(location.search);
+    // v4.1-01 悬浮球面板：?ball=1&embed=1 走紧凑模式（隐藏侧栏与顶栏，见 .ball-mode 样式）。
+    // 球的状态（idle/busy）也用 DOM 判断回传，不碰聊天逻辑本身。
+    const IS_BALL = /[?&]ball=1/.test(location.search);
+    if (IS_BALL) {
+      try { document.getElementById('app').classList.add('ball-mode'); } catch (e) {}
+      let _ballState = '';
+      setInterval(() => {
+        const busy = document.querySelector('.send-bubbles.stop') ? 'busy' : 'idle';
+        if (busy === _ballState) return;
+        _ballState = busy;
+        try { window.pywebview && window.pywebview.api && window.pywebview.api.ball_state(busy); } catch (e) {}
+      }, 1200);
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          try { window.pywebview && window.pywebview.api && window.pywebview.api.ball_hide(); } catch (err) {}
+        }
+      });
+    }
     // 桌面版用 localStorage（关窗后登录态还在）；网页版保持原样用 sessionStorage（行为不变）
     const _store = (() => {
       try { return IS_DESKTOP ? window.localStorage : window.sessionStorage; }
