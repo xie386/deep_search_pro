@@ -182,6 +182,15 @@ def _should_close_to_tray(tray_active: bool, really_quit: bool) -> bool:
     return bool(CLOSE_TO_TRAY and tray_active and not really_quit)
 
 
+def _hwnd_of(win):
+    """取窗口 HWND。★ pythonnet 给的 .native.Handle 是 IntPtr，不能直接 int()，
+    要 ToInt64()；老版本 / 其它后端可能是整数，做两种兼容。"""
+    h = win.native.Handle
+    if hasattr(h, "ToInt64"):
+        return h.ToInt64()
+    return int(h)
+
+
 def _set_panel(panel):
     global _PANEL
     _PANEL = panel
@@ -886,7 +895,7 @@ class DesktopApi:
             return {"ok": False, "error": "panel_missing"}
         try:
             import ctypes
-            hwnd = int(_PANEL.native.Handle)
+            hwnd = _hwnd_of(_PANEL)
             user32 = ctypes.windll.user32
             user32.ReleaseCapture()
             # WM_NCLBUTTONDOWN(0x00A1) + HTCAPTION(2)：标准无边框拖窗做法
@@ -1621,7 +1630,8 @@ def main():
     # ★ v4.1-01：悬浮球与对话面板（设置里启用才创建；面板建好即隐藏，点球才展开）
     _ball_cfg = _load_ball_cfg()
     _set_ball_cfg(_ball_cfg)
-    _ball_on = bool(_ball_cfg["enabled"]) and not args.selftest
+    # ZX_BALL_FORCE=1 仅用于自检：没有在设置里开启也能建面板（生产不受影响）
+    _ball_on = (bool(_ball_cfg["enabled"]) or os.environ.get("ZX_BALL_FORCE") == "1") and not args.selftest
     panel = None
     if _ball_on:
         try:
@@ -1635,7 +1645,9 @@ def main():
             _set_panel(panel)
             log("[球] 面板窗已创建（隐藏；尺寸 380x560）")
         except Exception as e:  # noqa: BLE001
+            import traceback
             log("[球] 面板窗创建失败：%s" % e)
+            log(traceback.format_exc()[-1200:])
     if args.debug:
         try:
             window.events.loaded += lambda: window.evaluate_js("")
