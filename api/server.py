@@ -420,6 +420,37 @@ def _invoke_or_stream(agent, payload, cfg, thread_id, stream: "bool | None" = No
     return final_state, True
 
 
+def _strip_tool_images(msgs: list) -> list:
+    """落库前把工具消息里的图片块换成一行说明。
+
+    ★ 为什么必须做（2026-11-09 真机）：`screen_capture` 每帧约 345 KB base64，
+      `message_to_lc` 会把 tool 消息的 content 转成字符串重放 —— 三轮之后单次请求
+      涨到 51 万 tokens，第 4 轮直接 400「超出上下文上限」。
+      截图按裁定只活在本轮；历史里留一行帧说明就够，用户也能看出 agent 当时看过屏。
+    """
+    from langchain_core.messages import ToolMessage
+
+    out = []
+    for m in msgs:
+        try:
+            content = getattr(m, "content", None)
+            if isinstance(m, ToolMessage) and isinstance(content, list):
+                keep, dropped = [], 0
+                for blk in content:
+                    if isinstance(blk, dict) and blk.get("type") in ("image_url", "image"):
+                        dropped += 1
+                        continue
+                    keep.append(blk)
+                if dropped:
+                    keep.append({"type": "text",
+                                 "text": "（本轮有 %d 张截图已给模型看过，按纯内存口径不存入历史）" % dropped})
+                    m = m.model_copy(update={"content": keep})
+        except Exception:                      # noqa: BLE001 落库不能因为清洗失败而中断
+            pass
+        out.append(m)
+    return out
+
+
 def _save_turn_safe(account_id, thread_id: str, question: str, answer: str,
                     picks: dict | None = None) -> bool:
     """落一条「提问 + 回答」（含本轮「/」选择）；失败只打日志，绝不拖垮回复。
@@ -758,6 +789,7 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
             #   （实测一轮 7 个工具轮 → 刷新后 8 张卡）。带 tool_calls 的**不能丢**：
             #   OpenAI 格式要求 tool 消息紧跟带 tool_calls 的 assistant，否则重放历史会被上游 400。
             new_msgs = answer_text.drop_empty_assistant(new_msgs)
+            new_msgs = _strip_tool_images(new_msgs)   # ★ 截图只活本轮：别把 base64 写进历史
             # token 用量：从最后一条 AIMessage 的 usage_metadata 取（尽力而为）
             tok_usage = 0
             for m in reversed(result["messages"]):

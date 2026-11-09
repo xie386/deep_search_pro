@@ -225,12 +225,20 @@ def _capture_for_agent(monitor: int = 0):
     if _BALL is not None:
         _BALL.hide()
     try:
-        _time.sleep(0.12)               # 等 DWM 合成一帧：排除与隐藏才真正生效
-        with mss.mss() as sct:
-            mons = sct.monitors
-            idx = int(monitor) if 0 <= int(monitor) < len(mons) else 0
-            mon = mons[idx]
-            raw = sct.grab(mon)
+        # ★ 时序要稳：只等一次容易被 DWM 合成时序骗过（实测同一份代码 14:54 那轮没排干净、
+        #   14:56 那轮正常）。这里「等 → 先抓一帧丢掉（迫使合成更新）→ 再等 → 抓正式帧」。
+        def _grab_once():
+            factory = getattr(mss, "MSS", None) or mss.mss      # mss>=10.2 推荐 MSS()，老版本回落
+            with factory() as sct:
+                mons = sct.monitors
+                idx = int(monitor) if 0 <= int(monitor) < len(mons) else 0
+                mon = mons[idx]
+                return sct.grab(mon), mon, idx
+
+        _time.sleep(0.18)
+        _grab_once()                    # 预热帧：丢弃
+        _time.sleep(0.06)
+        raw, mon, idx = _grab_once()
         img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
         w, h = img.size
         try:

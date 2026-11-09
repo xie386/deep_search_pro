@@ -88,7 +88,8 @@ def _grab_local(monitor: int = 0) -> tuple[bytes, dict]:
     """本进程直接抓（没有外壳时用；此时没有窗口排除，也没有球可藏）。"""
     import mss                                              # 延迟导入：未开启时不付这份开销
 
-    with mss.mss() as sct:
+    factory = getattr(mss, "MSS", None) or mss.mss      # mss>=10.2 推荐 MSS()，老版本回落
+    with factory() as sct:
         mons = sct.monitors
         idx = int(monitor) if 0 <= int(monitor) < len(mons) else 0
         mon = mons[idx]
