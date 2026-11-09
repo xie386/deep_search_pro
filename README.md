@@ -80,9 +80,10 @@ cp .env.example .env
 **A. Web 版（推荐）**
 
 ```bash
-uv run python -m uvicorn api.server:app --host 127.0.0.1 --port 8123
-or
+# 推荐：直接用项目 venv（不经过 uv，避免触发依赖解析/同步）
 .venv\Scripts\python.exe -m uvicorn api.server:app --host 127.0.0.1 --port 8123
+# 或者
+uv run python -m uvicorn api.server:app --host 127.0.0.1 --port 8123
 ```
 
 **B. 桌面版（双击窗口）**
