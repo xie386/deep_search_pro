@@ -22,6 +22,7 @@ import io
 import json
 import os
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -30,6 +31,47 @@ from PIL import Image                                      # noqa: E402
 
 from utils import cu_mode                                   # noqa: E402
 from utils import settings as _settings                     # noqa: E402
+
+
+_BRIDGE = Path(__file__).resolve().parents[1] / "data" / "_cu_bridge.json"
+
+
+def _pid_alive(pid: int) -> bool:
+    """进程还在不在（Windows 上没有安全的 os.kill(pid, 0)，改用 OpenProcess 探活）。"""
+    if not pid:
+        return False
+    try:
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        h = k32.OpenProcess(0x1000, False, int(pid))      # PROCESS_QUERY_LIMITED_INFORMATION
+        if h:
+            k32.CloseHandle(h)
+            return True
+        return False
+    except Exception:                                       # noqa: BLE001
+        return False
+
+
+def _endpoint() -> tuple[str, str]:
+    """抓图端点：优先环境变量（外壳自己 spawn 的后端），否则读桥接文件。
+
+    ★ 为什么要有桥接文件：用户常常手动 `python -m uvicorn ...` 起后端，桌面壳启动时
+      会「复用」它 —— 那个进程不是外壳的子进程，拿不到 ZX_CU_ENDPOINT，只能本进程抓，
+      结果是主窗、面板、球全被拍进画面（2026-11-09 真机反馈「截图屏蔽没生效」）。
+      外壳启动时会把端点写进 data/_cu_bridge.json，后端按文件回调即可。
+    """
+    ep = (os.environ.get("ZX_CU_ENDPOINT") or "").strip()
+    if ep:
+        return ep, os.environ.get("ZX_CU_TOKEN", "")
+    try:
+        info = json.loads(_BRIDGE.read_text(encoding="utf-8"))
+        ep = str(info.get("endpoint") or "").strip()
+        token = str(info.get("token") or "")
+        if ep and token and _pid_alive(int(info.get("pid") or 0)):
+            return ep, token
+    except Exception:                                       # noqa: BLE001
+        pass
+    return "", ""
 
 
 def _edge() -> int:
@@ -60,19 +102,18 @@ def _grab(monitor: int = 0) -> tuple[bytes, dict]:
       并把球临时藏起来；后端自己抓会把主窗/面板/球一起拍进去。
       没有该环境变量（纯 web 版 / 后端独立跑）时退回本进程直接抓。
     """
-    endpoint = (os.environ.get("ZX_CU_ENDPOINT") or "").strip()
+    endpoint, token = _endpoint()
     if endpoint:
         print("[CU] 抓图走外壳：%s" % endpoint, flush=True)
-        return _grab_via_shell(endpoint, monitor)
+        return _grab_via_shell(endpoint, token, monitor)
     print("[CU] 抓图走本进程（没有外壳端点，主窗/面板不会被排除）", flush=True)
     return _grab_local(monitor)
 
 
-def _grab_via_shell(endpoint: str, monitor: int) -> tuple[bytes, dict]:
+def _grab_via_shell(endpoint: str, token: str, monitor: int) -> tuple[bytes, dict]:
     """让外壳抓一帧（它会在抓的瞬间排除自身窗口、藏球，抓完还原 —— 用户自己的截图不受影响）。"""
     import urllib.request
 
-    token = os.environ.get("ZX_CU_TOKEN", "")
     url = "%s/capture?token=%s&monitor=%d" % (endpoint.rstrip("/"), token, int(monitor))
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     with opener.open(url, timeout=25) as resp:

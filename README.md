@@ -81,6 +81,8 @@ cp .env.example .env
 
 ```bash
 uv run python -m uvicorn api.server:app --host 127.0.0.1 --port 8123
+or
+.venv\Scripts\python.exe -m uvicorn api.server:app --host 127.0.0.1 --port 8123
 ```
 
 **B. 桌面版（双击窗口）**

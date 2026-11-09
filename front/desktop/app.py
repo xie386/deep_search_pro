@@ -253,6 +253,12 @@ def _capture_for_agent(monitor: int = 0):
         buf = _io.BytesIO()
         img.save(buf, "JPEG", quality=quality, optimize=True)
         data = buf.getvalue()
+        if os.environ.get("ZX_CU_DEBUG_SAVE") == "1":      # 仅排查：把给 agent 的那一帧落盘
+            try:
+                (ROOT / "tests" / "test_out" / "_cu_last.jpg").write_bytes(data)
+                log("[屏幕共享] 调试帧已保存 tests/test_out/_cu_last.jpg")
+            except Exception:                              # noqa: BLE001
+                pass
         meta = {
             "monitor": idx,
             "screen_rect": [int(mon["left"]), int(mon["top"]), int(mon["width"]), int(mon["height"])],
@@ -351,6 +357,22 @@ def _start_cu_server() -> None:
         _CU_PORT = _CU_SRV.server_address[1]
         threading.Thread(target=_CU_SRV.serve_forever, daemon=True).start()
         log("[屏幕共享] 抓图服务已启动（127.0.0.1:%d）" % _CU_PORT)
+        # ★ 复用「别人手动起的后端」时，外壳没法给它注入环境变量 —— 于是把端点写成桥接文件，
+        #   后端抓图时读这个文件就能回调到外壳（否则它只能本进程抓，主窗/面板/球全进画面）。
+        try:
+            import json as _json2
+            import time as _t2
+            bridge = ROOT / "data" / "_cu_bridge.json"
+            bridge.parent.mkdir(parents=True, exist_ok=True)
+            bridge.write_text(_json2.dumps({
+                "endpoint": "http://127.0.0.1:%d" % _CU_PORT,
+                "token": _CU_TOKEN,
+                "pid": os.getpid(),
+                "started_at": int(_t2.time()),
+            }, ensure_ascii=False), encoding="utf-8")
+            log("[屏幕共享] 桥接文件已写入 data/_cu_bridge.json")
+        except Exception as _e:            # noqa: BLE001
+            log("[屏幕共享] 桥接文件写入失败：%s" % _e)
     except Exception as e:               # noqa: BLE001
         _CU_SRV = None
         log("[屏幕共享] 抓图服务启动失败：%s" % e)
@@ -1921,7 +1943,14 @@ def main():
         except Exception:  # noqa: BLE001
             pass
 
-    def on_quit():
+    def _remove_cu_bridge() -> None:
+        try:
+            (ROOT / "data" / "_cu_bridge.json").unlink(missing_ok=True)
+        except Exception:                      # noqa: BLE001
+            pass
+
+
+    def on_quit(*_):
         _really_quit.set()               # ★ 先在托盘退出路径置位，X 才会真的关窗
         _quitting.set()
         try:
@@ -1938,6 +1967,7 @@ def main():
             window.destroy()
         except Exception:  # noqa: BLE001
             pass
+        _remove_cu_bridge()      # v4.1-02：退出时删桥接文件，免得后端去敲一个已经不在的外壳
         stop_backend()
 
     def on_closing():
@@ -1965,6 +1995,7 @@ def main():
                 _BALL.stop()
         except Exception:  # noqa: BLE001
             pass
+        _remove_cu_bridge()      # v4.1-02：真退出也要删（否则后端会拿旧端点去抓图）
         return True
 
     try:
