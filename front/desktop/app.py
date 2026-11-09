@@ -1830,7 +1830,11 @@ def main():
                 min_size=(320, 420), frameless=True, on_top=True, hidden=True,
                 # ★ easy_drag=True 会让 pywebview 给「整个窗口」挂 mousedown 拖窗：
                 #   点任何控件都可能进入系统拖动循环 → 界面「未响应」。拖动改由握把调 panel_drag()。
-                focus=False, easy_drag=False, js_api=DesktopApi(),
+                # ★ focus 必须保持 True（默认）：pywebview 对 focus=False 的窗口会在每次激活时
+                #   追加 WS_EX_NOACTIVATE（winforms.py:359-366），窗口从此「不可激活」——
+                #   表现就是输入法不出现、或出现但回车不录入（2026-11-09 真机三档现象）。
+                #   面板本来就是 hidden=True 创建，不存在“启动抢焦点”的问题。
+                easy_drag=False, js_api=DesktopApi(),
             )
             _set_panel(panel)
             log("[球] 面板窗已创建（隐藏；尺寸 380x560）")
