@@ -121,8 +121,17 @@
     cuBtn.classList.toggle('on', on);
     cuBtn.title = on ? '屏幕共享：已开启（本轮 agent 可看屏；球会暂时隐藏）' : '屏幕共享：关闭（点一下开启本会话的 computer use）';
   }
-  function toggleCu() {
+  async function toggleCu() {
     if (!thread) { addTip('先选一个会话，再开屏幕共享'); return; }
+    if (!cuOn()) {
+      try {
+        const r = await fetch('/api/cu/status?token=' + encodeURIComponent(TOKEN()));
+        if (!r.ok) throw new Error('old-backend');
+      } catch (e) {
+        addTip('当前后端还是旧版本，没有屏幕共享能力：请彻底退出桌面版后重新启动');
+        return;
+      }
+    }
     const m = cuMap();
     if (m[thread]) delete m[thread]; else m[thread] = true;
     try {

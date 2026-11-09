@@ -761,6 +761,18 @@ def wait_ready_monitored(url: str, proc: "subprocess.Popen | None", timeout: flo
     return False, "timeout"
 
 
+def _backend_has_cu(base: str) -> bool:
+    """复用的后端是不是带屏幕共享能力的新进程（旧进程没有 /api/cu/status）。"""
+    try:
+        import urllib.request
+        req = urllib.request.Request(base.rstrip("/") + "/api/cu/status")
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(req, timeout=3) as r:
+            return r.status == 200
+    except Exception:                       # noqa: BLE001
+        return False
+
+
 def start_backend(port: int, timeout: float = READY_TIMEOUT) -> bool:
     """起后端。返回 True=已就绪（自己起的或复用的都算）。timeout=等待就绪上限秒数。"""
     global _proc, _OWN_BACKEND
@@ -769,6 +781,9 @@ def start_backend(port: int, timeout: float = READY_TIMEOUT) -> bool:
     # 端口已有服务 → 复用（可能是用户自己开的），**不接管、不 kill**
     if http_ok(base):
         log("[后端] 检测到 %s 已有服务在跑 → 直接复用（退出时不会关闭它）" % base)
+        if not _backend_has_cu(base):
+            log("[后端] ⚠️ 这个服务是旧进程（没有 /api/cu/status）：屏幕共享等新能力不会生效。"
+                "请从托盘「退出」后重新启动，或结束占用 %d 端口的进程。" % port)
         _OWN_BACKEND = False        # ★ 别人的进程：看护线程不会去重启它
         return True
 

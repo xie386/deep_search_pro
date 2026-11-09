@@ -7870,9 +7870,20 @@ createApp({
         localStorage.setItem(CU_KEY + '_rev', String(Date.now()));   // 通知另一个窗口
       } catch (e) { /* 隐私模式等：只影响本窗 */ }
     }
-    function toggleCu() {
+    async function toggleCu() {
       const tid = activeThread.value;
       if (!tid) { showToast('先选一个会话，再开屏幕共享', true); return; }
+      if (!cuSessions.value[tid]) {
+        // 开启前先确认后端带屏幕共享能力：外壳会复用已在跑的服务，
+        // 若那是旧进程（没有 /api/cu/status），开关会静默失效——这里明确拦下。
+        try {
+          const r = await fetch('/api/cu/status?token=' + encodeURIComponent(token.value));
+          if (!r.ok) throw new Error('old-backend');
+        } catch (e) {
+          showToast('当前后端还是旧版本，没有屏幕共享能力：请从托盘「退出」后重新启动桌面版', true);
+          return;
+        }
+      }
       const next = Object.assign({}, cuSessions.value);
       if (next[tid]) { delete next[tid]; } else { next[tid] = true; }
       _saveCu(next);

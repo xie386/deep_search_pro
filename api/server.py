@@ -1081,6 +1081,16 @@ async def api_message_delete(token: str = Query(...),
     return res
 
 
+@app.get("/api/cu/status")
+async def api_cu_status():
+    """v4.1-02：屏幕共享能力探针。
+
+    外壳「复用已有服务」时靠它判断对端是不是旧进程 —— 旧后端没有这个路由，
+    会返回 404，前端据此提示「彻底退出后重启」，而不是让开关静默失效。
+    """
+    return {"ok": True, "computer_use": True, "version": 1}
+
+
 # ----------------------------- 会话管理（M1 上下文工程化） -----------------------------
 @app.get("/api/chat/sessions", summary="当前账号会话列表（按活跃倒序）")
 async def api_sessions_list(token: str = Query(...)):
