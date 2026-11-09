@@ -54,7 +54,38 @@ def _max_shots() -> int:
 
 
 def _grab(monitor: int = 0) -> tuple[bytes, dict]:
-    """抓一帧并压到 JPEG。返回 (jpeg 字节, 元信息)。"""
+    """抓一帧并压到 JPEG。返回 (jpeg 字节, 元信息)。
+
+    ★ 桌面版走外壳的抓图服务（`ZX_CU_ENDPOINT`）：只有外壳进程能给自己窗口设截图排除、
+      并把球临时藏起来；后端自己抓会把主窗/面板/球一起拍进去。
+      没有该环境变量（纯 web 版 / 后端独立跑）时退回本进程直接抓。
+    """
+    endpoint = (os.environ.get("ZX_CU_ENDPOINT") or "").strip()
+    if endpoint:
+        print("[CU] 抓图走外壳：%s" % endpoint, flush=True)
+        return _grab_via_shell(endpoint, monitor)
+    print("[CU] 抓图走本进程（没有外壳端点，主窗/面板不会被排除）", flush=True)
+    return _grab_local(monitor)
+
+
+def _grab_via_shell(endpoint: str, monitor: int) -> tuple[bytes, dict]:
+    """让外壳抓一帧（它会在抓的瞬间排除自身窗口、藏球，抓完还原 —— 用户自己的截图不受影响）。"""
+    import urllib.request
+
+    token = os.environ.get("ZX_CU_TOKEN", "")
+    url = "%s/capture?token=%s&monitor=%d" % (endpoint.rstrip("/"), token, int(monitor))
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(url, timeout=25) as resp:
+        data = resp.read()
+        meta = json.loads(resp.headers.get("X-CU-Meta") or "{}")
+    if not data:
+        raise RuntimeError("外壳返回了空图")
+    meta.setdefault("bytes", len(data))
+    return data, meta
+
+
+def _grab_local(monitor: int = 0) -> tuple[bytes, dict]:
+    """本进程直接抓（没有外壳时用；此时没有窗口排除，也没有球可藏）。"""
     import mss                                              # 延迟导入：未开启时不付这份开销
 
     with mss.mss() as sct:

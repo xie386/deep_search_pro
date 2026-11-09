@@ -184,13 +184,17 @@ def _should_close_to_tray(tray_active: bool, really_quit: bool) -> bool:
 
 _CU_TIMER = None
 
+# v4.1-02：截图服务 —— 只在抓图那一瞬间设窗口排除、藏球，抓完立刻还原。
+#   ★ 不能常驻开排除：那会把用户自己的截图（Win+Shift+S、PrintScreen）也一并屏蔽
+#     （2026-11-09 真机反馈：设了常驻之后用户截不到窗口画面）。
+_MAIN = None
+_CU_SRV = None
+_CU_PORT = 0
+_CU_TOKEN = ""
 
-def _exclude_from_capture(win):
-    """v4.1-02：把本进程的窗口从截图里排除（WDA_EXCLUDEFROMCAPTURE）。
 
-    实测（2026-11-09）：普通窗、WebView2 窗、无边框置顶窗均生效，截图里露出背后内容；
-    分层窗（悬浮球）对该属性是假成功 —— 球的处理见 `cu_begin/cu_end`（共享期间隐藏）。
-    """
+def _set_capture_excluded(win, on: bool) -> bool:
+    """开/关某个窗口的截图排除（WDA_EXCLUDEFROMCAPTURE / WDA_NONE）。"""
     if win is None:
         return False
     try:
@@ -199,12 +203,149 @@ def _exclude_from_capture(win):
         user32 = ctypes.windll.user32
         user32.SetWindowDisplayAffinity.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
         user32.SetWindowDisplayAffinity.restype = ctypes.c_bool
-        ok = bool(user32.SetWindowDisplayAffinity(ctypes.c_void_p(hwnd), 0x11))
-        log("[屏幕共享] 窗口排除%s" % ("已设置" if ok else "设置失败"))
-        return ok
+        return bool(user32.SetWindowDisplayAffinity(ctypes.c_void_p(hwnd), 0x11 if on else 0x0))
     except Exception as e:  # noqa: BLE001
-        log("[屏幕共享] 窗口排除失败：%s" % e)
+        log("[屏幕共享] 窗口排除切换失败：%s" % e)
         return False
+
+
+def _capture_for_agent(monitor: int = 0):
+    """给 agent 抓一帧：先排除自身窗口、藏球，抓完立刻还原。返回 (jpeg, meta)。"""
+    import hashlib
+    import io as _io
+    import time as _time
+
+    from PIL import Image
+    import mss
+
+    t0 = _time.perf_counter()
+    excluded = [w for w in (_MAIN, _PANEL) if w is not None]
+    for w in excluded:
+        _set_capture_excluded(w, True)
+    if _BALL is not None:
+        _BALL.hide()
+    try:
+        _time.sleep(0.12)               # 等 DWM 合成一帧：排除与隐藏才真正生效
+        with mss.mss() as sct:
+            mons = sct.monitors
+            idx = int(monitor) if 0 <= int(monitor) < len(mons) else 0
+            mon = mons[idx]
+            raw = sct.grab(mon)
+        img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
+        w, h = img.size
+        try:
+            edge = max(320, min(2048, int(_settings.get("SCREEN_SHOT_EDGE", 1456))))
+            quality = max(50, min(95, int(_settings.get("SCREEN_SHOT_QUALITY", 85))))
+        except Exception:               # noqa: BLE001
+            edge, quality = 1456, 85
+        scale = min(1.0, edge / float(max(w, h)))
+        if scale < 1.0:
+            img = img.resize((max(1, int(round(w * scale))), max(1, int(round(h * scale)))),
+                             Image.BILINEAR)
+        buf = _io.BytesIO()
+        img.save(buf, "JPEG", quality=quality, optimize=True)
+        data = buf.getvalue()
+        meta = {
+            "monitor": idx,
+            "screen_rect": [int(mon["left"]), int(mon["top"]), int(mon["width"]), int(mon["height"])],
+            "image_size": [int(img.width), int(img.height)],
+            "scale": round(float(img.width) / float(w), 4),
+            "bytes": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "ms": int((_time.perf_counter() - t0) * 1000),
+        }
+        return data, meta
+    finally:
+        if _BALL is not None:
+            _BALL.show()
+        for w in excluded:
+            _set_capture_excluded(w, False)
+
+
+def _activate_window(win) -> bool:
+    """把窗口拉到前台并让它拿到键盘焦点。
+
+    ★ 为什么需要这一步：面板是 `focus=False` 创建、由**不激活**的分层球点开的。
+      主窗收进托盘时，进程没有前台窗口，Windows 会把键盘（含输入法）留给上一个应用：
+      表现就是「输入法条能看到、回车却录不进字」（2026-11-09 真机反馈）。
+    """
+    if win is None:
+        return False
+    try:
+        import ctypes
+        u = ctypes.windll.user32
+        k = ctypes.windll.kernel32
+        hwnd = ctypes.c_void_p(_hwnd_of(win))
+        u.SetForegroundWindow(hwnd)
+        if u.GetForegroundWindow() != hwnd.value:
+            # 被前台锁挡住时，临时把本线程附着到当前前台线程再抢一次（Windows 上的常规做法）
+            fg = u.GetForegroundWindow()
+            tid_fg = u.GetWindowThreadProcessId(ctypes.c_void_p(fg), None)
+            tid_me = u.GetWindowThreadProcessId(hwnd, None)
+            if tid_fg and tid_me and tid_fg != tid_me:
+                u.AttachThreadInput(tid_me, tid_fg, True)
+                u.SetForegroundWindow(hwnd)
+                u.SetFocus(hwnd)
+                u.AttachThreadInput(tid_me, tid_fg, False)
+            else:
+                u.SetFocus(hwnd)
+        return u.GetForegroundWindow() == hwnd.value
+    except Exception as e:  # noqa: BLE001
+        log("[球] 面板激活失败：%s" % e)
+        return False
+
+
+def _start_cu_server() -> None:
+    """给后端一个只在本机回环上的抓图接口（带随机令牌，随进程生灭）。"""
+    global _CU_SRV, _CU_PORT, _CU_TOKEN
+    if _CU_SRV is not None:
+        return
+    import http.server
+    import json as _json
+    import secrets
+    import threading
+    from urllib.parse import urlparse, parse_qs
+
+    _CU_TOKEN = secrets.token_hex(16)
+
+    class _H(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a):       # 静默：别把每次抓图刷进外壳日志
+            return
+
+        def do_GET(self):
+            u = urlparse(self.path)
+            if u.path != "/capture":
+                self.send_error(404)
+                return
+            qs = parse_qs(u.query)
+            if qs.get("token", [""])[0] != _CU_TOKEN:
+                self.send_error(403)
+                return
+            try:
+                mon = int(qs.get("monitor", ["0"])[0])
+            except Exception:            # noqa: BLE001
+                mon = 0
+            try:
+                data, meta = _capture_for_agent(mon)
+            except Exception as e:       # noqa: BLE001
+                log("[屏幕共享] 抓图失败：%s" % e)
+                self.send_error(500, str(e))
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("X-CU-Meta", _json.dumps(meta))
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+    try:
+        _CU_SRV = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _H)
+        _CU_PORT = _CU_SRV.server_address[1]
+        threading.Thread(target=_CU_SRV.serve_forever, daemon=True).start()
+        log("[屏幕共享] 抓图服务已启动（127.0.0.1:%d）" % _CU_PORT)
+    except Exception as e:               # noqa: BLE001
+        _CU_SRV = None
+        log("[屏幕共享] 抓图服务启动失败：%s" % e)
 
 
 def _hwnd_of(win):
@@ -359,6 +500,7 @@ def _toggle_panel(show=None) -> None:
                 _PANEL.resize(rect.w, rect.h)
                 _PANEL.move(rect.x, rect.y)
             _PANEL.show()             # 不做同步刷新：页面每 1.5s 自己比对 token，避免卡 GUI 线程
+            _activate_window(_PANEL)  # v4.1-02：主窗在托盘时也要让面板拿到键盘（输入法上屏）
             try:
                 _PANEL.on_top = True
             except Exception:  # noqa: BLE001
@@ -397,6 +539,10 @@ def _no_proxy_env() -> dict:
       这里显式设上，外壳起的后端就不再依赖用户环境。
     """
     env = dict(os.environ)
+    # v4.1-02：告诉后端「要截图就来找外壳」（排除了自身窗口的那一帧只有外壳拿得到）
+    if _CU_SRV is not None:
+        env["ZX_CU_ENDPOINT"] = "http://127.0.0.1:%d" % _CU_PORT
+        env["ZX_CU_TOKEN"] = _CU_TOKEN
     for k in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
         env.pop(k, None)
     env["NO_PROXY"] = "127.0.0.1,localhost"
@@ -914,39 +1060,14 @@ class DesktopApi:
         _toggle_panel(False)
         return True
 
-    # ── v4.1-02 屏幕共享：共享期间隐藏球，结束恢复 ──────────────────
+    # ── v4.1-02 屏幕共享：前端仍会调这两个钩子，但**不再**整轮隐藏球 ──
+    #   球与自身窗口的排除改到「每次抓图那一瞬间」由 `_capture_for_agent()` 处理：
+    #   整轮隐藏会让用户在那几十秒里看不到球，而每轮只隐藏 ~0.2 秒更符合直觉。
     def cu_begin(self):
-        """开始一轮屏幕共享：球暂时隐藏（分层窗无法被截图排除），并挂一个兜底恢复定时器。"""
-        global _CU_TIMER
-        try:
-            if _CU_TIMER is not None:
-                _CU_TIMER.cancel()
-            if _BALL is not None:
-                _BALL.hide()
-                log("[屏幕共享] 球已隐藏（本轮结束恢复）")
-            import threading
-            _CU_TIMER = threading.Timer(180.0, self.cu_end)   # 兜底：前端没来得及收尾也不会永久消失
-            _CU_TIMER.daemon = True
-            _CU_TIMER.start()
-            return {"ok": True}
-        except Exception as e:  # noqa: BLE001
-            log("[屏幕共享] 隐藏球失败：%s" % e)
-            return {"ok": False, "error": str(e)}
+        return {"ok": True}
 
     def cu_end(self):
-        """结束屏幕共享：恢复球，取消兜底定时器。"""
-        global _CU_TIMER
-        try:
-            if _CU_TIMER is not None:
-                _CU_TIMER.cancel()
-                _CU_TIMER = None
-            if _BALL is not None and _BALL.visible is False:
-                _BALL.show()
-                log("[屏幕共享] 球已恢复")
-            return {"ok": True}
-        except Exception as e:  # noqa: BLE001
-            log("[屏幕共享] 恢复球失败：%s" % e)
-            return {"ok": False, "error": str(e)}
+        return {"ok": True}
 
     def panel_drag(self):
         """按住握把拖动面板：交给 Windows 自己的窗口拖动循环（不用 pywebview 的 JS 拖窗）。"""
@@ -1685,6 +1806,8 @@ def main():
         APP_TITLE, html_loading, width=1280, height=820, min_size=(1000, 640),
         js_api=DesktopApi(), text_select=True,
     )
+    global _MAIN
+    _MAIN = window
 
     # ★ v4.1-01：悬浮球与对话面板（设置里启用才创建；面板建好即隐藏，点球才展开）
     _ball_cfg = _load_ball_cfg()
@@ -1713,6 +1836,7 @@ def main():
         except Exception:
             pass
 
+    _start_cu_server()          # v4.1-02：抓图服务先起来，后端才知道往哪要图
     ok = start_backend(port, timeout=args.wait)
     if ok:
         # ★ 把窗口导航到正式 URL（同源后端托管页）—— 等一下让正在加载的 loading 页完全消失
@@ -1820,11 +1944,6 @@ def main():
                 log("[球] 测试 token 已注入，等待页面按登录态起球")
             except Exception as e:  # noqa: BLE001
                 log("[球] 测试 token 注入失败：%s" % e)
-        # v4.1-02：窗口排除必须等 GUI 就绪后再设 —— create_window 时 native 还是 None
-        #   （实测踩到：提前调只会得到 'NoneType' object has no attribute 'Handle'，截图里主窗照旧在）。
-        _exclude_from_capture(window)
-        if _PANEL is not None:
-            _exclude_from_capture(_PANEL)
         if _PENDING_OPEN.get("open"):
             _PENDING_OPEN["open"] = False
             _toggle_panel(True)

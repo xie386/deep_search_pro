@@ -338,8 +338,17 @@
   // ── 事件 ──
   sendBtn.addEventListener('click', send);
   inp.addEventListener('input', autoGrow);
+  // ★ 输入法上屏的 Enter 不能当「发送」：搜狗等外部输入法在 WebView2 里，
+  //   上屏那次 keydown 有时是 isComposing=false、keyCode=229。必须三个条件一起挡，
+  //   否则拼音刚敲完按回车 → 文本被取消、什么都没录进去（2026-11-09 真机反馈）。
+  let _composing = false;
+  inp.addEventListener('compositionstart', () => { _composing = true; });
+  inp.addEventListener('compositionend', () => { _composing = false; });
   inp.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
+    if (e.key !== 'Enter' || e.shiftKey) return;
+    if (_composing || e.isComposing || e.keyCode === 229) return;   // 交给输入法上屏
+    e.preventDefault();
+    send();
   });
   // 握把拖动：调 Python 走系统拖窗（easy_drag 已关，避免整窗 mousedown 被当成拖拽）
   document.querySelector('.grip').addEventListener('mousedown', (e) => {
