@@ -761,6 +761,21 @@ def wait_ready_monitored(url: str, proc: "subprocess.Popen | None", timeout: flo
     return False, "timeout"
 
 
+def _next_free_port(start: int, stop: int) -> int | None:
+    """从 start 往后找一个「没人监听」的端口（只做 bind 探测，不占坑）。"""
+    import socket
+    for p in range(int(start), int(stop) + 1):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.bind(("127.0.0.1", p))
+            return p
+        except OSError:
+            continue
+        finally:
+            s.close()
+    return None
+
+
 def _backend_has_cu(base: str) -> bool:
     """复用的后端是不是带屏幕共享能力的新进程（旧进程没有 /api/cu/status）。"""
     try:
@@ -1787,6 +1802,16 @@ def main():
 
     # ── ① 单实例：已有实例就唤出它的窗口；③ 端口被占就自动往后换 ──
     port, mode, tried = pick_backend_port(args.port, attempts=args.port_attempts)
+    # ★ 复用到的服务若是旧进程（没有 /api/cu/status），就自己换个端口起新的 ——
+    #   不杀用户的进程，也不让「屏幕共享」这类新能力静默失效（2026-11-09 真机）。
+    if mode == "reuse" and not _backend_has_cu("http://127.0.0.1:%d/" % port):
+        alt = _next_free_port(port + 1, port + max(1, args.port_attempts))
+        if alt:
+            log("[后端] %d 上的服务是旧进程（没有 /api/cu/status）→ 改在 %d 自己起一个（不动你原来的进程）"
+                % (port, alt))
+            port, mode = alt, "new"
+        else:
+            log("[后端] ⚠️ 没有空端口可用，只能复用旧服务：屏幕共享等新能力不会生效")
     if mode == "existing":
         log("[单实例] 试过的端口：%s —— 已有桌面实例在跑，已通知它显示窗口" % tried)
         return 0
