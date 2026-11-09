@@ -39,7 +39,7 @@ const A = '// ==================== M4a：技能与工具 ====================';
 // ⚠️ 这个锚点是 send() 的**结尾**，会随 send() 的改动失效 ✗ —— v3.1 加流式收尾
 //    （finalizeStreamingOnError + 拆行的 finally ✓）后失配过一次：本套件当场报
 //    「未能在 index.html 中定位 M4a 代码块」✓。改 send() 收尾就要同步改这里 ✓
-const SEND_END = "      } finally {\n        chatAbort = null; stopping.value = false; loading.value = false;\n        finalizeStreamingOnError();   // \u2605 v3.1：异常路径也别把气泡留在\u300c正在回答\u2026\u300d\u2717\n        desktopStatus(''); await nextTick(); scrollToBottom();\n      }\n    }\n";
+const SEND_END = "      } finally {\n        if (_cu) { try { const _a = desktopApi(); if (_a && _a.cu_end) _a.cu_end(); } catch (e) {} }\n        chatAbort = null; stopping.value = false; loading.value = false;\n        finalizeStreamingOnError();   // \u2605 v3.1：异常路径也别把气泡留在\u300c正在回答\u2026\u300d\u2717\n        desktopStatus(''); await nextTick(); scrollToBottom();\n      }\n    }\n";
 
 const i = src.indexOf(A);
 

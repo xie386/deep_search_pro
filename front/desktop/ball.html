@@ -40,6 +40,7 @@
   header.bar > button:not(.sess){width:26px;height:26px;border:0;border-radius:7px;background:transparent;color:#b9c6bd;
     font-size:14px;cursor:pointer;flex:0 0 26px;line-height:1}
   header.bar > button:not(.sess):hover{background:rgba(255,255,255,.12);color:#fff}
+  header.bar > button.on{color:#7fd08a}
   header .sp{flex:0 0 2px}
   main{flex:1 1 auto;min-height:0;overflow-y:auto;padding:12px 10px 4px;display:flex;flex-direction:column;gap:8px}
   .row{display:flex}
@@ -83,6 +84,7 @@
       <span id="sessName">（加载中）</span><i>▾</i>
     </button>
     <div id="sessMenu" class="menu" hidden></div>
+    <button id="cuS" title="屏幕共享：关闭（点一下开启本会话的 computer use）">🖥</button>
     <button id="newS" title="新建会话">＋</button>
     <button id="renS" title="重命名会话">✎</button>
     <button id="delS" title="删除会话">🗑</button>
@@ -109,6 +111,27 @@
   const msgs = $('msgs'), inp = $('inp'), sendBtn = $('send');
   const sessBtn = $('sessBtn'), sessName = $('sessName'), sessMenu = $('sessMenu');
   const TOKEN = () => localStorage.getItem('zx_token') || '';
+  // ── v4.1-02 屏幕共享：按会话记，与主窗共享同一份 localStorage ──
+  const CU_KEY = 'zx_cu_sessions';
+  const cuBtn = $('cuS');
+  function cuMap() { try { return JSON.parse(localStorage.getItem(CU_KEY) || '{}') || {}; } catch (e) { return {}; } }
+  function cuOn() { return !!cuMap()[thread]; }
+  function syncCuBtn() {
+    const on = cuOn();
+    cuBtn.classList.toggle('on', on);
+    cuBtn.title = on ? '屏幕共享：已开启（本轮 agent 可看屏；球会暂时隐藏）' : '屏幕共享：关闭（点一下开启本会话的 computer use）';
+  }
+  function toggleCu() {
+    if (!thread) { addTip('先选一个会话，再开屏幕共享'); return; }
+    const m = cuMap();
+    if (m[thread]) delete m[thread]; else m[thread] = true;
+    try {
+      localStorage.setItem(CU_KEY, JSON.stringify(m));
+      localStorage.setItem(CU_KEY + '_rev', String(Date.now()));
+    } catch (e) {}
+    syncCuBtn();
+    addTip(cuOn() ? '屏幕共享已开启：本轮 agent 可看屏（共享期间球会暂时隐藏）' : '屏幕共享已关闭');
+  }
   const SES_KEY = 'ball_thread';
   let thread = '', busy = false, sessions = [];
 
@@ -173,6 +196,7 @@
     thread = tid || '';
     if (thread) localStorage.setItem(SES_KEY, thread);
     sessName.textContent = thread ? titleOf(thread) : '（还没有会话）';
+    syncCuBtn();
     renderMenu();
     loadMessages().catch((e) => addTip('读消息失败：' + e.message));
   }
@@ -223,16 +247,20 @@
     inp.value = ''; autoGrow();
     addRow('user', q);
     const bubble = addRow('bot', '思考中…');
+    const _cu = cuOn();                 // v4.1-02：本轮是否共享屏幕
+    if (_cu) { try { window.pywebview.api.cu_begin(); } catch (e) {} }
     setBusy(true);
     try {
       const d = await api('/api/chat?question=' + encodeURIComponent(q) +
-                          '&thread_id=' + encodeURIComponent(thread), { method: 'POST' });
+                          '&thread_id=' + encodeURIComponent(thread) +
+                          (_cu ? '&computer_use=1' : ''), { method: 'POST' });
       bubble.textContent = d.answer || '（没有返回内容）';
       if (d.cancelled) bubble.textContent += '\n\n（已中断）';
     } catch (e) {
       bubble.classList.add('err');
       bubble.textContent = '出错了：' + e.message;
     } finally {
+      if (_cu) { try { window.pywebview.api.cu_end(); } catch (e) {} }
       setBusy(false);
       msgs.scrollTop = msgs.scrollHeight;
       loadSessions().catch(() => {});
@@ -324,6 +352,7 @@
   });
   sessMenu.addEventListener('click', (e) => e.stopPropagation());
   document.addEventListener('click', closeMenu);
+  cuBtn.addEventListener('click', toggleCu);
   $('newS').addEventListener('click', () => newSession().catch((e) => addTip('新建失败：' + e.message)));
   $('renS').addEventListener('click', () => renameSession().catch((e) => addTip('重命名失败：' + e.message)));
   $('delS').addEventListener('click', () => delSession().catch((e) => addTip('删除失败：' + e.message)));
@@ -359,6 +388,7 @@
     try { localStorage.setItem('zx_chat_rev', JSON.stringify({ thread: tid, ts: Date.now() })); } catch (e) {}
   }
   window.addEventListener('storage', (e) => {
+    if (e.key === CU_KEY || e.key === CU_KEY + '_rev') { syncCuBtn(); return; }
     if (e.key === 'zx_sessions_rev') { loadSessions().catch(() => {}); return; }
     if (e.key !== 'zx_chat_rev' || busy) return;      // 本窗正在回答时不打断
     let p = {};

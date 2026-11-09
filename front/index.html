@@ -3064,6 +3064,12 @@
                      stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="9"/>
                   <path d="M8.4 14a4 4 0 0 0 7.2 0M9.2 9.6h.01M14.8 9.6h.01"/></svg>
               </button>
+              <button class="wx-round" type="button" :class="{ on: cuOn }" @click="toggleCu"
+                      :title="cuOn ? '屏幕共享：已开启（本轮 agent 可看屏；共享期间球会暂时隐藏）' : '屏幕共享：关闭（点一下开启本会话的 computer use）'">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                     stroke-width="1.7" stroke-linecap="round"><rect x="3" y="4" width="18" height="12" rx="2"/>
+                  <path d="M8 20h8M12 16v4"/></svg>
+              </button>
               <button class="wx-round" type="button" :class="{ on: multiOpen }" @click="toggleMulti"
                       title="多媒体：图片 / 更多">
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
@@ -7850,6 +7856,35 @@ createApp({
       });
     }
 
+    // ── v4.1-02 屏幕共享（computer use）：按会话记，两窗共享 ───────────────
+    // 状态存在 localStorage（`{thread_id: true}`），后端只认请求里的 computer_use=1。
+    const CU_KEY = 'zx_cu_sessions';
+    const cuSessions = ref((function () {
+      try { return JSON.parse(localStorage.getItem(CU_KEY) || '{}') || {}; } catch (e) { return {}; }
+    })());
+    const cuOn = computed(() => !!cuSessions.value[activeThread.value]);
+    function _saveCu(next) {
+      cuSessions.value = next;
+      try {
+        localStorage.setItem(CU_KEY, JSON.stringify(next));
+        localStorage.setItem(CU_KEY + '_rev', String(Date.now()));   // 通知另一个窗口
+      } catch (e) { /* 隐私模式等：只影响本窗 */ }
+    }
+    function toggleCu() {
+      const tid = activeThread.value;
+      if (!tid) { showToast('先选一个会话，再开屏幕共享', true); return; }
+      const next = Object.assign({}, cuSessions.value);
+      if (next[tid]) { delete next[tid]; } else { next[tid] = true; }
+      _saveCu(next);
+      showToast(next[tid]
+        ? '已开启屏幕共享：本轮 agent 可看屏；共享期间悬浮球会暂时隐藏'
+        : '已关闭屏幕共享');
+    }
+    window.addEventListener('storage', (e) => {
+      if (e.key !== CU_KEY && e.key !== CU_KEY + '_rev') return;
+      try { cuSessions.value = JSON.parse(localStorage.getItem(CU_KEY) || '{}') || {}; } catch (err) {}
+    });
+
     // ==================== M4a：技能与工具 ====================
     const skills = ref([]);            // 我的技能（agents_docs/{username}/skills/*.md）
     const skTab = ref(_initHash === 'shell' ? 'shell' : 'skill');   // 页面 tab：skill / shell / cli / mcp / api
@@ -7868,6 +7903,7 @@ createApp({
     // ★ v3.1 输入框复刻微信：可展开的多媒体面板（**只有「相册」是真功能** ✓ 其余前端占位 ✓）
     const multiOpen = ref(false);
     function toggleMulti() { multiOpen.value = !multiOpen.value; }
+
     function pickFromAlbum() { multiOpen.value = false; pickChatImages(); }   // 相册 = 真正的图片选择/上传 ✓
     function soonHint(what) {                                                 // 占位入口：如实说明，别假装能用 ✗
       multiOpen.value = false;
@@ -8907,6 +8943,9 @@ createApp({
       thinkingText.value = '';  // 新一轮对话清空思考区
       wfSteps.value = [];       // 06：新一轮清空 workflow 步骤卡
       await nextTick(); scrollToBottom();
+      // v4.1-02：本轮是否共享屏幕（typeof 守卫：前端 harness 只 eval M4a 代码块，cuOn 定义在块外）
+      const _cu = (typeof cuOn !== 'undefined') ? !!cuOn.value : false;
+      if (_cu) { try { const _a = desktopApi(); if (_a && _a.cu_begin) _a.cu_begin(); } catch (e) {} }
       const ctl = new AbortController();  // 中断兜底：后端卡在工具里时可客户端撒手
       chatAbort = ctl;
       try {
@@ -8919,6 +8958,7 @@ createApp({
         // ★ v3.1 视觉：本轮贴的图（后端已校验归属 ✓ 这里只传 id ✓ 顺序即展示顺序 ✓）
         const _imgIds = chatImages.value.map(function (x) { return x.id; });
         if (_imgIds.length) url += '&images=' + encodeURIComponent(_imgIds.join(','));
+        if (_cu) url += '&computer_use=1';   // v4.1-02：本轮开启屏幕共享
         const r = await fetch(url, { method:'POST', signal: ctl.signal });
         clearChatImages(true);   // 图已随本轮发出且已进气泡：收起预览条，但**保留 URL** ✓ 气泡缩略图要一直看得见 ✓
         const data = await r.json();
@@ -8957,6 +8997,7 @@ createApp({
           messages.value.push({ role:'agent', text:'⚠️ 请求出错：' + e.message, title:'出错了' });
         }
       } finally {
+        if (_cu) { try { const _a = desktopApi(); if (_a && _a.cu_end) _a.cu_end(); } catch (e) {} }
         chatAbort = null; stopping.value = false; loading.value = false;
         finalizeStreamingOnError();   // ★ v3.1：异常路径也别把气泡留在「正在回答…」✗
         desktopStatus(''); await nextTick(); scrollToBottom();
@@ -9742,7 +9783,7 @@ createApp({
       sendBindCode, confirmBind, sendUnbindCode, confirmUnbind, deleteSendCode, deleteConfirm,
       recOn, recBusy, recCancel, recLevel, recClock, recStart, recStop, recMoveOut, loadAsrStatus,
       chatImages, chatImgBusy, chatImgErr, chatFileInput, pickChatImages, onChatFiles,
-      multiOpen, toggleMulti, pickFromAlbum, soonHint,
+      multiOpen, toggleMulti, pickFromAlbum, soonHint, cuOn, toggleCu,
       onChatPaste, onChatDrop, removeChatImage, addChatImages, clearChatImages,
       // v4.0 大点 03：工具池测评（第 6 个页签）
       probe, probeCases, probeSheets, probeSheetOn, probeSheetHtml, probeBusy, probeErr, probeMsg,

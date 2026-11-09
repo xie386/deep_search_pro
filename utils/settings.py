@@ -46,6 +46,13 @@ SPECS: tuple[dict, ...] = (
          label="记录「路由来过」痕迹", help="把每次路由决策写进 data/audit/decision.jsonl，便于复盘。"),
     dict(key="DECISION_ALLOW_NONE", kind="switch", default="0", group="switches",
          label="允许决策模型回答「都不选」", help="默认关：噪声交给路由器兜；打开后模型可以拒选（可能让路由更保守）。"),
+    # v4.1-02 屏幕共享：只影响「本机截图」这一件小事，与模型/提示词无关
+    dict(key="SCREEN_MAX_SHOTS_PER_TURN", kind="number", default="6", group="switches", min=1, max=10,
+         label="每轮截图上限", help="agent 自行决定截几张，这里是硬上限（1~10）。翻页类任务按页截，超出即拒绝。"),
+    dict(key="SCREEN_SHOT_EDGE", kind="number", default="1456", group="switches", min=320, max=2048,
+         label="截图长边像素", help="默认 1456：16:9 屏可避免服务端二次降采样导致点击坐标偏移（见 02 裁定）。"),
+    dict(key="SCREEN_SHOT_QUALITY", kind="number", default="85", group="switches", min=50, max=95,
+         label="截图 JPEG 质量", help="默认 85，本机 2880×1620 压到长边 1456 约 200 KB。"),
     dict(key="ZX_STREAM", kind="switch", default="1", group="switches",
          label="流式输出", help="回答逐字返回（关掉则等全文生成完再一次性返回）。"),
     dict(key="ZX_ASSEMBLY_SOURCES", kind="select", default="new", group="switches",

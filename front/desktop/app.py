@@ -182,6 +182,31 @@ def _should_close_to_tray(tray_active: bool, really_quit: bool) -> bool:
     return bool(CLOSE_TO_TRAY and tray_active and not really_quit)
 
 
+_CU_TIMER = None
+
+
+def _exclude_from_capture(win):
+    """v4.1-02：把本进程的窗口从截图里排除（WDA_EXCLUDEFROMCAPTURE）。
+
+    实测（2026-11-09）：普通窗、WebView2 窗、无边框置顶窗均生效，截图里露出背后内容；
+    分层窗（悬浮球）对该属性是假成功 —— 球的处理见 `cu_begin/cu_end`（共享期间隐藏）。
+    """
+    if win is None:
+        return False
+    try:
+        import ctypes
+        hwnd = _hwnd_of(win)
+        user32 = ctypes.windll.user32
+        user32.SetWindowDisplayAffinity.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+        user32.SetWindowDisplayAffinity.restype = ctypes.c_bool
+        ok = bool(user32.SetWindowDisplayAffinity(ctypes.c_void_p(hwnd), 0x11))
+        log("[屏幕共享] 窗口排除%s" % ("已设置" if ok else "设置失败"))
+        return ok
+    except Exception as e:  # noqa: BLE001
+        log("[屏幕共享] 窗口排除失败：%s" % e)
+        return False
+
+
 def _hwnd_of(win):
     """取窗口 HWND。★ pythonnet 给的 .native.Handle 是 IntPtr，不能直接 int()，
     要 ToInt64()；老版本 / 其它后端可能是整数，做两种兼容。"""
@@ -888,6 +913,40 @@ class DesktopApi:
         """面板右上角 × / Esc：只收起面板，不退出应用。"""
         _toggle_panel(False)
         return True
+
+    # ── v4.1-02 屏幕共享：共享期间隐藏球，结束恢复 ──────────────────
+    def cu_begin(self):
+        """开始一轮屏幕共享：球暂时隐藏（分层窗无法被截图排除），并挂一个兜底恢复定时器。"""
+        global _CU_TIMER
+        try:
+            if _CU_TIMER is not None:
+                _CU_TIMER.cancel()
+            if _BALL is not None:
+                _BALL.hide()
+                log("[屏幕共享] 球已隐藏（本轮结束恢复）")
+            import threading
+            _CU_TIMER = threading.Timer(180.0, self.cu_end)   # 兜底：前端没来得及收尾也不会永久消失
+            _CU_TIMER.daemon = True
+            _CU_TIMER.start()
+            return {"ok": True}
+        except Exception as e:  # noqa: BLE001
+            log("[屏幕共享] 隐藏球失败：%s" % e)
+            return {"ok": False, "error": str(e)}
+
+    def cu_end(self):
+        """结束屏幕共享：恢复球，取消兜底定时器。"""
+        global _CU_TIMER
+        try:
+            if _CU_TIMER is not None:
+                _CU_TIMER.cancel()
+                _CU_TIMER = None
+            if _BALL is not None and _BALL.visible is False:
+                _BALL.show()
+                log("[屏幕共享] 球已恢复")
+            return {"ok": True}
+        except Exception as e:  # noqa: BLE001
+            log("[屏幕共享] 恢复球失败：%s" % e)
+            return {"ok": False, "error": str(e)}
 
     def panel_drag(self):
         """按住握把拖动面板：交给 Windows 自己的窗口拖动循环（不用 pywebview 的 JS 拖窗）。"""
@@ -1761,6 +1820,11 @@ def main():
                 log("[球] 测试 token 已注入，等待页面按登录态起球")
             except Exception as e:  # noqa: BLE001
                 log("[球] 测试 token 注入失败：%s" % e)
+        # v4.1-02：窗口排除必须等 GUI 就绪后再设 —— create_window 时 native 还是 None
+        #   （实测踩到：提前调只会得到 'NoneType' object has no attribute 'Handle'，截图里主窗照旧在）。
+        _exclude_from_capture(window)
+        if _PANEL is not None:
+            _exclude_from_capture(_PANEL)
         if _PENDING_OPEN.get("open"):
             _PENDING_OPEN["open"] = False
             _toggle_panel(True)

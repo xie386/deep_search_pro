@@ -70,6 +70,7 @@ from api.context import set_owner_context, set_thread_context
 import api.me_user_data as me
 import api.tools_sources as ts        # v3.0 M1：工具来源（API 适配器配置面）
 from tools.capability_invoke import invoke_tool  # v3.0 M1：API/MCP 能力的唯一调用入口
+from tools.screen_tool import screen_capture     # v4.1-02：屏幕共享（仅本轮开关打开时可用）
 from api.monitor import manager, monitor
 from agent import cancel as agent_cancel
 from agent import answer_text
@@ -82,6 +83,7 @@ from deepagents import create_deep_agent
 from langchain_core.messages import AIMessage, HumanMessage
 from agent.reasoning_model import ReasoningChatOpenAI
 from deepagents.middleware._tool_exclusion import _ToolExclusionMiddleware
+from agent.cu_middleware import ComputerUseGateMiddleware   # v4.1-02：关闭时摘掉 screen_capture
 
 load_dotenv()
 
@@ -255,10 +257,11 @@ AGENT = create_deep_agent(
     system_prompt=main_agent_content["system_prompt"],
     subagents=[network_search_agent, db_agent, personal_agent],
     tools=[read_agent_doc, write_agent_doc, list_agent_docs, query_kb, run_shell_command, invoke_tool,
-           update_user_profile, record_price,
+           update_user_profile, record_price, screen_capture,
            # 06：工作目录写工具集（★ 名字带 workdir_ 前缀，避免被下面的 _ToolExclusionMiddleware 按名剥掉）
            workdir_list, workdir_read, workdir_create, workdir_edit, workdir_delete],
     middleware=[_ToolExclusionMiddleware(excluded=_EXCLUDED_FS_TOOLS),
+                    ComputerUseGateMiddleware(),                 # v4.1-02：屏幕工具按本轮开关放行
                     usage_counter.UsageCounterMiddleware()],  # M4-3：用量计数（框架级，C1）
                     # 06（2026-10-17 用户裁定）：内置写工具**不过闸** —— 纯文字提问即可用。
     # M1：不再用 MemorySaver 承载消息历史（进程重启即丢、无界增长）。
@@ -295,11 +298,12 @@ def _build_custom_agent(provider: dict):
         system_prompt=sys_prompt,
         subagents=[network_search_agent, db_agent, personal_agent],
         tools=[read_agent_doc, write_agent_doc, list_agent_docs, query_kb, run_shell_command, invoke_tool,
-           update_user_profile, record_price,
+           update_user_profile, record_price, screen_capture,
            # 06：工作目录写工具集 —— ★ 与模块级 AGENT 必须**同款**（M3/M4 老坑）
            workdir_list, workdir_read, workdir_create, workdir_edit, workdir_delete],
         middleware=[_ToolExclusionMiddleware(excluded=_EXCLUDED_FS_TOOLS),
-                    usage_counter.UsageCounterMiddleware()],  # M4-3：用量计数（框架级，C1）
+                        ComputerUseGateMiddleware(),                 # v4.1-02：屏幕工具按本轮开关放行
+                        usage_counter.UsageCounterMiddleware()],  # M4-3：用量计数（框架级，C1）
     )
 
 
@@ -440,7 +444,8 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
                vision_capable: bool = False,
                probe: bool = False,
                write_sets: list[str] | None = None,
-               workflows: list[str] | None = None) -> str:
+               workflows: list[str] | None = None,
+               computer_use: bool = False) -> str:
     """在工作线程里执行同步的 agent.invoke（M1 上下文工程化改造）。
 
     上下文装配：
@@ -454,6 +459,10 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
     set_thread_context(thread_id)  # 让 monitor 知道本轮进度推给哪个 WS
     if account_id is not None:
         set_owner_context(account_id)  # 数据归属权：Agent 只能读到该用户的数据
+    # v4.1-02：本轮 computer use 开关（contextvar）。关闭时 screen_capture 直接拒绝，
+    #   计时器/去重状态也随本轮新建，跨轮不残留。
+    from utils import cu_mode as _cu
+    _cu.begin_turn(computer_use)
     # 本轮「/」选了什么（技能 / workflow / 自配写工具集）—— 随消息落库，前端据此在用户气泡上打标签
     _picks = {"skills": [s for s in (skill_names or []) if s],
               "write_sets": [s for s in (write_sets or []) if s],
@@ -530,6 +539,13 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
                     % (_r.detail.get("pool", 0), len(_r.hits)))
         except Exception as e:
             print(f"[M4c/M5] 工具注入生成失败（忽略）: {type(e).__name__}: {e}")
+    # v4.1-02：本轮开了 screen_capture，才告诉模型它能看屏；关闭时这段文本不存在。
+    if computer_use:
+        cli_brief = (cli_brief + "\n\n" + (
+            "【屏幕共享·本轮已开启】你可以调用 `screen_capture` 查看用户当前屏幕，"
+            "截图会以图片形式随工具结果返回。只在确实需要看画面时调用；翻页/多屏可以多次调用（一页一次），"
+            "同一画面重复调用会被系统去重。返回里带 capture_id 与屏幕矩形、缩放比，后续定位以同一帧为准。"
+        )).strip()
     # M3-5：画像待更新信号（服务端算数字，模型只判断相关性）。没有新数据时是空串，零开销。
     profile_signal = ""
     if account_id is not None and memory_text:
@@ -690,6 +706,7 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
     finally:
         agent_cancel.end(thread_id)
         _turn_ledger.end(thread_id)
+        _cu.end_turn()            # v4.1-02：轮末清场（纯内存，什么都不留）
     # 思考捕获（A+ 方案）：ReasoningChatOpenAI 保留 reasoning_content 到每轮
     # AIMessage 的 additional_kwargs，invoke 完成后遍历提取并推给前端右栏——
     # 单请求（省 token）、不弃 langchain、覆盖所有轮次（含工具调用后的思考）。
@@ -889,6 +906,7 @@ async def api_chat(
     probe: str = Query("", description="内部（测评用）：非空=本轮来自 03 路由质量测评 → 强制关闭决策模型精排"),
     write_sets: str = Query("", description="06：本轮经「/」授权的**自配**写工具集名，逗号分隔；空=未授权（内置写工具不受影响，见裁定 11）"),
     workflows: str = Query("", description="06：本轮经「/」选中的 workflow 名，逗号分隔；空=不跑工作流"),
+    computer_use: int = Query(0, description="v4.1-02：本轮是否开启「computer use」屏幕共享（按会话开关，1=开）"),
 ):
     sess = get_session(token)  # 校验登录，无效抛 401
     # 会话存储在本函数多处要用（含 v1.0 兼容路径下的 last_msg_id），提到函数顶部
@@ -918,6 +936,12 @@ async def api_chat(
             raise HTTPException(status_code=400, detail=(
                 "当前生效的模型配置「%s」未开启「支持图片」：请到『模型选型』勾上该配置，或换一个多模态模型后再发图"
                 % (_act.get("provider_name") or "未命名")))
+    # v4.1-02：开了屏幕共享但模型不能看图 → 明确拦下（截图送进去也读不懂）
+    if computer_use and not _vision_ok:
+        raise HTTPException(status_code=400, detail=(
+            "当前生效的模型配置「%s」未开启「支持图片」，无法使用屏幕共享："
+            "截图需要模型能看图，请换一个多模态模型或到『模型选型』勾上该配置。"
+            % (_act.get("provider_name") or "未命名")))
     if not thread_id:
         thread_id = sess["username"]  # v1.0 兼容：以用户名为 thread
     else:
@@ -935,7 +959,8 @@ async def api_chat(
                                          vision_capable=_vision_ok,
                                          probe=bool(probe),
                                          write_sets=_ws_names,       # 06：写工具集授权名单
-                                         workflows=_wf_names)        # 06：本轮选中的 workflow
+                                         workflows=_wf_names,        # 06：本轮选中的 workflow
+                                         computer_use=bool(computer_use))   # v4.1-02 屏幕共享开关
         try:
             after_memory = cust.memory_get(token).get("content", "")
             if after_memory != before_memory:
