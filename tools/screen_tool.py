@@ -90,7 +90,7 @@ def _quality() -> int:
 
 def _max_shots() -> int:
     try:
-        return max(1, min(10, int(_settings.get("SCREEN_MAX_SHOTS_PER_TURN", 6))))
+        return max(1, min(50, int(_settings.get("SCREEN_MAX_SHOTS_PER_TURN", 6))))
     except Exception:                                       # noqa: BLE001
         return 6
 

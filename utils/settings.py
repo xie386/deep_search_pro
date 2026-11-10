@@ -47,8 +47,8 @@ SPECS: tuple[dict, ...] = (
     dict(key="DECISION_ALLOW_NONE", kind="switch", default="0", group="switches",
          label="允许决策模型回答「都不选」", help="默认关：噪声交给路由器兜；打开后模型可以拒选（可能让路由更保守）。"),
     # v4.1-02 屏幕共享：只影响「本机截图」这一件小事，与模型/提示词无关
-    dict(key="SCREEN_MAX_SHOTS_PER_TURN", kind="number", default="6", group="switches", min=1, max=10,
-         label="每轮截图上限", help="agent 自行决定截几张，这里是硬上限（1~10）。翻页类任务按页截，超出即拒绝。"),
+    dict(key="SCREEN_MAX_SHOTS_PER_TURN", kind="number", default="6", group="switches", min=1, max=50,
+         label="每轮截图上限", help="agent 自行决定截几张，这里是硬上限（1~50）。翻页/做题类任务按页截，超出即拒绝。"),
     dict(key="SCREEN_SHOT_EDGE", kind="number", default="1456", group="switches", min=320, max=2048,
          label="截图长边像素", help="默认 1456：16:9 屏可避免服务端二次降采样导致点击坐标偏移（见 02 裁定）。"),
     dict(key="SCREEN_SHOT_QUALITY", kind="number", default="85", group="switches", min=50, max=95,

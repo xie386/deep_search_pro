@@ -152,8 +152,8 @@
     const on = ctlOn();
     ctlBtn.classList.toggle('on', on);
     ctlBtn.style.opacity = cuOn() ? '1' : '.4';
-    ctlBtn.title = on ? '屏幕控制：已开启（本轮 agent 可点击、输入、滚动，仅限白名单应用；其它工具与工具路由已关闭）'
-      : (cuOn() ? '屏幕控制：关闭 —— 点一下允许本轮 agent 动手（会关闭其它工具与工具路由）' : '先开启屏幕共享，才能开屏幕控制');
+    ctlBtn.title = on ? '屏幕控制：已开启（本轮 agent 可点击、输入、滚动，仅限白名单应用；其它工具与工具路由已关闭）。长复杂操作建议使用自定义的支持长任务的模型'
+      : (cuOn() ? '屏幕控制：关闭 —— 点一下允许本轮 agent 动手（会关闭其它工具与工具路由）。长复杂操作建议使用自定义的支持长任务的模型' : '先开启屏幕共享，才能开屏幕控制');
   }
   function toggleCtl() {
     if (!thread) { addTip('先选一个会话，再开屏幕控制'); return; }
