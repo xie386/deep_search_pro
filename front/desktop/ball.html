@@ -4,20 +4,35 @@
 <meta charset="utf-8">
 <title>智选情报官 · 悬浮对话</title>
 <style>
+  /* v4.1-04：浮窗 token 与主窗同源（浅绿纸面 + 松绿 + 墨绿半透明卡） */
   :root{
-    --ink:#1d2a22; --muted:#6c7d71; --line:rgba(30,60,40,.12);
-    --bg:#f5f8f3; --panel:#ffffff; --user:#dcecdc; --accent:#4f8f5c;
+    --bg0:#eef7ef; --bg1:#e2f0e4;
+    --ink:#1d3a24; --muted:#5d7a64; --line:rgba(84,170,105,.28);
+    --accent:#54aa69; --accent2:#7cc089;
+    --panel:#ffffff;
+    --ai-bg1:rgba(32,48,77,.85); --ai-bg2:rgba(26,38,60,.9);
+    --ai-line:rgba(124,192,137,.35); --ai-ink:#f0f7f2; --ai-strong:#ffe27a;
+    --user-ink:#07101f;
     --bar:#161d18; --bar-ink:#dfe8e1;
+    --sub-bg-opacity:.6;
   }
   *{box-sizing:border-box}
-  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+  html,body{margin:0;height:100%;color:var(--ink);
     font:13.5px/1.55 "Microsoft YaHei","Segoe UI",system-ui,sans-serif;overflow:hidden}
-  body{display:flex;flex-direction:column;min-height:0}
+  body{display:flex;flex-direction:column;min-height:0;
+    background:linear-gradient(180deg,var(--bg0),var(--bg1))}
+  /* 用户自定义浮窗背景：独立图层，透明度可调；默认没有图时只剩淡绿渐变 */
+  #bgLayer{position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-size:cover;background-position:center;background-repeat:no-repeat;
+    opacity:var(--sub-bg-opacity);transition:opacity .2s ease}
+  header.bar,main,footer{position:relative;z-index:1}
   header.bar{position:relative;flex:0 0 40px;height:40px;display:flex;align-items:center;gap:6px;
     padding:0 8px 0 6px;background:var(--bar);color:var(--bar-ink);user-select:none}
   header .grip{width:20px;height:26px;display:flex;align-items:center;justify-content:center;
-    color:#7f8f84;font-size:13px;cursor:move;flex:0 0 20px;letter-spacing:-1px}
-  header .grip:hover{color:#cfe0d4}
+    color:#7f8f84;font-size:13px;cursor:move;flex:0 0 20px;letter-spacing:-1px;
+    border-radius:6px;transition:background .15s ease,color .15s ease}
+  /* v4.1-04：与其他按钮一致 —— 悬停与拖动中都是松绿高亮 */
+  header .grip:hover,header .grip.dragging{color:#7fd08a;background:rgba(84,170,105,.18)}
   header .sess{flex:1 1 auto;min-width:0;height:26px;display:flex;align-items:center;gap:6px;
     border:1px solid rgba(255,255,255,.16);border-radius:7px;background:rgba(255,255,255,.08);
     color:#e8f0ea;font:inherit;font-size:12.5px;padding:0 8px;cursor:pointer;text-align:left}
@@ -45,19 +60,45 @@
   main{flex:1 1 auto;min-height:0;overflow-y:auto;padding:12px 10px 4px;display:flex;flex-direction:column;gap:8px}
   .row{display:flex}
   .row.user{justify-content:flex-end}
-  .bub{max-width:86%;padding:8px 10px;border-radius:12px;white-space:pre-wrap;word-break:break-word}
-  .row.user .bub{background:var(--user);border-bottom-right-radius:4px}
-  .row.bot .bub{background:var(--panel);border:1px solid var(--line);border-bottom-left-radius:4px}
-  .row.tip .bub{background:transparent;color:var(--muted);font-size:12px;padding:2px 4px}
-  .bub.err{background:#fdeaea;border-color:#f3c9c9;color:#8a2b2b}
-  footer{flex:0 0 auto;padding:8px 10px 10px;border-top:1px solid var(--line);background:var(--bg);
+  .bub{max-width:86%;padding:10px 12px;border-radius:16px;line-height:1.6;
+    white-space:pre-wrap;word-break:break-word}
+  /* 用户：主窗同款绿色不透明气泡（右下角小圆角收口） */
+  .row.user .bub{background:linear-gradient(120deg,var(--accent),var(--accent2));
+    color:var(--user-ink);border-bottom-right-radius:4px;
+    box-shadow:0 6px 16px rgba(84,170,105,.22)}
+  /* AI：主窗「情报简报」卡的墨绿半透明（能透出浮窗背景图） */
+  .row.bot .bub{background:linear-gradient(180deg,var(--ai-bg1),var(--ai-bg2));
+    border:1px solid var(--ai-line);color:var(--ai-ink);
+    border-bottom-left-radius:4px;box-shadow:0 8px 22px rgba(8,18,12,.22)}
+  /* 提示行不再用气泡形状，居中一行小字 */
+  .row.tip{justify-content:center}
+  .row.tip .bub{background:none;border:0;box-shadow:none;color:var(--muted);
+    font-size:11px;padding:2px 6px;text-align:center;max-width:92%}
+  .bub.err{background:linear-gradient(180deg,rgba(74,26,26,.9),rgba(58,20,20,.92));
+    border-color:rgba(240,140,140,.45);color:#ffdede}
+  footer{flex:0 0 auto;padding:8px 10px 10px;border-top:1px solid var(--line);
+    background:rgba(255,255,255,.72);backdrop-filter:blur(6px);
     display:flex;gap:8px;align-items:flex-end}
-  textarea{flex:1 1 auto;min-height:34px;max-height:96px;resize:none;border:1px solid var(--line);
-    border-radius:10px;padding:8px 10px;font:inherit;outline:none;background:#fff}
-  textarea:focus{border-color:rgba(79,143,92,.55);box-shadow:0 0 0 3px rgba(79,143,92,.12)}
-  #send{flex:0 0 auto;height:34px;padding:0 14px;border:0;border-radius:10px;background:var(--accent);
-    color:#fff;font-size:13px;cursor:pointer}
-  #send.stop{background:#b4453f}
+  textarea{flex:1 1 auto;min-height:34px;max-height:96px;resize:none;
+    border:1px solid var(--line);border-radius:12px;padding:8px 10px;font:inherit;
+    outline:none;background:#fff;color:var(--ink)}
+  textarea:focus{border-color:rgba(84,170,105,.55);box-shadow:0 0 0 3px rgba(84,170,105,.14)}
+  /* v4.1-04：复用主窗 send-bubbles —— 悬停时两团圆从对角扩散填满，文字由绿转白 */
+  #send{--c2:#54aa69;position:relative;overflow:hidden;flex:0 0 auto;height:34px;padding:0 16px;
+    border:2px solid var(--c2);border-radius:12px;background:transparent;font:inherit;
+    font-size:13px;font-weight:700;color:var(--c2);cursor:pointer;
+    transition:300ms cubic-bezier(.83,0,.17,1)}
+  #send .text{position:relative;z-index:1;transition:color 700ms cubic-bezier(.83,0,.17,1)}
+  #send::before,#send::after{content:"";width:150%;aspect-ratio:1/1;scale:0;position:absolute;
+    translate:-50% -50%;border-radius:50%;background-color:var(--c2);
+    transition:1000ms cubic-bezier(.76,0,.24,1)}
+  #send::before{top:0;left:0}
+  #send::after{top:100%;left:100%}
+  #send:hover .text{color:#fff}
+  #send:hover::before,#send:hover::after{scale:1}
+  #send:active{scale:.97;filter:brightness(.9)}
+  #send:disabled{opacity:.55;cursor:not-allowed;filter:grayscale(.4)}
+  #send.stop{--c2:#b4453f}
   /* 页内弹层：不用原生 confirm/prompt —— 它们会阻塞渲染进程，无边框窗里看起来就是「未响应」 */
   .modal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:18px}
   .modal[hidden]{display:none}
@@ -77,6 +118,7 @@
 </style>
 </head>
 <body>
+  <div id="bgLayer"></div>
   <header class="bar">
     <!-- 只有这个握把是拖动区；点下拉/按钮时绝不拖窗（无边框窗里拖窗+弹层会崩） -->
     <span class="grip pywebview-drag-region" title="按住拖动面板">⠿</span>
@@ -95,7 +137,7 @@
   <main id="msgs"></main>
   <footer>
     <textarea id="inp" rows="1" placeholder="输入问题，Enter 发送，Shift+Enter 换行"></textarea>
-    <button id="send">发送</button>
+    <button id="send" type="button"><span class="text">发送</span></button>
   </footer>
 
   <div id="modal" class="modal" hidden>
@@ -263,7 +305,8 @@
 
   function setBusy(on) {
     busy = on;
-    sendBtn.textContent = on ? '中断' : '发送';
+    const t = sendBtn.querySelector('.text');
+    if (t) t.textContent = on ? '中断' : '发送';
     sendBtn.classList.toggle('stop', on);
     inp.disabled = on;
   }
@@ -438,16 +481,42 @@
     if (e.key === CU_KEY || e.key === CU_KEY + '_rev') { syncCuBtn(); return; }
     if (e.key === CTL_KEY || e.key === CTL_KEY + '_rev') { syncCtlBtn(); return; }
     if (e.key === 'zx_sessions_rev') { loadSessions().catch(() => {}); return; }
+    if (e.key === 'zx_subbg_rev') { loadSubBg(); return; }   // 主窗改了浮窗背景
     if (e.key !== 'zx_chat_rev' || busy) return;      // 本窗正在回答时不打断
     let p = {};
     try { p = JSON.parse(e.newValue || '{}'); } catch (err) { return; }
     if (p.thread && p.thread === thread) loadMessages().catch(() => {});
   });
+  // ── v4.1-04 浮窗背景：默认淡绿渐变；用户选了图就叠一层，透明度可调 ──
+  const grip = document.querySelector('header .grip');
+  if (grip) {
+    grip.addEventListener('mousedown', () => grip.classList.add('dragging'));
+    const off = () => grip.classList.remove('dragging');
+    window.addEventListener('mouseup', off);
+    window.addEventListener('blur', off);
+  }
+  const bgLayer = $('bgLayer');
+  function applySubBg(d) {
+    if (!bgLayer) return;
+    const url = (d && d.url) || '';
+    if (url) {
+      bgLayer.style.backgroundImage = 'url("' + url + '")';
+      const op = Math.min(100, Math.max(5, parseInt((d && d.opacity) || 60, 10) || 60));
+      document.documentElement.style.setProperty('--sub-bg-opacity', String(op / 100));
+    } else {
+      bgLayer.style.backgroundImage = 'none';
+    }
+  }
+  async function loadSubBg() {
+    if (!TOKEN()) return;
+    try { applySubBg(await api('/api/bg/state?scope=sub')); } catch (e) { /* 取不到就用默认淡绿 */ }
+  }
+
   window.ballRefresh = refresh;          // 外壳在 auth_state / 展开面板时调它
   setInterval(() => { if (TOKEN() !== _tok) refresh(); }, 1500);
 
   if (!TOKEN()) refresh();
-  else loadSessions().catch((e) => addTip('加载会话失败：' + e.message));
+  else { loadSessions().catch((e) => addTip('加载会话失败：' + e.message)); loadSubBg(); }
   inp.focus();
 })();
 </script>

@@ -1469,6 +1469,19 @@
     .think-box[open] summary { border-bottom: 1px solid rgba(84,170,105,.2); }
     .think-text { padding: 8px 11px; max-height: 180px; overflow-y: auto; white-space: pre-wrap;
                   word-break: break-word; line-height: 1.55; font-size: 10.5px; color: #e8f5ec; }
+    /* 背景作用域胶囊（v4.1-04） */
+    .bg-scope { display: flex; gap: 6px; margin: 6px 0 10px; }
+    .bg-scope button {
+      flex: 1; height: 30px; border: 1px solid var(--line); border-radius: 9px;
+      background: rgba(255,255,255,.7); color: var(--muted); font: inherit; font-size: 12.5px;
+      cursor: pointer; transition: all .18s ease;
+    }
+    .bg-scope button:hover { border-color: rgba(84,170,105,.55); color: var(--accent); }
+    .bg-scope button.on {
+      background: linear-gradient(120deg, var(--accent), var(--accent2));
+      border-color: transparent; color: #07101f; font-weight: 700;
+    }
+
     /* 背景设置面板（任务4） */
     .bg-panel {
       position: fixed; top: 54px; right: 18px; z-index: 99; width: 260px;
@@ -2300,6 +2313,11 @@
       <!-- 背景设置面板（任务一+四）：图库选择 + 上传 + 删除 + 透明度 -->
       <div class="bg-panel" v-if="showBgPanel">
         <div class="bg-panel-head">🎨 背景设置</div>
+        <!-- v4.1-04：先选作用域，再进入上传/图库/透明度（两套共用一块界面） -->
+        <div class="bg-scope">
+          <button type="button" :class="{ on: bgScope === 'main' }" @click="setBgScope('main')">主窗背景</button>
+          <button type="button" :class="{ on: bgScope === 'sub' }" @click="setBgScope('sub')">浮窗背景</button>
+        </div>
         <label class="bg-upload">
           <input type="file" accept="image/*" @change="onBgUpload" style="display:none" />
           <span>📤 上传新背景图片</span>
@@ -2313,7 +2331,7 @@
           </div>
         </div>
         <div class="bg-row">
-          <span>透明度</span>
+          <span>{{ bgScope === 'sub' ? '浮窗透明度' : '透明度' }}</span>
           <input type="range" min="5" max="100" v-model.number="bgOpacity" @input="applyBg" />
           <span class="bg-val">{{ bgOpacity }}%</span>
         </div>
@@ -5176,6 +5194,8 @@ createApp({
     const thinkingText = ref('');
     const showBgPanel = ref(false);   // 背景设置面板
     const bgOpacity = ref(60);        // 背景图透明度（5-100）
+    const bgScope = ref('main');      // v4.1-04：main = 主窗背景，sub = 浮窗背景
+    const subBgActive = ref('');      // 浮窗当前选中的图（URL；空 = 默认淡绿）
     const bgImages = ref([]);         // 图库列表 [{name,url}]
     const bgActive = ref('');         // 当前选中的背景图 url
     // 定制助手
@@ -5995,7 +6015,14 @@ createApp({
     }
 
     // ---------- 背景设置（服务端持久化图库）----------
+    // v4.1-04：两个作用域 —— main（主窗，仍走 localStorage）、sub（浮窗，走 /api/bg/state）。
+    //  浮窗是独立页面，需要服务端可读、按账号隔离的事实源，所以选择与透明度落在
+    //  pic/<user>/subbackground/.active.json，而不是 localStorage。
     function applyBg() {
+      if (bgScope.value === 'sub') {                                // 浮窗透明度只写服务端（拖动时防抖）
+        clearTimeout(_subBgTimer); _subBgTimer = setTimeout(saveSubBgState, 250);
+        return;
+      }
       const b = document.body;
       b.style.setProperty('--bg-opacity', (bgOpacity.value / 100).toFixed(2));
       if (username.value) localStorage.setItem('bgOpacity_' + username.value, String(bgOpacity.value));
@@ -6009,11 +6036,32 @@ createApp({
       showBgPanel.value = !showBgPanel.value;
       if (showBgPanel.value) loadBgList();  // 每次打开都重新拉取图库（服务重启后 token 变化也能刷新）
     }
+    async function setBgScope(s) {
+      if (bgScope.value === s) return;
+      bgScope.value = s;
+      bgActive.value = '';
+      bgImages.value = [];
+      await loadBgList();
+      if (s === 'sub') {
+        try {
+          const r = await fetch('/api/bg/state?scope=sub&token=' + encodeURIComponent(token.value));
+          const d = await r.json();
+          subBgActive.value = d.url || '';
+          bgActive.value = d.url || '';
+          bgOpacity.value = Math.min(100, Math.max(5, parseInt(d.opacity || 60, 10) || 60));
+        } catch (e) { subBgActive.value = ''; }
+      } else {
+        const opStr = localStorage.getItem('bgOpacity_' + username.value) || '60';
+        bgOpacity.value = Math.min(100, Math.max(5, parseInt(opStr, 10) || 60));
+      }
+    }
     async function loadBgList() {
       try {
-        const r = await fetch('/api/bg/list?token=' + encodeURIComponent(token.value));
+        const scope = bgScope.value;
+        const r = await fetch('/api/bg/list?scope=' + scope + '&token=' + encodeURIComponent(token.value));
         const d = await r.json();
         bgImages.value = d.images || [];
+        if (scope === 'sub') return;        // 浮窗的当前选中由 state 决定，已在 setBgScope 里读过
         const saved = localStorage.getItem('userBg');
         if (saved && bgImages.value.some(i => i.url === saved)) { bgActive.value = saved; }
         else if (bgImages.value.length) { bgActive.value = bgImages.value[0].url; }
@@ -6024,41 +6072,79 @@ createApp({
       if (!f) return;
       const fd = new FormData();
       fd.append('file', f);
+      const scope = bgScope.value;
       try {
-        const r = await fetch('/api/bg/upload?token=' + encodeURIComponent(token.value), { method: 'POST', body: fd });
+        const r = await fetch('/api/bg/upload?scope=' + scope + '&token=' + encodeURIComponent(token.value),
+                              { method: 'POST', body: fd });
         const d = await r.json();
         if (!r.ok) { showToast(d.detail || '上传失败', true); return; }
-        setUserBg(d.url);
-        applyBg();
-        await loadBgList();
-        showToast('背景图片已上传并应用 ✅');
+        if (scope === 'sub') {
+          subBgActive.value = d.url; bgActive.value = d.url;
+          await saveSubBgState();
+          await loadBgList();
+          showToast('浮窗背景已上传并应用');
+        } else {
+          setUserBg(d.url); applyBg(); await loadBgList();
+          showToast('背景图片已上传并应用');
+        }
       } catch (e) { showToast('上传出错：' + e.message, true); }
       ev.target.value = '';
     }
     function pickBg(url) {
+      if (bgScope.value === 'sub') {
+        subBgActive.value = url; bgActive.value = url;
+        saveSubBgState();
+        showToast('已设为浮窗背景');
+        return;
+      }
       setUserBg(url); applyBg(); showToast('已应用该背景');
     }
     async function delBg(name) {
       if (!confirm('删除这张背景图？')) return;
+      const scope = bgScope.value;
       try {
-        const r = await fetch('/api/bg/' + encodeURIComponent(name) + '?token=' + encodeURIComponent(token.value), { method: 'DELETE' });
+        const r = await fetch('/api/bg/' + encodeURIComponent(name) +
+                              '?scope=' + scope + '&token=' + encodeURIComponent(token.value), { method: 'DELETE' });
         if (!r.ok) { showToast('删除失败', true); return; }
         const wasActive = bgActive.value && bgActive.value.endsWith('/' + name);
         await loadBgList();
         if (wasActive) {
-          document.body.style.removeProperty('--user-bg');
-          bgActive.value = ''; if (username.value) localStorage.removeItem('userBg_' + username.value);
+          bgActive.value = '';
+          if (scope === 'sub') { subBgActive.value = ''; await saveSubBgState(); }
+          else {
+            document.body.style.removeProperty('--user-bg');
+            if (username.value) localStorage.removeItem('userBg_' + username.value);
+          }
         }
         showToast('已删除');
       } catch (e) { showToast('删除出错：' + e.message, true); }
     }
-    function resetBg() {
+    async function resetBg() {
+      if (bgScope.value === 'sub') {
+        subBgActive.value = ''; bgActive.value = ''; bgOpacity.value = 60;
+        await saveSubBgState();
+        showToast('浮窗背景已恢复默认（淡绿）');
+        return;
+      }
       document.body.style.removeProperty('--user-bg');
       document.body.style.setProperty('--bg-opacity', '.6');
       bgOpacity.value = 60;
       bgActive.value = '';
       if (username.value) { localStorage.removeItem('userBg_' + username.value); localStorage.removeItem('bgOpacity_' + username.value); }
       showToast('已恢复默认背景');
+    }
+    // 浮窗背景：把「当前选中的文件名 + 透明度」写回服务端，并通知浮窗刷新
+    let _subBgTimer = null;
+    async function saveSubBgState() {
+      if (bgScope.value !== 'sub') return;
+      const name = (subBgActive.value || '').split('/').pop();
+      try {
+        await fetch('/api/bg/state?scope=sub&token=' + encodeURIComponent(token.value), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name, opacity: bgOpacity.value }),
+        });
+        try { localStorage.setItem('zx_subbg_rev', String(Date.now())); } catch (e) {}
+      } catch (e) { /* 静默：写失败只影响下次打开浮窗 */ }
     }
     function restoreBg() {
       // 未登录（或未确定账号）一律不显示任何用户背景，保持默认
@@ -9861,7 +9947,8 @@ createApp({
       loadKbStatus, kbUploadClick, kbUploadFile, kbIngestOpen, kbIngestOpenWith, kbIngestEvalNow,
       kbIngestRetry, kbIngestConfirm, kbDeleteDoc, kbQueryRun, askIngestExport,
       kbPercent, activityTrend, recentActivity,
-      showBgPanel, toggleBgPanel, bgOpacity, bgImages, bgActive, onBgUpload, applyBg, resetBg, pickBg, delBg,
+      showBgPanel, toggleBgPanel, bgOpacity, bgScope, setBgScope, subBgActive,
+      bgImages, bgActive, onBgUpload, applyBg, resetBg, pickBg, delBg,
       providers, newProv, loadProviders, addProvider, saveProvider, activateProvider, delProvider,
       tsSources, tsCaps, tsStats, tsCandidates, tsSpecText, tsDiscoverSlug, tsEditingId, tsBusy, tsForm,
       capModal, capKind, capSource, capItems, capBusy, capDraftBusy, capDraftWarns,

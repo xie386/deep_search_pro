@@ -1917,9 +1917,9 @@ async def reports_list(token: str = Query(...)):
 # ----------------------------- 定制助手 API（背景图/模型/人格）-----------------------------
 from fastapi import UploadFile as _UpFile, File as _File, Body as _Body
 
-@app.post("/api/bg/upload", summary="上传背景图（存 pic/{username}/）")
-async def bg_upload(token: str = Query(...), file: _UpFile = _File(...)):
-    return cust.bg_upload(token, file)
+@app.post("/api/bg/upload", summary="上传背景图（scope=main 存 pic/{user}/，scope=sub 存 pic/{user}/subbackground/）")
+async def bg_upload(token: str = Query(...), file: _UpFile = _File(...), scope: str = Query("main")):
+    return cust.bg_upload(token, file, scope)
 
 # ----------------------------- 视觉能力：聊天图片（v3.1，用户 2026-09-30 拍板）-----------------------------
 # 口径：单张一次 ✓（前端最多累计 3 张，超了在装配处再拦一道 ✓）；校验/压缩/账号隔离全在 tools/chat_images.py ✓
@@ -1950,13 +1950,22 @@ async def asr_transcribe(token: str = Query(...), file: _UpFile = _File(...)):
     except _va.VoiceAsrError as exc:        # 人话错误直接给前端展示 ✓（与贴图通道同款 ✓）
         raise HTTPException(status_code=400, detail=str(exc))
 
-@app.get("/api/bg/list", summary="我的背景图列表")
-async def bg_list(token: str = Query(...)):
-    return cust.bg_list(token)
+@app.get("/api/bg/list", summary="我的背景图列表（scope=main/sub）")
+async def bg_list(token: str = Query(...), scope: str = Query("main")):
+    return cust.bg_list(token, scope)
 
-@app.delete("/api/bg/{name}", summary="删除一张背景图")
-async def bg_delete(name: str, token: str = Query(...)):
-    return cust.bg_delete(token, name)
+@app.get("/api/bg/state", summary="当前背景选择（浮窗页面启动时读它）")
+async def bg_state_get(token: str = Query(...), scope: str = Query("sub")):
+    return cust.bg_state_get(token, scope)
+
+@app.post("/api/bg/state", summary="写当前背景选择")
+async def bg_state_set(token: str = Query(...), payload: dict = _Body(...), scope: str = Query("sub")):
+    return cust.bg_state_set(token, str(payload.get("name") or ""),
+                             int(payload.get("opacity") or 60), scope)
+
+@app.delete("/api/bg/{name}", summary="删除一张背景图（scope=main/sub）")
+async def bg_delete(name: str, token: str = Query(...), scope: str = Query("main")):
+    return cust.bg_delete(token, name, scope)
 
 @app.get("/api/llm/providers", summary="我的模型配置列表")
 async def llm_providers_list(token: str = Query(...)):

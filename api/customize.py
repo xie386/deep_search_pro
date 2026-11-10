@@ -62,6 +62,35 @@ def _user_pic_dir(username: str) -> Path:
     return d
 
 
+# ---- v4.1-04：背景图分两个作用域（主窗 / 浮窗）----
+SUB_BG_DIR = "subbackground"          # 浮窗背景：pic/{user}/subbackground/
+ACTIVE_BG = ".active.json"            # 当前选择：{"name": "...", "opacity": 60}
+
+
+def _norm_scope(scope: str | None) -> str:
+    """只认 main / sub；其它一律当 main（旧调用不带 scope，行为不变）。"""
+    return "sub" if str(scope or "").strip().lower() in ("sub", "subbackground", "ball") else "main"
+
+
+def _scope_dir(username: str, scope: str | None = "main") -> Path:
+    base = _user_pic_dir(username)
+    if _norm_scope(scope) == "sub":
+        d = base / SUB_BG_DIR
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+    return base
+
+
+def _scope_url(username: str, scope: str | None, fname: str) -> str:
+    if _norm_scope(scope) == "sub":
+        return "/pic/%s/%s/%s" % (username, SUB_BG_DIR, fname)
+    return "/pic/%s/%s" % (username, fname)
+
+
+def _active_file(username: str, scope: str | None) -> Path:
+    return _scope_dir(username, scope) / ACTIVE_BG
+
+
 def _user_doc_dir(username: str) -> Path:
     d = AGENTS_DOCS / username
     d.mkdir(parents=True, exist_ok=True)
@@ -117,43 +146,94 @@ class BgListResp(BaseModel):
     images: list  # [{name, url}]
 
 
-def bg_upload(token: str, file: UploadFile = File(...)) -> dict:
-    """上传背景图到 pic/{username}/，返回可访问 URL"""
+def bg_upload(token: str, file: UploadFile = File(...), scope: str = "main") -> dict:
+    """上传背景图（scope=main 存 pic/{user}/，scope=sub 存 pic/{user}/subbackground/）"""
     user = _username_by_token(token)
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in _ALLOWED_IMG_EXT:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"仅支持图片: {sorted(_ALLOWED_IMG_EXT)}")
     # 用 uuid 前缀防重名/覆盖
     fname = f"{uuid.uuid4().hex[:8]}_{_safe_name(file.filename or 'bg')}"
-    dest = _user_pic_dir(user) / fname
+    dest = _scope_dir(user, scope) / fname
     try:
         content = file.file.read()
         dest.write_bytes(content)
     except Exception as e:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, f"保存失败: {e}")
-    return {"ok": True, "name": fname, "url": f"/pic/{user}/{fname}"}
+    return {"ok": True, "name": fname, "url": _scope_url(user, scope, fname)}
 
 
-def bg_list(token: str) -> dict:
-    """列出该账号所有背景图"""
+def bg_list(token: str, scope: str = "main") -> dict:
+    """列出该账号某个作用域的背景图"""
     user = _username_by_token(token)
-    d = _user_pic_dir(user)
+    d = _scope_dir(user, scope)
     items = []
     for f in sorted(d.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
-        if f.is_file() and f.suffix.lower() in _ALLOWED_IMG_EXT:
-            items.append({"name": f.name, "url": f"/pic/{user}/{f.name}"})
-    return {"images": items}
+        if f.is_file() and f.suffix.lower() in _ALLOWED_IMG_EXT:      # 跳过 .active.json
+            items.append({"name": f.name, "url": _scope_url(user, scope, f.name)})
+    return {"images": items, "scope": _norm_scope(scope)}
 
 
-def bg_delete(token: str, name: str) -> dict:
-    """删除该账号一张背景图"""
+def bg_delete(token: str, name: str, scope: str = "main") -> dict:
+    """删除一张背景图；删掉的正是当前选中的，就把选择清空（透明度保留）"""
     user = _username_by_token(token)
     fname = _safe_name(name)
-    dest = _user_pic_dir(user) / fname
+    d = _scope_dir(user, scope)
+    dest = d / fname
     if not dest.is_file():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "图片不存在")
     dest.unlink()
+    try:
+        cur = _read_active(user, scope)
+        if cur.get("name") == fname:
+            _write_active(user, scope, {"name": "", "opacity": int(cur.get("opacity") or 60)})
+    except Exception:                                  # noqa: BLE001
+        pass
     return {"ok": True}
+
+
+def _read_active(user: str, scope: str) -> dict:
+    f = _active_file(user, scope)
+    if not f.is_file():
+        return {"name": "", "opacity": 60}
+    try:
+        import json
+        data = json.loads(f.read_text(encoding="utf-8") or "{}")
+        return {"name": str(data.get("name") or ""),
+                "opacity": max(5, min(100, int(data.get("opacity") or 60)))}
+    except Exception:                                  # noqa: BLE001
+        return {"name": "", "opacity": 60}
+
+
+def _write_active(user: str, scope: str, data: dict) -> dict:
+    import json
+    name = _safe_name(str(data.get("name") or "")) if data.get("name") else ""
+    opacity = max(5, min(100, int(data.get("opacity") if data.get("opacity") is not None else 60)))
+    if name and name not in (".active.json",):
+        # 只接受本目录下真实存在的图片，防止把任意文件名写进状态
+        p = _scope_dir(user, scope) / name
+        if not p.is_file() or p.suffix.lower() not in _ALLOWED_IMG_EXT:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "背景图不存在，请先上传")
+    else:
+        name = ""
+    f = _active_file(user, scope)
+    f.write_text(json.dumps({"name": name, "opacity": opacity}, ensure_ascii=False), encoding="utf-8")
+    return {"ok": True, "name": name, "opacity": opacity}
+
+
+def bg_state_get(token: str, scope: str = "sub") -> dict:
+    """读某作用域的当前选择（浮窗页面启动时用它决定背景）"""
+    user = _username_by_token(token)
+    cur = _read_active(user, scope)
+    url = _scope_url(user, scope, cur["name"]) if cur["name"] else ""
+    return {"ok": True, "scope": _norm_scope(scope), "username": user,
+            "name": cur["name"], "url": url, "opacity": cur["opacity"]}
+
+
+def bg_state_set(token: str, name: str = "", opacity: int = 60, scope: str = "sub") -> dict:
+    """写某作用域的当前选择"""
+    user = _username_by_token(token)
+    return _write_active(user, scope, {"name": name or "", "opacity": opacity})
 
 
 # ============================ 模型配置 ============================
