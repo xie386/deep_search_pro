@@ -71,7 +71,7 @@ import api.me_user_data as me
 import api.tools_sources as ts        # v3.0 M1：工具来源（API 适配器配置面）
 from tools.capability_invoke import invoke_tool  # v3.0 M1：API/MCP 能力的唯一调用入口
 from tools.screen_tool import screen_capture     # v4.1-02：屏幕共享（仅本轮开关打开时可用）
-from tools.control_tool import mouse_click, type_text   # v4.1-03：屏幕控制（看+动两档都开才可用）
+from tools.control_tool import mouse_click, press_key, type_text   # v4.1-03：屏幕控制（看+动两档都开才可用）
 from api.monitor import manager, monitor
 from agent import cancel as agent_cancel
 from agent import answer_text
@@ -258,7 +258,7 @@ AGENT = create_deep_agent(
     system_prompt=main_agent_content["system_prompt"],
     subagents=[network_search_agent, db_agent, personal_agent],
     tools=[read_agent_doc, write_agent_doc, list_agent_docs, query_kb, run_shell_command, invoke_tool,
-           update_user_profile, record_price, screen_capture, mouse_click, type_text,
+           update_user_profile, record_price, screen_capture, mouse_click, type_text, press_key,
            # 06：工作目录写工具集（★ 名字带 workdir_ 前缀，避免被下面的 _ToolExclusionMiddleware 按名剥掉）
            workdir_list, workdir_read, workdir_create, workdir_edit, workdir_delete],
     middleware=[_ToolExclusionMiddleware(excluded=_EXCLUDED_FS_TOOLS),
@@ -299,7 +299,7 @@ def _build_custom_agent(provider: dict):
         system_prompt=sys_prompt,
         subagents=[network_search_agent, db_agent, personal_agent],
         tools=[read_agent_doc, write_agent_doc, list_agent_docs, query_kb, run_shell_command, invoke_tool,
-           update_user_profile, record_price, screen_capture, mouse_click, type_text,
+           update_user_profile, record_price, screen_capture, mouse_click, type_text, press_key,
            # 06：工作目录写工具集 —— ★ 与模块级 AGENT 必须**同款**（M3/M4 老坑）
            workdir_list, workdir_read, workdir_create, workdir_edit, workdir_delete],
         middleware=[_ToolExclusionMiddleware(excluded=_EXCLUDED_FS_TOOLS),
@@ -558,7 +558,11 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
     # 工具多时只把**相关**工具完整注入，其余留一行名称（不隐身），不确定则回退全量。
     cli_brief = ""
     route_mode = "full"
-    if account_id is not None:
+    # v4.1-03：computer use 模式下**不做工具路由**——本轮只有 CU 四件套，
+    #   不需要「从几十个工具里挑相关的」，省掉一次决策模型调用与整段能力卡简报。
+    if computer_use:
+        route_mode = "cu"
+    elif account_id is not None:
         try:
             from tools import tool_router
             _r = tool_router.route_tools(account_id, question,
@@ -581,17 +585,24 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
     # v4.1-03：本轮额外开了「屏幕控制」，才告诉模型它能动手；关闭时这两张卡不存在。
     if computer_use and allow_control:
         cli_brief = (cli_brief + "\n\n" + (
-            "【屏幕控制·本轮已开启】你可以操作这台电脑的鼠标与键盘，工具有两个："
-            "`mouse_click(x, y, capture_id, reason, double)` 与 `type_text(text, capture_id, reason)`。"
+            "【屏幕控制·本轮已开启】你可以操作这台电脑的鼠标与键盘，工具有三个："
+            "`mouse_click(x, y, capture_id, reason, double)`、`type_text(text, capture_id, reason)`、"
+            "`press_key(key, capture_id, reason, times)`。"
             "\n规矩（必须遵守）：\n"
             "1. **先看再动**：每次动手前先 `screen_capture`，用那一帧的 `capture_id`；坐标是**截图上**的像素"
             "（左上角为原点），工具会自动换算，不要自己算物理坐标。\n"
             "2. **帧过期即重截**：工具会拒绝旧 capture_id，此时重新截图再点，不要猜。\n"
             "3. **点进输入框再打字**：`type_text` 往当前焦点输入，先 `mouse_click` 点那个输入框。\n"
-            "4. **动作后回看**：关键一步（点搜索、打开页面）之后可以再截一帧确认结果，再决定下一步。\n"
-            "5. **不可逆动作先复述**：发送消息、删除、提交表单这类，先用一句话说明将要做什么，再做。\n"
-            "6. **每轮动作有上限**（默认 20 次），用完即止；做不完就报告进度让用户继续。\n"
-            "7. 只能操作白名单里的应用；被拒绝时把原因告诉用户，不要反复重试。"
+            "4. **搜索框打完字，优先按回车**：`press_key('enter')` 是最可靠的提交方式；"
+            "放大镜这类小图标按钮容易点偏（真机踩过：回执说点了，其实没点中），"
+            "要按按钮就先截图确认图标在屏幕上的确切落点。\n"
+            "5. **动作后回看**：每步回执里有「落点所在窗口」和「前台进程」，"
+            "关键一步（提交搜索、打开页面）之后再截一帧确认结果；"
+            "如果画面没变化，说明上一步没生效，换方式（例如改用回车）而不是原样重试。\n"
+            "6. **不可逆动作先复述**：发送消息、删除、提交表单这类，先用一句话说明将要做什么，再做。\n"
+            "7. **每轮动作有上限**（默认 20 次），用完即止；做不完就报告进度让用户继续。\n"
+            "8. 只能操作白名单里的应用；被拒绝时把原因告诉用户，不要反复重试。\n"
+            "9. 本轮只给了你上述屏幕工具（其它业务工具本轮不提供），做完直接用文字汇报即可。"
         )).strip()
     # M3-5：画像待更新信号（服务端算数字，模型只判断相关性）。没有新数据时是空串，零开销。
     profile_signal = ""

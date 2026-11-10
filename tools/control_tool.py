@@ -91,10 +91,12 @@ def mouse_click(x: int, y: int, capture_id: int, reason: str = "", double: bool 
     cu_input.audit(_thread_id(), capture_id, "double_click" if double else "click",
                    x=px, y=py, reason=str(reason or "")[:200])
     fg = cu_input.foreground_process()
+    where = cu_input.window_text_at(px, py)
     what = "双击" if double else "单击"
-    return ("已在图上 (%d, %d)（屏幕物理 %d, %d）%s%s。当前前台进程：%s。本轮已用 %d/%d 次动作。"
+    return ("已在图上 (%d, %d)（屏幕物理 %d, %d）%s%s。当前前台进程：%s；落点所在窗口：%s。"
+            "本轮已用 %d/%d 次动作。"
             % (x, y, px, py, what, ("；原因：" + reason.strip()) if reason and reason.strip() else "",
-               fg or "未知", n, _limit()))
+               fg or "未知", where or "（未知）", n, _limit()))
 
 
 @tool
@@ -132,6 +134,48 @@ def type_text(text: str, capture_id: int, reason: str = "") -> str:
     fg = cu_input.foreground_process()
     return ("已输入 %d 个字符%s。当前前台进程：%s。本轮已用 %d/%d 次动作。"
             % (len(body), ("；原因：" + reason.strip()) if reason and reason.strip() else "",
+               fg or "未知", n, _limit()))
+
+
+@tool
+def press_key(key: str, capture_id: int, reason: str = "", times: int = 1) -> str:
+    """按一次键盘按键（回车 / 退格 / Tab / Esc / 方向键）。只在开启「屏幕控制」的本轮可用。
+
+    什么时候该用：
+      · **在搜索框里打完字之后，按回车提交搜索** —— 这是绝大多数人的习惯动作，
+        比去找那个小小的放大镜按钮可靠得多（真机踩过：按钮太小，点偏了却没搜出来）；
+      · 表单里按 Tab 跳到下一个输入框、对话框里按 Esc 关闭、列表里用方向键选择；
+      · 输入错了按退格删字。
+    不该用：
+      · 想输入一段文字时用 `type_text`（本工具只按单个键，不输入字符）；
+      · 发送消息、删除文件这类不可逆动作，先复述再动，且只按用户明确要求的那一下。
+    参数：
+      · key：按键名，可用 enter / esc / tab / space / backspace / delete / up / down / left / right / home / end / pageup / pagedown；
+      · capture_id：那一帧的编号（必须是最新帧）；
+      · reason：一句话说明为什么要按（写进对话与审计）；
+      · times：连按几次（默认 1，最多 10）。
+    返回：一行结果说明，或一句人话的拒绝原因。
+    """
+    ok, msg = _guard(capture_id)
+    if not ok:
+        return msg
+    name = str(key or "").strip().lower()
+    if name not in cu_input.VK:
+        return ("不支持的按键：%s（可用：%s）"
+                % (key, " / ".join(sorted(cu_input.VK))))
+    passed, who = cu_input.check_foreground()            # 按键打进前台窗口，判前台即可
+    if not passed:
+        return who
+    try:
+        cu_input.press(name, times=times)
+    except Exception as exc:                             # noqa: BLE001
+        return "按键失败：%s（本轮其它能力不受影响）" % exc
+    n = cu_mode.bump_action()
+    cu_input.audit(_thread_id(), capture_id, "key", key=name, times=int(times or 1),
+                   reason=str(reason or "")[:200])
+    fg = cu_input.foreground_process()
+    return ("已按下 %s%s。当前前台进程：%s。本轮已用 %d/%d 次动作。"
+            % (name, ("（连按 %d 次）" % times) if int(times or 1) > 1 else "",
                fg or "未知", n, _limit()))
 
 

@@ -67,6 +67,7 @@ _c.WindowFromPoint.restype = w.HWND
 _c.GetAncestor.argtypes = [w.HWND, w.UINT]
 _c.GetAncestor.restype = w.HWND
 _c.GetWindowThreadProcessId.argtypes = [w.HWND, ctypes.POINTER(w.DWORD)]
+_c.GetWindowTextW.argtypes = [w.HWND, w.LPWSTR, ctypes.c_int]
 _k.OpenProcess.argtypes = [w.DWORD, w.BOOL, w.DWORD]
 _k.OpenProcess.restype = w.HANDLE
 _k.QueryFullProcessImageNameW.argtypes = [w.HANDLE, w.DWORD, w.LPWSTR, ctypes.POINTER(w.DWORD)]
@@ -187,6 +188,25 @@ def _mouse(flags: int, dx: int = 0, dy: int = 0) -> INPUT:
     return ev
 
 
+# 常用按键：只开放「不会产生破坏性后果」的那几个（回车/退格/方向/制表/Tab）。
+VK: dict[str, int] = {
+    "enter": 0x0D, "esc": 0x1B, "tab": 0x09, "space": 0x20, "backspace": 0x08,
+    "delete": 0x2E, "up": 0x26, "down": 0x28, "left": 0x25, "right": 0x27,
+    "home": 0x24, "end": 0x23, "pageup": 0x21, "pagedown": 0x22,
+}
+
+
+def window_text_at(x: int, y: int) -> str:
+    """落点上那个窗口的标题（顶层）。用来在回执里说清「这一下点到哪了」。"""
+    hit = _c.WindowFromPoint(w.POINT(int(x), int(y)))
+    if not hit:
+        return ""
+    root = _c.GetAncestor(hit, 2) or hit
+    buf = ctypes.create_unicode_buffer(512)
+    _c.GetWindowTextW(root, buf, 512)
+    return buf.value
+
+
 def click(x: int, y: int, double: bool = False) -> None:
     """在物理像素 (x, y) 单击/双击。"""
     dpi_aware()
@@ -266,6 +286,18 @@ def hotkey(*vks: int) -> None:
     seq = [_key(v) for v in vks] + [_key(v, True) for v in reversed(vks)]
     _send(seq)
     time.sleep(0.12)
+
+
+def press(key: str, times: int = 1) -> None:
+    """按一次（或几次）单个键。key 取 VK 表的键名，大小写不敏感。"""
+    name = str(key or "").strip().lower()
+    vk = VK.get(name)
+    if not vk:
+        raise ValueError("不支持的按键：%s（可用：%s）" % (key, "/".join(VK)))
+    dpi_aware()
+    for _ in range(max(1, min(10, int(times or 1)))):
+        _send([_key(vk), _key(vk, True)])
+        time.sleep(0.12)
 
 
 def type_text(text: str) -> None:

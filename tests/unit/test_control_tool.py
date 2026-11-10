@@ -74,6 +74,36 @@ def test_click_ok_bumps_counter(monkeypatch):
     assert turn.actions == 1
 
 
+def test_press_key_ok(monkeypatch):
+    turn = _turn()
+    got = {}
+    monkeypatch.setattr(cu_input, "check_foreground", lambda: (True, "哔哩哔哩.exe"))
+    monkeypatch.setattr(cu_input, "press", lambda key, times=1: got.update(key=key, n=times))
+    monkeypatch.setattr(cu_input, "audit", lambda *a, **k: None)
+    monkeypatch.setattr(cu_input, "foreground_process", lambda: "哔哩哔哩.exe")
+    out = control_tool.press_key.invoke({"key": "enter", "capture_id": 3, "reason": "提交搜索"})
+    assert "已按下 enter" in out and "哔哩哔哩.exe" in out
+    assert got == {"key": "enter", "n": 1}
+    assert turn.actions == 1
+
+
+def test_press_key_rejects_unknown(monkeypatch):
+    _turn()
+    out = control_tool.press_key.invoke({"key": "f8", "capture_id": 3})
+    assert "不支持的按键" in out
+
+
+def test_click_reports_landing_window(monkeypatch):
+    _turn()
+    monkeypatch.setattr(cu_input, "check_target", lambda x, y: (True, "哔哩哔哩.exe"))
+    monkeypatch.setattr(cu_input, "click", lambda x, y, double=False: None)
+    monkeypatch.setattr(cu_input, "audit", lambda *a, **k: None)
+    monkeypatch.setattr(cu_input, "foreground_process", lambda: "哔哩哔哩.exe")
+    monkeypatch.setattr(cu_input, "window_text_at", lambda x, y: "哔哩哔哩 - 搜索")
+    out = control_tool.mouse_click.invoke({"x": 10, "y": 10, "capture_id": 3})
+    assert "落点所在窗口：哔哩哔哩 - 搜索" in out
+
+
 def test_type_ok_and_empty(monkeypatch):
     turn = _turn()
     monkeypatch.setattr(cu_input, "check_foreground", lambda: (True, "notepad.exe"))

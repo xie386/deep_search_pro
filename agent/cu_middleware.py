@@ -33,7 +33,10 @@ if TYPE_CHECKING:
 # 只看档的工具：关掉「computer use」就摘掉
 GATED_TOOLS: frozenset[str] = frozenset({"screen_capture"})
 # 动手档的工具：只有「看 + 动」两档都开才保留（03）
-CONTROL_TOOLS: frozenset[str] = frozenset({"mouse_click", "type_text"})
+CONTROL_TOOLS: frozenset[str] = frozenset({"mouse_click", "type_text", "press_key"})
+# CU 全量：开了「看」就只剩这几张卡（03 优化）。理由：computer use 是**多轮看图+动手**的
+#   短循环，把几十个业务工具留在表里既拖慢模型、又会诱发它去调无关工具（真机见过）。
+CU_TOOLS: frozenset[str] = GATED_TOOLS | CONTROL_TOOLS
 
 
 def _debug(msg: str) -> None:
@@ -52,6 +55,15 @@ def _dropped() -> frozenset[str]:
     return frozenset()
 
 
+def _keep_only_cu(tools: list) -> list:
+    """CU 模式下只留 CU 四件套：其它业务工具（搜索/写文件/CLI/子 agent…）全部不发给模型。
+
+    依据（2026-11-10 用户）：computer use 模式下要「专注使用 computer use 系列工具」，
+    工具表越长，模型选错/啰嗦的概率越高，单轮也越慢。
+    """
+    return [t for t in tools if _tool_name(t) in CU_TOOLS]
+
+
 def _tool_name(tool: Any) -> str | None:
     if isinstance(tool, dict):
         name = tool.get("name")
@@ -68,6 +80,10 @@ class ComputerUseGateMiddleware(AgentMiddleware[Any, Any, Any]):
         request: "ModelRequest[Any]",
         handler: "Callable[[ModelRequest[Any]], ModelResponse[Any]]",
     ) -> "ModelResponse[Any]":
+        if cu_mode.is_on():
+            kept = _keep_only_cu(request.tools)
+            _debug("同步路径：CU 模式只留 CU 工具（%d → %d）" % (len(request.tools), len(kept)))
+            request = request.override(tools=kept)
         drop = _dropped()
         if drop:
             before = len(request.tools)
@@ -85,6 +101,10 @@ class ComputerUseGateMiddleware(AgentMiddleware[Any, Any, Any]):
         request: "ModelRequest[Any]",
         handler: "Callable[[ModelRequest[Any]], Awaitable[ModelResponse[ResponseT]]]",
     ) -> "ModelResponse[ResponseT] | AIMessage | ExtendedModelResponse[ResponseT]":
+        if cu_mode.is_on():
+            kept = _keep_only_cu(request.tools)
+            _debug("异步路径：CU 模式只留 CU 工具（%d → %d）" % (len(request.tools), len(kept)))
+            request = request.override(tools=kept)
         drop = _dropped()
         if drop:
             before = len(request.tools)
