@@ -71,6 +71,7 @@ import api.me_user_data as me
 import api.tools_sources as ts        # v3.0 M1：工具来源（API 适配器配置面）
 from tools.capability_invoke import invoke_tool  # v3.0 M1：API/MCP 能力的唯一调用入口
 from tools.screen_tool import screen_capture     # v4.1-02：屏幕共享（仅本轮开关打开时可用）
+from tools.control_tool import mouse_click, type_text   # v4.1-03：屏幕控制（看+动两档都开才可用）
 from api.monitor import manager, monitor
 from agent import cancel as agent_cancel
 from agent import answer_text
@@ -257,7 +258,7 @@ AGENT = create_deep_agent(
     system_prompt=main_agent_content["system_prompt"],
     subagents=[network_search_agent, db_agent, personal_agent],
     tools=[read_agent_doc, write_agent_doc, list_agent_docs, query_kb, run_shell_command, invoke_tool,
-           update_user_profile, record_price, screen_capture,
+           update_user_profile, record_price, screen_capture, mouse_click, type_text,
            # 06：工作目录写工具集（★ 名字带 workdir_ 前缀，避免被下面的 _ToolExclusionMiddleware 按名剥掉）
            workdir_list, workdir_read, workdir_create, workdir_edit, workdir_delete],
     middleware=[_ToolExclusionMiddleware(excluded=_EXCLUDED_FS_TOOLS),
@@ -298,7 +299,7 @@ def _build_custom_agent(provider: dict):
         system_prompt=sys_prompt,
         subagents=[network_search_agent, db_agent, personal_agent],
         tools=[read_agent_doc, write_agent_doc, list_agent_docs, query_kb, run_shell_command, invoke_tool,
-           update_user_profile, record_price, screen_capture,
+           update_user_profile, record_price, screen_capture, mouse_click, type_text,
            # 06：工作目录写工具集 —— ★ 与模块级 AGENT 必须**同款**（M3/M4 老坑）
            workdir_list, workdir_read, workdir_create, workdir_edit, workdir_delete],
         middleware=[_ToolExclusionMiddleware(excluded=_EXCLUDED_FS_TOOLS),
@@ -476,7 +477,7 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
                probe: bool = False,
                write_sets: list[str] | None = None,
                workflows: list[str] | None = None,
-               computer_use: bool = False) -> str:
+               computer_use: bool = False, allow_control: bool = False) -> str:
     """在工作线程里执行同步的 agent.invoke（M1 上下文工程化改造）。
 
     上下文装配：
@@ -493,7 +494,7 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
     # v4.1-02：本轮 computer use 开关（contextvar）。关闭时 screen_capture 直接拒绝，
     #   计时器/去重状态也随本轮新建，跨轮不残留。
     from utils import cu_mode as _cu
-    _cu.begin_turn(computer_use)
+    _cu.begin_turn(computer_use, allow_control, thread_id)
     # 本轮「/」选了什么（技能 / workflow / 自配写工具集）—— 随消息落库，前端据此在用户气泡上打标签
     _picks = {"skills": [s for s in (skill_names or []) if s],
               "write_sets": [s for s in (write_sets or []) if s],
@@ -576,6 +577,21 @@ def _run_agent(question: str, thread_id: str, account_id: int | None = None,
             "【屏幕共享·本轮已开启】你可以调用 `screen_capture` 查看用户当前屏幕，"
             "截图会以图片形式随工具结果返回。只在确实需要看画面时调用；翻页/多屏可以多次调用（一页一次），"
             "同一画面重复调用会被系统去重。返回里带 capture_id 与屏幕矩形、缩放比，后续定位以同一帧为准。"
+        )).strip()
+    # v4.1-03：本轮额外开了「屏幕控制」，才告诉模型它能动手；关闭时这两张卡不存在。
+    if computer_use and allow_control:
+        cli_brief = (cli_brief + "\n\n" + (
+            "【屏幕控制·本轮已开启】你可以操作这台电脑的鼠标与键盘，工具有两个："
+            "`mouse_click(x, y, capture_id, reason, double)` 与 `type_text(text, capture_id, reason)`。"
+            "\n规矩（必须遵守）：\n"
+            "1. **先看再动**：每次动手前先 `screen_capture`，用那一帧的 `capture_id`；坐标是**截图上**的像素"
+            "（左上角为原点），工具会自动换算，不要自己算物理坐标。\n"
+            "2. **帧过期即重截**：工具会拒绝旧 capture_id，此时重新截图再点，不要猜。\n"
+            "3. **点进输入框再打字**：`type_text` 往当前焦点输入，先 `mouse_click` 点那个输入框。\n"
+            "4. **动作后回看**：关键一步（点搜索、打开页面）之后可以再截一帧确认结果，再决定下一步。\n"
+            "5. **不可逆动作先复述**：发送消息、删除、提交表单这类，先用一句话说明将要做什么，再做。\n"
+            "6. **每轮动作有上限**（默认 20 次），用完即止；做不完就报告进度让用户继续。\n"
+            "7. 只能操作白名单里的应用；被拒绝时把原因告诉用户，不要反复重试。"
         )).strip()
     # M3-5：画像待更新信号（服务端算数字，模型只判断相关性）。没有新数据时是空串，零开销。
     profile_signal = ""
@@ -939,6 +955,7 @@ async def api_chat(
     write_sets: str = Query("", description="06：本轮经「/」授权的**自配**写工具集名，逗号分隔；空=未授权（内置写工具不受影响，见裁定 11）"),
     workflows: str = Query("", description="06：本轮经「/」选中的 workflow 名，逗号分隔；空=不跑工作流"),
     computer_use: int = Query(0, description="v4.1-02：本轮是否开启「computer use」屏幕共享（按会话开关，1=开）"),
+    allow_control: int = Query(0, description="v4.1-03：本轮是否允许屏幕控制（看+动；需同时开 computer_use）"),
 ):
     sess = get_session(token)  # 校验登录，无效抛 401
     # 会话存储在本函数多处要用（含 v1.0 兼容路径下的 last_msg_id），提到函数顶部
@@ -992,7 +1009,8 @@ async def api_chat(
                                          probe=bool(probe),
                                          write_sets=_ws_names,       # 06：写工具集授权名单
                                          workflows=_wf_names,        # 06：本轮选中的 workflow
-                                         computer_use=bool(computer_use))   # v4.1-02 屏幕共享开关
+                                         computer_use=bool(computer_use),    # v4.1-02 屏幕共享开关
+                                         allow_control=bool(allow_control))  # v4.1-03 屏幕控制
         try:
             after_memory = cust.memory_get(token).get("content", "")
             if after_memory != before_memory:

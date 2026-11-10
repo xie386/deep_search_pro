@@ -23,7 +23,7 @@ def test_specs_are_well_formed():
         assert s.get("label"), s
         assert s.get("help"), s
         assert s.get("group") in settings.GROUP_LABELS, s
-        assert s.get("kind") in ("switch", "number", "select", "text", "secret"), s
+        assert s.get("kind") in ("switch", "number", "select", "text", "textarea", "secret"), s
         if s["kind"] == "select":
             assert s.get("choices"), s
             assert s.get("default") in s["choices"], s

@@ -30,7 +30,10 @@ if TYPE_CHECKING:
     from langchain_core.messages import AIMessage
 
 
+# 只看档的工具：关掉「computer use」就摘掉
 GATED_TOOLS: frozenset[str] = frozenset({"screen_capture"})
+# 动手档的工具：只有「看 + 动」两档都开才保留（03）
+CONTROL_TOOLS: frozenset[str] = frozenset({"mouse_click", "type_text"})
 
 
 def _debug(msg: str) -> None:
@@ -38,6 +41,15 @@ def _debug(msg: str) -> None:
     import os
     if os.environ.get("ZX_CU_DEBUG") == "1":
         print("[CU] " + msg, flush=True)
+
+
+def _dropped() -> frozenset[str]:
+    """本轮该摘掉哪些工具：没开「看」→ 两组都摘；开了「看」没开「动」→ 只摘动手组。"""
+    if not cu_mode.is_on():
+        return GATED_TOOLS | CONTROL_TOOLS
+    if not cu_mode.can_control():
+        return CONTROL_TOOLS
+    return frozenset()
 
 
 def _tool_name(tool: Any) -> str | None:
@@ -56,14 +68,16 @@ class ComputerUseGateMiddleware(AgentMiddleware[Any, Any, Any]):
         request: "ModelRequest[Any]",
         handler: "Callable[[ModelRequest[Any]], ModelResponse[Any]]",
     ) -> "ModelResponse[Any]":
-        if not cu_mode.is_on():
-            filtered = [t for t in request.tools if _tool_name(t) not in GATED_TOOLS]
-            if len(filtered) != len(request.tools):
-                _debug("同步路径：已从工具表摘掉 screen_capture（%d → %d）"
-                       % (len(request.tools), len(filtered)))
+        drop = _dropped()
+        if drop:
+            before = len(request.tools)
+            filtered = [t for t in request.tools if _tool_name(t) not in drop]
+            if len(filtered) != before:
+                _debug("同步路径：已摘掉 %s（%d → %d）" % ("/".join(sorted(drop)), before, len(filtered)))
                 request = request.override(tools=filtered)
         else:
-            _debug("同步路径：本轮已开启，工具表保留（%d 个）" % len(request.tools))
+            _debug("同步路径：本轮工具表保留（%d 个，control=%s）"
+                   % (len(request.tools), cu_mode.can_control()))
         return handler(request)
 
     async def awrap_model_call(
@@ -71,12 +85,14 @@ class ComputerUseGateMiddleware(AgentMiddleware[Any, Any, Any]):
         request: "ModelRequest[Any]",
         handler: "Callable[[ModelRequest[Any]], Awaitable[ModelResponse[ResponseT]]]",
     ) -> "ModelResponse[ResponseT] | AIMessage | ExtendedModelResponse[ResponseT]":
-        if not cu_mode.is_on():
-            filtered = [t for t in request.tools if _tool_name(t) not in GATED_TOOLS]
-            if len(filtered) != len(request.tools):
-                _debug("异步路径：已从工具表摘掉 screen_capture（%d → %d）"
-                       % (len(request.tools), len(filtered)))
+        drop = _dropped()
+        if drop:
+            before = len(request.tools)
+            filtered = [t for t in request.tools if _tool_name(t) not in drop]
+            if len(filtered) != before:
+                _debug("异步路径：已摘掉 %s（%d → %d）" % ("/".join(sorted(drop)), before, len(filtered)))
                 request = request.override(tools=filtered)
         else:
-            _debug("异步路径：本轮已开启，工具表保留（%d 个）" % len(request.tools))
+            _debug("异步路径：本轮工具表保留（%d 个，control=%s）"
+                   % (len(request.tools), cu_mode.can_control()))
         return await handler(request)

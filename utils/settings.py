@@ -53,6 +53,13 @@ SPECS: tuple[dict, ...] = (
          label="截图长边像素", help="默认 1456：16:9 屏可避免服务端二次降采样导致点击坐标偏移（见 02 裁定）。"),
     dict(key="SCREEN_SHOT_QUALITY", kind="number", default="85", group="switches", min=50, max=95,
          label="截图 JPEG 质量", help="默认 85，本机 2880×1620 压到长边 1456 约 200 KB。"),
+    # v4.1-03 屏幕控制：动作闸门与白名单（只影响本机注入，与模型/提示词无关）
+    dict(key="CU_MAX_ACTIONS_PER_TURN", kind="number", default="20", group="switches", min=1, max=50,
+         label="每轮动作上限", help="agent 一轮里最多点击/输入多少次（1~50），防止失控循环。用完即止。"),
+    dict(key="CU_WHITELIST", kind="textarea", default="", group="switches",
+         label="屏幕控制白名单（进程名）",
+         help="每行一个进程名，如 notepad.exe、chrome.exe（大小写不限，可省略 .exe）。"
+              "只有前台窗口与落点窗口都属于这些进程时，agent 才能点击/输入；留空表示全部拒绝。"),
     dict(key="ZX_STREAM", kind="switch", default="1", group="switches",
          label="流式输出", help="回答逐字返回（关掉则等全文生成完再一次性返回）。"),
     dict(key="ZX_ASSEMBLY_SOURCES", kind="select", default="new", group="switches",

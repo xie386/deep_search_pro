@@ -3070,6 +3070,13 @@
                      stroke-width="1.7" stroke-linecap="round"><rect x="3" y="4" width="18" height="12" rx="2"/>
                   <path d="M8 20h8M12 16v4"/></svg>
               </button>
+              <!-- v4.1-03：屏幕控制（看 + 动）；先开屏幕共享才可用 -->
+              <button class="wx-round" type="button" :class="{ on: ctlOn }" @click="toggleCtl"
+                      :style="cuOn ? '' : 'opacity:.4'"
+                      :title="ctlOn ? '屏幕控制：已开启（本轮 agent 可点击与输入，仅限白名单应用）' : (cuOn ? '屏幕控制：关闭（点一下允许本轮 agent 动手）' : '先开启屏幕共享，才能开屏幕控制')">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                     stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3l6 16 2.2-6.2L18 10.5z"/></svg>
+              </button>
               <button class="wx-round" type="button" :class="{ on: multiOpen }" @click="toggleMulti"
                       title="多媒体：图片 / 更多">
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
@@ -4779,6 +4786,11 @@
               </label>
               <span class="set-radio-slide"></span>
             </div>
+
+            <!-- 多行文本（如屏幕控制白名单）：每行一个进程名 -->
+            <textarea v-else-if="it.kind === 'textarea'" class="m-input set-val set-ta" rows="3"
+                      v-model="setVals[it.key]" :disabled="it.readonly"
+                      :placeholder="it.default || ''"></textarea>
 
             <!-- 文本 / 数字：019 粗野输入框（硬描边 + 硬投影 + 聚焦抖动由样式统一给） -->
             <input v-else class="m-input set-val" v-model="setVals[it.key]" :disabled="it.readonly"
@@ -7896,6 +7908,36 @@ createApp({
       try { cuSessions.value = JSON.parse(localStorage.getItem(CU_KEY) || '{}') || {}; } catch (err) {}
     });
 
+    // ── v4.1-03 屏幕控制：在「屏幕共享」之上再开一档，只有两档都开才允许动手 ──────
+    // 键 `zx_cu_control`（`{thread_id: true}`）；关掉屏幕共享时控制档一并失效（计算属性里判）。
+    const CTL_KEY = 'zx_cu_control';
+    const ctlSessions = ref((function () {
+      try { return JSON.parse(localStorage.getItem(CTL_KEY) || '{}') || {}; } catch (e) { return {}; }
+    })());
+    const ctlOn = computed(() => !!(cuOn.value && ctlSessions.value[activeThread.value]));
+    function _saveCtl(next) {
+      ctlSessions.value = next;
+      try {
+        localStorage.setItem(CTL_KEY, JSON.stringify(next));
+        localStorage.setItem(CTL_KEY + '_rev', String(Date.now()));
+      } catch (e) { /* 隐私模式等：只影响本窗 */ }
+    }
+    async function toggleCtl() {
+      const tid = activeThread.value;
+      if (!tid) { showToast('先选一个会话，再开屏幕控制', true); return; }
+      if (!cuOn.value) { showToast('先开启「屏幕共享」，再开「屏幕控制」', true); return; }
+      const next = Object.assign({}, ctlSessions.value);
+      if (next[tid]) { delete next[tid]; } else { next[tid] = true; }
+      _saveCtl(next);
+      showToast(next[tid]
+        ? '已开启屏幕控制：本轮 agent 可以点击与输入（仅限设置页白名单里的应用）'
+        : '已关闭屏幕控制：本轮 agent 只能看，不能动手');
+    }
+    window.addEventListener('storage', (e) => {
+      if (e.key !== CTL_KEY && e.key !== CTL_KEY + '_rev') return;
+      try { ctlSessions.value = JSON.parse(localStorage.getItem(CTL_KEY) || '{}') || {}; } catch (err) {}
+    });
+
     // ==================== M4a：技能与工具 ====================
     const skills = ref([]);            // 我的技能（agents_docs/{username}/skills/*.md）
     const skTab = ref(_initHash === 'shell' ? 'shell' : 'skill');   // 页面 tab：skill / shell / cli / mcp / api
@@ -8970,6 +9012,9 @@ createApp({
         const _imgIds = chatImages.value.map(function (x) { return x.id; });
         if (_imgIds.length) url += '&images=' + encodeURIComponent(_imgIds.join(','));
         if (_cu) url += '&computer_use=1';   // v4.1-02：本轮开启屏幕共享
+        // v4.1-03：本轮是否允许动手（只有屏幕共享也开着才有效）
+        const _ctl = (typeof ctlOn !== 'undefined') ? !!ctlOn.value : false;
+        if (_cu && _ctl) url += '&allow_control=1';
         const r = await fetch(url, { method:'POST', signal: ctl.signal });
         clearChatImages(true);   // 图已随本轮发出且已进气泡：收起预览条，但**保留 URL** ✓ 气泡缩略图要一直看得见 ✓
         const data = await r.json();
@@ -9794,7 +9839,7 @@ createApp({
       sendBindCode, confirmBind, sendUnbindCode, confirmUnbind, deleteSendCode, deleteConfirm,
       recOn, recBusy, recCancel, recLevel, recClock, recStart, recStop, recMoveOut, loadAsrStatus,
       chatImages, chatImgBusy, chatImgErr, chatFileInput, pickChatImages, onChatFiles,
-      multiOpen, toggleMulti, pickFromAlbum, soonHint, cuOn, toggleCu,
+      multiOpen, toggleMulti, pickFromAlbum, soonHint, cuOn, toggleCu, ctlOn, toggleCtl,
       onChatPaste, onChatDrop, removeChatImage, addChatImages, clearChatImages,
       // v4.0 大点 03：工具池测评（第 6 个页签）
       probe, probeCases, probeSheets, probeSheetOn, probeSheetHtml, probeBusy, probeErr, probeMsg,

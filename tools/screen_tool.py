@@ -203,11 +203,13 @@ def screen_capture(reason: str = "", monitor: int = 0) -> list | str:
     if meta["sha256"] == turn.last_hash:
         turn.last_cid = cid
         turn.last_meta = meta
+        cu_mode.set_frame(cid, meta["scale"], meta["screen_rect"])
         return head + "画面与上一帧完全相同，已复用上一帧（capture #%d），不再重复送图。" % cid
 
     turn.last_hash = meta["sha256"]
     turn.last_cid = cid
     turn.last_meta = meta
+    cu_mode.set_frame(cid, meta["scale"], meta["screen_rect"])
     meta_line = "帧信息：" + json.dumps(
         {"capture_id": cid, "screen_rect": meta["screen_rect"], "scale": meta["scale"]},
         ensure_ascii=False)

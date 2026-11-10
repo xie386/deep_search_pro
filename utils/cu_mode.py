@@ -27,15 +27,22 @@ class CuTurn:
     last_hash: str = ""            # 上一帧内容哈希（同屏去重）
     last_cid: int = 0              # 上一帧帧号（复用时回给模型）
     last_meta: dict = field(default_factory=dict)
+    # ---- v4.1-03 屏幕控制（见 Verdict/03） ----
+    control: bool = False          # 本轮是否「看 + 动」（allow_control）
+    actions: int = 0               # 本轮已执行的动作数（受 CU_MAX_ACTIONS_PER_TURN 约束）
+    last_scale: float = 1.0        # 最近一帧的缩放比（图上像素 ÷ 物理像素）
+    last_rect: tuple = ()          # 最近一帧的 screen_rect（物理像素 左/上/宽/高）
+    thread_id: str = ""            # 本轮会话号（写审计用）
 
 
 _OFF = CuTurn(on=False)
 _TURN: ContextVar[CuTurn | None] = ContextVar("cu_turn", default=None)
 
 
-def begin_turn(on: bool) -> CuTurn:
-    """开一轮：新建状态并挂到当前上下文。`on=False` 时工具一律拒绝。"""
-    turn = CuTurn(on=bool(on))
+def begin_turn(on: bool, control: bool = False, thread_id: str = "") -> CuTurn:
+    """开一轮：新建状态并挂到当前上下文。`on=False` 时工具一律拒绝；
+    `control=True` 表示本轮额外允许「动手」（屏幕控制，03 起）。"""
+    turn = CuTurn(on=bool(on), control=bool(on) and bool(control), thread_id=str(thread_id or ""))
     _TURN.set(turn)
     return turn
 
@@ -51,3 +58,24 @@ def current() -> CuTurn:
 
 def is_on() -> bool:
     return current().on
+
+
+def can_control() -> bool:
+    """本轮是否允许动手：既要「看」开着，也要「看 + 动」开着。"""
+    cur = current()
+    return bool(cur.on and cur.control)
+
+
+def set_frame(cid: int, scale: float, rect: tuple) -> None:
+    """截图工具把最近一帧的帧号/缩放比/屏幕矩形登记到轮内状态（03 的坐标换算与防旧帧依赖它）。"""
+    cur = current()
+    cur.last_cid = int(cid)
+    cur.last_scale = float(scale or 1.0)
+    cur.last_rect = tuple(rect or ())
+
+
+def bump_action() -> int:
+    """动作计数器 +1，返回执行后的值。"""
+    cur = current()
+    cur.actions += 1
+    return cur.actions

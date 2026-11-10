@@ -85,6 +85,7 @@
     </button>
     <div id="sessMenu" class="menu" hidden></div>
     <button id="cuS" title="屏幕共享：关闭（点一下开启本会话的 computer use）">🖥</button>
+    <button id="ctlS" title="屏幕控制：关闭（点一下允许本轮 agent 动手）">🖱</button>
     <button id="newS" title="新建会话">＋</button>
     <button id="renS" title="重命名会话">✎</button>
     <button id="delS" title="删除会话">🗑</button>
@@ -120,6 +121,7 @@
     const on = cuOn();
     cuBtn.classList.toggle('on', on);
     cuBtn.title = on ? '屏幕共享：已开启（本轮 agent 可看屏；球会暂时隐藏）' : '屏幕共享：关闭（点一下开启本会话的 computer use）';
+    if (typeof syncCtlBtn === 'function') syncCtlBtn();
   }
   async function toggleCu() {
     if (!thread) { addTip('先选一个会话，再开屏幕共享'); return; }
@@ -140,6 +142,30 @@
     } catch (e) {}
     syncCuBtn();
     addTip(cuOn() ? '屏幕共享已开启：本轮 agent 可看屏（共享期间球会暂时隐藏）' : '屏幕共享已关闭');
+  }
+  // ── v4.1-03 屏幕控制：在屏幕共享之上再开一档（键 zx_cu_control，与主窗共享） ──
+  const CTL_KEY = 'zx_cu_control';
+  const ctlBtn = $('ctlS');
+  function ctlMap() { try { return JSON.parse(localStorage.getItem(CTL_KEY) || '{}') || {}; } catch (e) { return {}; } }
+  function ctlOn() { return !!(cuOn() && ctlMap()[thread]); }
+  function syncCtlBtn() {
+    const on = ctlOn();
+    ctlBtn.classList.toggle('on', on);
+    ctlBtn.style.opacity = cuOn() ? '1' : '.4';
+    ctlBtn.title = on ? '屏幕控制：已开启（本轮 agent 可点击与输入，仅限白名单应用）'
+      : (cuOn() ? '屏幕控制：关闭（点一下允许本轮 agent 动手）' : '先开启屏幕共享，才能开屏幕控制');
+  }
+  function toggleCtl() {
+    if (!thread) { addTip('先选一个会话，再开屏幕控制'); return; }
+    if (!cuOn()) { addTip('先开启「屏幕共享」，再开「屏幕控制」'); return; }
+    const m = ctlMap();
+    if (m[thread]) delete m[thread]; else m[thread] = true;
+    try {
+      localStorage.setItem(CTL_KEY, JSON.stringify(m));
+      localStorage.setItem(CTL_KEY + '_rev', String(Date.now()));
+    } catch (e) {}
+    syncCtlBtn();
+    addTip(ctlOn() ? '屏幕控制已开启：本轮 agent 可点击与输入（仅限白名单应用）' : '屏幕控制已关闭：本轮 agent 只能看');
   }
   const SES_KEY = 'ball_thread';
   let thread = '', busy = false, sessions = [];
@@ -257,12 +283,14 @@
     addRow('user', q);
     const bubble = addRow('bot', '思考中…');
     const _cu = cuOn();                 // v4.1-02：本轮是否共享屏幕
+    const _ctl = ctlOn();               // v4.1-03：本轮是否允许动手（需共享也开着）
     if (_cu) { try { window.pywebview.api.cu_begin(); } catch (e) {} }
     setBusy(true);
     try {
       const d = await api('/api/chat?question=' + encodeURIComponent(q) +
                           '&thread_id=' + encodeURIComponent(thread) +
-                          (_cu ? '&computer_use=1' : ''), { method: 'POST' });
+                          (_cu ? '&computer_use=1' : '') +
+                          (_cu && _ctl ? '&allow_control=1' : ''), { method: 'POST' });
       bubble.textContent = d.answer || '（没有返回内容）';
       if (d.cancelled) bubble.textContent += '\n\n（已中断）';
     } catch (e) {
@@ -371,6 +399,7 @@
   sessMenu.addEventListener('click', (e) => e.stopPropagation());
   document.addEventListener('click', closeMenu);
   cuBtn.addEventListener('click', toggleCu);
+  ctlBtn.addEventListener('click', toggleCtl);
   $('newS').addEventListener('click', () => newSession().catch((e) => addTip('新建失败：' + e.message)));
   $('renS').addEventListener('click', () => renameSession().catch((e) => addTip('重命名失败：' + e.message)));
   $('delS').addEventListener('click', () => delSession().catch((e) => addTip('删除失败：' + e.message)));
@@ -407,6 +436,7 @@
   }
   window.addEventListener('storage', (e) => {
     if (e.key === CU_KEY || e.key === CU_KEY + '_rev') { syncCuBtn(); return; }
+    if (e.key === CTL_KEY || e.key === CTL_KEY + '_rev') { syncCtlBtn(); return; }
     if (e.key === 'zx_sessions_rev') { loadSessions().catch(() => {}); return; }
     if (e.key !== 'zx_chat_rev' || busy) return;      // 本窗正在回答时不打断
     let p = {};
