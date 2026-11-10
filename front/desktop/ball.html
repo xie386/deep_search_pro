@@ -25,7 +25,14 @@
   #bgLayer{position:fixed;inset:0;z-index:0;pointer-events:none;
     background-size:cover;background-position:center;background-repeat:no-repeat;
     opacity:var(--sub-bg-opacity);transition:opacity .2s ease}
-  header.bar,main,footer{position:relative;z-index:1}
+  /* ★ 层级：背景层 0 < 正文 1 < 顶栏 3。顶栏必须高于正文 —— 会话下拉是 header 的绝对定位子节点，
+     若与 main 同层，main（DOM 靠后）会盖住它：既透出消息文字，也让点击落到 main 上（真机踩过）。 */
+  /* ★ 头部必须压在上面：会话下拉是 header 的子元素、向下载 300px，
+     若 main 与 header 同层级（都为 1），main 会盖住菜单 —— 表现为「点不中、滚轮没反应」。 */
+  header.bar{position:relative;z-index:5}
+  main,footer{position:relative;z-index:1}
+  main{position:relative;z-index:1}
+  footer{position:relative;z-index:2}
   header.bar{position:relative;flex:0 0 40px;height:40px;display:flex;align-items:center;gap:6px;
     padding:0 8px 0 6px;background:var(--bar);color:var(--bar-ink);user-select:none}
   header .grip{width:20px;height:26px;display:flex;align-items:center;justify-content:center;
@@ -41,7 +48,7 @@
   header .sess i{font-style:normal;color:#9fb2a5;font-size:11px}
 
   /* 自绘会话下拉：不用原生 select —— 无边框窗里打开系统弹层会把进程拖崩 */
-  .menu{position:absolute;top:42px;left:28px;right:8px;z-index:90;max-height:300px;overflow-y:auto;
+  .menu{position:absolute;top:44px;left:28px;right:8px;z-index:90;max-height:300px;overflow-y:auto;
     background:#1b241d;border:1px solid rgba(255,255,255,.14);border-radius:9px;
     box-shadow:0 10px 26px rgba(0,0,0,.45);padding:4px}
   .menu[hidden]{display:none}
