@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 # 只看档的工具：关掉「computer use」就摘掉
 GATED_TOOLS: frozenset[str] = frozenset({"screen_capture"})
 # 动手档的工具：只有「看 + 动」两档都开才保留（03）
-CONTROL_TOOLS: frozenset[str] = frozenset({"mouse_click", "type_text", "press_key"})
+CONTROL_TOOLS: frozenset[str] = frozenset({"mouse_click", "type_text", "press_key", "mouse_scroll"})
 # CU 全量：开了「看」就只剩这几张卡（03 优化）。理由：computer use 是**多轮看图+动手**的
 #   短循环，把几十个业务工具留在表里既拖慢模型、又会诱发它去调无关工具（真机见过）。
 CU_TOOLS: frozenset[str] = GATED_TOOLS | CONTROL_TOOLS

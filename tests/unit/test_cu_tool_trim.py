@@ -11,7 +11,7 @@ class _T:
         self.name = name
 
 
-TOOLS = [_T(n) for n in ("screen_capture", "mouse_click", "type_text", "press_key",
+TOOLS = [_T(n) for n in ("screen_capture", "mouse_click", "type_text", "press_key", "mouse_scroll",
                          "web_search_only", "run_shell_command", "workdir_list")]
 
 
@@ -54,8 +54,8 @@ def test_look_only_keeps_capture_only():
     assert names == ["screen_capture"]
 
 
-def test_control_keeps_cu_four():
+def test_control_keeps_cu_five():
     cu_mode.begin_turn(True, True)
     names = _names_after_gate()
-    assert set(names) == {"screen_capture", "mouse_click", "type_text", "press_key"}
+    assert set(names) == {"screen_capture", "mouse_click", "type_text", "press_key", "mouse_scroll"}
     assert "web_search_only" not in names      # CU 模式下业务工具一律不发

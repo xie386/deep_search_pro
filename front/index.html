@@ -3073,7 +3073,7 @@
               <!-- v4.1-03：屏幕控制（看 + 动）；先开屏幕共享才可用 -->
               <button class="wx-round" type="button" :class="{ on: ctlOn }" @click="toggleCtl"
                       :style="cuOn ? '' : 'opacity:.4'"
-                      :title="ctlOn ? '屏幕控制：已开启（本轮 agent 可点击与输入，仅限白名单应用）' : (cuOn ? '屏幕控制：关闭（点一下允许本轮 agent 动手）' : '先开启屏幕共享，才能开屏幕控制')">
+                      :title="ctlOn ? '屏幕控制：已开启（本轮 agent 可点击、输入、滚动，仅限白名单应用；本轮其它工具与工具路由已关闭）' : (cuOn ? '屏幕控制：关闭 —— 点一下允许本轮 agent 动手（会关闭其它工具与工具路由，本轮只保留屏幕工具）' : '先开启屏幕共享，才能开屏幕控制')">
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
                      stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3l6 16 2.2-6.2L18 10.5z"/></svg>
               </button>
@@ -7930,7 +7930,7 @@ createApp({
       if (next[tid]) { delete next[tid]; } else { next[tid] = true; }
       _saveCtl(next);
       showToast(next[tid]
-        ? '已开启屏幕控制：本轮 agent 可以点击与输入（仅限设置页白名单里的应用）'
+        ? '已开启屏幕控制：本轮只保留屏幕工具（截图/点击/输入/按键/滚动），其它工具与工具路由已关闭；仅限白名单应用'
         : '已关闭屏幕控制：本轮 agent 只能看，不能动手');
     }
     window.addEventListener('storage', (e) => {

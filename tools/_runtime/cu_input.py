@@ -56,6 +56,8 @@ class INPUT(ctypes.Structure):
 
 INPUT_MOUSE, INPUT_KEYBOARD = 0, 1
 MOUSEEVENTF_MOVE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_ABSOLUTE = 0x1, 0x2, 0x4, 0x8000
+MOUSEEVENTF_WHEEL = 0x0800
+WHEEL_DELTA = 120
 KEYEVENTF_KEYUP = 0x2
 
 _c.SendInput.argtypes = [w.UINT, ctypes.POINTER(INPUT), ctypes.c_int]
@@ -286,6 +288,27 @@ def hotkey(*vks: int) -> None:
     seq = [_key(v) for v in vks] + [_key(v, True) for v in reversed(vks)]
     _send(seq)
     time.sleep(0.12)
+
+
+def scroll(x: int, y: int, notches: int) -> None:
+    """在物理坐标 (x, y) 处滚动滚轮。notches > 0 向上（页面向回翻），< 0 向下（页面往下翻）。
+
+    每格 120 单位；一次调用最多 20 格，超出截断（防止一口气甩飞列表）。
+    """
+    dpi_aware()
+    n = int(notches)
+    if not n:
+        return
+    _c.SetCursorPos(int(x), int(y))
+    time.sleep(0.05)
+    step = WHEEL_DELTA if n > 0 else -WHEEL_DELTA
+    for _ in range(min(abs(n), 20)):
+        ev = INPUT()
+        ev.type = INPUT_MOUSE
+        ev.mi = MOUSEINPUT(0, 0, step & 0xFFFFFFFF, MOUSEEVENTF_WHEEL, 0, None)
+        _send([ev])
+        time.sleep(0.05)
+    time.sleep(0.18)
 
 
 def press(key: str, times: int = 1) -> None:

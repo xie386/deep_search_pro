@@ -104,6 +104,30 @@ def test_click_reports_landing_window(monkeypatch):
     assert "落点所在窗口：哔哩哔哩 - 搜索" in out
 
 
+def test_scroll_ok(monkeypatch):
+    turn = _turn()
+    got = {}
+    monkeypatch.setattr(cu_input, "check_target", lambda x, y: (True, "SakuraCat.exe"))
+    monkeypatch.setattr(cu_input, "scroll", lambda x, y, n: got.update(x=x, y=y, n=n))
+    monkeypatch.setattr(cu_input, "audit", lambda *a, **k: None)
+    monkeypatch.setattr(cu_input, "foreground_process", lambda: "SakuraCat.exe")
+    monkeypatch.setattr(cu_input, "window_text_at", lambda x, y: "SakuraCat - 选择节点")
+    out = control_tool.mouse_scroll.invoke({"x": 100, "y": 50, "notches": -5, "capture_id": 3,
+                                            "reason": "往下找新加坡节点"})
+    assert "向下滚动 5 格" in out and "SakuraCat - 选择节点" in out
+    assert got == {"x": 200, "y": 100, "n": -5}
+    assert turn.actions == 1
+
+
+def test_scroll_rejects_zero_and_bad(monkeypatch):
+    _turn()
+    monkeypatch.setattr(cu_input, "check_target", lambda x, y: (True, "x.exe"))
+    assert "没有滚动" in control_tool.mouse_scroll.invoke({"x": 1, "y": 1, "notches": 0, "capture_id": 3})
+    # 非整数在 schema 层就被 pydantic 拦下（不会进到函数体），这里只确认它确实被拒
+    with pytest.raises(Exception):
+        control_tool.mouse_scroll.invoke({"x": 1, "y": 1, "notches": "abc", "capture_id": 3})
+
+
 def test_type_ok_and_empty(monkeypatch):
     turn = _turn()
     monkeypatch.setattr(cu_input, "check_foreground", lambda: (True, "notepad.exe"))

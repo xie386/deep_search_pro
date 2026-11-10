@@ -85,7 +85,7 @@
     </button>
     <div id="sessMenu" class="menu" hidden></div>
     <button id="cuS" title="屏幕共享：关闭（点一下开启本会话的 computer use）">🖥</button>
-    <button id="ctlS" title="屏幕控制：关闭（点一下允许本轮 agent 动手）">🖱</button>
+    <button id="ctlS" title="屏幕控制：关闭 —— 点一下允许本轮 agent 动手（会关闭其它工具与工具路由，本轮只保留屏幕工具）">🖱</button>
     <button id="newS" title="新建会话">＋</button>
     <button id="renS" title="重命名会话">✎</button>
     <button id="delS" title="删除会话">🗑</button>
@@ -152,8 +152,8 @@
     const on = ctlOn();
     ctlBtn.classList.toggle('on', on);
     ctlBtn.style.opacity = cuOn() ? '1' : '.4';
-    ctlBtn.title = on ? '屏幕控制：已开启（本轮 agent 可点击与输入，仅限白名单应用）'
-      : (cuOn() ? '屏幕控制：关闭（点一下允许本轮 agent 动手）' : '先开启屏幕共享，才能开屏幕控制');
+    ctlBtn.title = on ? '屏幕控制：已开启（本轮 agent 可点击、输入、滚动，仅限白名单应用；其它工具与工具路由已关闭）'
+      : (cuOn() ? '屏幕控制：关闭 —— 点一下允许本轮 agent 动手（会关闭其它工具与工具路由）' : '先开启屏幕共享，才能开屏幕控制');
   }
   function toggleCtl() {
     if (!thread) { addTip('先选一个会话，再开屏幕控制'); return; }

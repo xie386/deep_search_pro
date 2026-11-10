@@ -179,6 +179,53 @@ def press_key(key: str, capture_id: int, reason: str = "", times: int = 1) -> st
                fg or "未知", n, _limit()))
 
 
+@tool
+def mouse_scroll(x: int, y: int, notches: int, capture_id: int, reason: str = "") -> str:
+    """在屏幕某个位置上滚动滚轮（翻列表、翻网页、翻节点）。只在开启「屏幕控制」的本轮可用。
+
+    什么时候该用：
+      · 目标在列表/长页面里没露出来（比如节点列表、聊天记录、网页正文），需要往下翻；
+      · 翻完要**重新截图**再看，不要拿翻之前的坐标继续点（列表位置已经变了）。
+    什么时候不该用：
+      · 内容已经完整显示在画面里 —— 直接点即可，别多此一举；
+      · 想点某个具体项而它已经在视野内 —— 用 `mouse_click`。
+    参数：
+      · x, y：**截图上**的像素坐标（滚动发生在光标所在位置，所以要先指到列表/页面区域上）；
+      · notches：滚几格。正数=向上翻（回到前面），负数=向下翻（往后看）；单次最多 ±20 格，
+        一格约等于鼠标滚轮"咔"一下；
+      · capture_id：那一帧的编号（必须是最新帧，确认你滚的是当前这个界面）；
+      · reason：一句话说明为什么要滚（写进对话与审计）。
+    返回：一行结果说明（滚了几格、滚完前台是什么窗口），或一句人话的拒绝原因。
+    """
+    ok, msg = _guard(capture_id)
+    if not ok:
+        return msg
+    try:
+        n = int(notches)
+    except (TypeError, ValueError):
+        return "notches 必须是整数（正数向上翻，负数向下翻）。"
+    if n == 0:
+        return "notches 为 0，没有滚动。"
+    px, py = _to_physical(x, y)
+    passed, who = cu_input.check_target(px, py)
+    if not passed:
+        return who
+    try:
+        cu_input.scroll(px, py, n)
+    except Exception as exc:                             # noqa: BLE001
+        return "滚动失败：%s（本轮其它能力不受影响）" % exc
+    cnt = cu_mode.bump_action()
+    cu_input.audit(_thread_id(), capture_id, "scroll", x=px, y=py, notches=n,
+                   reason=str(reason or "")[:200])
+    fg = cu_input.foreground_process()
+    where = cu_input.window_text_at(px, py)
+    return ("已在图上 (%d, %d)（屏幕物理 %d, %d）向%s滚动 %d 格%s。当前前台进程：%s；"
+            "滚动所在窗口：%s。本轮已用 %d/%d 次动作。建议重新截图确认翻到了哪里。"
+            % (x, y, px, py, "上" if n > 0 else "下", abs(n),
+               ("；原因：" + reason.strip()) if reason and reason.strip() else "",
+               fg or "未知", where or "（未知）", cnt, _limit()))
+
+
 def _thread_id() -> str:
     """审计用的会话号（轮内状态里带着，见 cu_mode.begin_turn）。"""
     return str(cu_mode.current().thread_id or "")
