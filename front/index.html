@@ -6753,10 +6753,13 @@ createApp({
             price_in_cached: numOrNull(p.price_in_cached),
             price_in_uncached: numOrNull(p.price_in_uncached),
             price_out: numOrNull(p.price_out),
-            supports_vision: !!newProv.supports_vision }) });
+            supports_vision: !!p.supports_vision }) });   // ★ 必须取自本行 p，不能借用「新建配置」表单里的字段
         const d = await r.json();
         if (!r.ok) { showToast(d.detail || '保存失败', true); return; }
         showToast('已保存 ✅');
+        // 保存后重新拉一遍：让界面显示的是**库里真实的值**，而不是刚才的本地状态
+        // （真机踩过：勾了「支持图片」，保存时 payload 取错对象 → 库里仍是 0，界面却一直勾着）
+        loadProviders();
       } catch (e) { showToast('保存出错：' + e.message, true); }
     }
     async function activateProvider(p) {
