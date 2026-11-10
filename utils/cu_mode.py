@@ -33,6 +33,7 @@ class CuTurn:
     last_scale: float = 1.0        # 最近一帧的缩放比（图上像素 ÷ 物理像素）
     last_rect: tuple = ()          # 最近一帧的 screen_rect（物理像素 左/上/宽/高）
     thread_id: str = ""            # 本轮会话号（写审计用）
+    zooms: int = 0                 # 本轮「局部放大」帧数（不占截图额度，单独封顶）
 
 
 _OFF = CuTurn(on=False)

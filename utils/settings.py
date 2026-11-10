@@ -54,6 +54,10 @@ SPECS: tuple[dict, ...] = (
     dict(key="SCREEN_SHOT_QUALITY", kind="number", default="85", group="switches", min=50, max=95,
          label="截图 JPEG 质量", help="默认 85，本机 2880×1620 压到长边 1456 约 200 KB。"),
     # v4.1-03 屏幕控制：动作闸门与白名单（只影响本机注入，与模型/提示词无关）
+    dict(key="SCREEN_SMALL_TARGET_PX", kind="number", default="40", group="switches", min=8, max=200,
+         label="「小图标」判定阈值（图像像素）",
+         help="在截图里外接框长边小于这个值的目标算「小」，agent 会先局部放大再点（放大帧不占截图额度）。"
+              "默认 40：按模型报坐标的常见误差（±10~20 像素）取两倍余量；小于 80 物理像素的控件都算小。"),
     dict(key="CU_MAX_ACTIONS_PER_TURN", kind="number", default="20", group="switches", min=1, max=50,
          label="每轮动作上限", help="agent 一轮里最多点击/输入多少次（1~50），防止失控循环。用完即止。"),
     dict(key="CU_WHITELIST", kind="textarea", default="python.exe", group="switches",

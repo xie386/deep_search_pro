@@ -73,6 +73,50 @@ def test_missing_mss(monkeypatch):
     assert isinstance(out, str) and "mss" in out
 
 
+def test_zoom_region_maps_to_physical_and_skips_quota(monkeypatch):
+    """局部放大：图坐标 → 物理坐标换算正确；不占截图额度，另计 zooms。"""
+    turn = cu_mode.begin_turn(True, True)
+    turn.last_cid, turn.last_scale, turn.last_rect = 1, 0.5, (0, 0, 2880, 1620)
+    seen = {}
+
+    def fake_grab(monitor=0, region=None):
+        seen["region"] = region
+        return _jpeg(), {"monitor": 0, "screen_rect": [200, 200, 120, 120],
+                         "image_size": [360, 360], "scale": 3.0, "zoom": 3.0,
+                         "bytes": 1000, "sha256": "z"}
+
+    monkeypatch.setattr(screen_tool, "_grab", fake_grab)
+    out = screen_tool.screen_capture.invoke({"reason": "看小图标", "region": [100, 100, 60, 60]})
+    assert isinstance(out, list) and len(out) == 2
+    assert seen["region"] == (200, 200, 120, 120)        # 图上 ÷ 0.5 → 物理
+    assert "已放大第 1 块" in out[0]["text"] and "capture #2" in out[0]["text"]
+    assert turn.shots == 0 and turn.zooms == 1           # ★ 不占截图额度
+    assert turn.last_cid == 2 and turn.last_scale == 3.0  # 后续点击以放大帧为准
+
+
+def test_zoom_requires_prior_frame(monkeypatch):
+    cu_mode.begin_turn(True, True)
+    out = screen_tool.screen_capture.invoke({"reason": "x", "region": [1, 1, 40, 40]})
+    assert isinstance(out, str) and "先调用" in out
+
+
+def test_zoom_cap(monkeypatch):
+    turn = cu_mode.begin_turn(True, True)
+    turn.last_cid, turn.last_scale, turn.last_rect = 1, 1.0, (0, 0, 100, 100)
+    monkeypatch.setattr(screen_tool, "_max_zooms", lambda: 1)
+    monkeypatch.setattr(screen_tool, "_grab", lambda monitor=0, region=None: (_jpeg(), _meta("a")))
+    assert isinstance(screen_tool.screen_capture.invoke({"reason": "a", "region": [0, 0, 40, 40]}), list)
+    out = screen_tool.screen_capture.invoke({"reason": "b", "region": [0, 0, 40, 40]})
+    assert isinstance(out, str) and "放大次数已用完" in out
+
+
+def test_zoom_rejects_tiny_region(monkeypatch):
+    turn = cu_mode.begin_turn(True, True)
+    turn.last_cid, turn.last_scale, turn.last_rect = 1, 1.0, (0, 0, 100, 100)
+    out = screen_tool.screen_capture.invoke({"reason": "x", "region": [0, 0, 8, 8]})
+    assert isinstance(out, str) and "太小" in out
+
+
 def test_edge_and_quality_clamped(monkeypatch):
     from utils import settings
     monkeypatch.setattr(settings, "get", lambda k, d=None: {"SCREEN_SHOT_EDGE": "99999",

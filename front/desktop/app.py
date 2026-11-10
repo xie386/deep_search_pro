@@ -209,8 +209,12 @@ def _set_capture_excluded(win, on: bool) -> bool:
         return False
 
 
-def _capture_for_agent(monitor: int = 0):
-    """给 agent 抓一帧：先排除自身窗口、藏球，抓完立刻还原。返回 (jpeg, meta)。"""
+def _capture_for_agent(monitor: int = 0, region=None):
+    """给 agent 抓一帧：先排除自身窗口、藏球，抓完立刻还原。返回 (jpeg, meta)。
+
+    `region` = 物理像素 (x, y, w, h)：只抓这一块，且**按原生像素返回**（必要时放大 2~3 倍），
+    用于「小图标看不清 → 局部放大」的二次看图。region 为 None 时行为与原来完全一致。
+    """
     import hashlib
     import io as _io
     import time as _time
@@ -240,12 +244,41 @@ def _capture_for_agent(monitor: int = 0):
         _time.sleep(0.06)
         raw, mon, idx = _grab_once()
         img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
-        w, h = img.size
         try:
             edge = max(320, min(2048, int(_settings.get("SCREEN_SHOT_EDGE", 1456))))
             quality = max(50, min(95, int(_settings.get("SCREEN_SHOT_QUALITY", 85))))
         except Exception:               # noqa: BLE001
             edge, quality = 1456, 85
+
+        if region:
+            # 局部放大：先按物理像素裁出来，再按「小就放大」的策略上采样。
+            # ★ 不按 SCREEN_SHOT_EDGE 缩小 —— 局部图的意义就是把小控件放大给模型看。
+            rx, ry, rw, rh = [int(v) for v in region]
+            left = max(0, rx - mon["left"])
+            top = max(0, ry - mon["top"])
+            box = (left, top, min(left + rw, img.width), min(top + rh, img.height))
+            if box[2] - box[0] < 8 or box[3] - box[1] < 8:
+                raise ValueError("局部区域太小（%dx%d）" % (box[2] - box[0], box[3] - box[1]))
+            img = img.crop(box)
+            long_edge = max(img.width, img.height)
+            zoom = 3.0 if long_edge < 300 else (2.0 if long_edge < 900 else 1.0)
+            if zoom > 1.0:
+                img = img.resize((int(round(img.width * zoom)), int(round(img.height * zoom))),
+                                 Image.LANCZOS)
+            data = _io.BytesIO()
+            img.save(data, "JPEG", quality=95, optimize=True)
+            jpeg = data.getvalue()
+            meta = {"monitor": idx,
+                    "screen_rect": [int(rx), int(ry), int(rw), int(rh)],
+                    "image_size": [int(img.width), int(img.height)],
+                    "scale": round(float(img.width) / float(rw), 4),
+                    "zoom": round(float(zoom), 2),
+                    "bytes": len(jpeg),
+                    "sha256": hashlib.sha256(jpeg).hexdigest(),
+                    "elapsed_ms": int((_time.perf_counter() - t0) * 1000)}
+            return jpeg, meta
+
+        w, h = img.size
         scale = min(1.0, edge / float(max(w, h)))
         if scale < 1.0:
             img = img.resize((max(1, int(round(w * scale))), max(1, int(round(h * scale)))),
@@ -339,8 +372,17 @@ def _start_cu_server() -> None:
                 mon = int(qs.get("monitor", ["0"])[0])
             except Exception:            # noqa: BLE001
                 mon = 0
+            region = None
+            raw_region = (qs.get("region", [""])[0] or "").strip()
+            if raw_region:
+                try:
+                    parts = [int(float(v)) for v in raw_region.split(",")]
+                    if len(parts) == 4:
+                        region = parts
+                except Exception:        # noqa: BLE001
+                    region = None
             try:
-                data, meta = _capture_for_agent(mon)
+                data, meta = _capture_for_agent(mon, region)
             except Exception as e:       # noqa: BLE001
                 log("[屏幕共享] 抓图失败：%s" % e)
                 self.send_error(500, str(e))
