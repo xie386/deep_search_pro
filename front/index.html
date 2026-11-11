@@ -5093,7 +5093,7 @@ createApp({
       const n = (left == null) ? 50 : left;
       const a = desktopApi();
       if (a && a.auth_state) {
-        try { a.auth_state(!!token.value, username.value || '', token.value || ''); } catch (e) {}
+        try { a.auth_state(!!token.value, username.value || '', token.value || '', 'mount'); } catch (e) {}
         return;
       }
       if (n > 0) setTimeout(() => reportAuthWhenReady(n - 1), 300);
@@ -5954,7 +5954,7 @@ createApp({
         storeSet('zx_user', data.account.username);
         storeSet('zx_role', data.account.role);
         // v4.1-01：登录成功 → 外壳按设置拉起悬浮球
-        try { const _a = desktopApi(); if (_a && _a.auth_state) _a.auth_state(true, data.account.username); } catch (e) {}
+        try { const _a = desktopApi(); if (_a && _a.auth_state) _a.auth_state(true, data.account.username, data.token || '', 'login'); } catch (e) {}
         resetAccountState();   // ★ 换账号先清干净，再按新账号重新加载（否则技能与工具仍显示上个账号）
         go('home');
         connectWS(); loadMyData();

@@ -293,7 +293,11 @@ class BallWindow:
         self._thread = None
         self._ready = threading.Event()
         self._wndproc = WNDPROC(self._proc)
-        self._cls = "ZxIntelBallWindow"
+        # ★ 类名必须每个实例唯一：窗口类的 lpfnWndProc 在 RegisterClass 时就被钉死了，
+        #   同名类第二次注册会返回 1410（已存在），新窗口便**继续沿用第一个实例的
+        #   WndProc** —— 于是新球的 WM_TIMER / 鼠标消息全部落到一个早已销毁的旧实例上，
+        #   表现就是「球出现了但帧不动、点着没反应」（2026-11-11 反复重登复现）。
+        self._cls = "ZxIntelBallWindow_%x" % (id(self) & 0xFFFFFF)
         self._dragging = False
         self._moved = False
         self._drag_origin = (0, 0)
@@ -316,6 +320,7 @@ class BallWindow:
         self._next_wander_at = 0.0
         self._paint_cache: dict = {}
         self._pending_mode = None
+        self._last_tick = 0.0                     # 心跳时间戳（看门狗据此判断是否卡死）
 
     # ── 对外接口 ──────────────────────────────────────────────────────
     def start(self, timeout: float = 3.0) -> bool:
@@ -351,6 +356,14 @@ class BallWindow:
         self._pending_mode = mode
         if self.hwnd:
             user32.PostMessageW(self.hwnd, CMD_MODE, 0, 0)
+
+    def healthy(self, idle_limit_ms: float = 2500.0) -> bool:
+        """线程还活着、心跳没停 —— 看门狗用它判断球是不是卡死了。"""
+        if not self.hwnd or not self._thread or not self._thread.is_alive():
+            return False
+        if not user32.IsWindow(self.hwnd):
+            return False
+        return (time.monotonic() * 1000.0 - (self._last_tick or 0.0)) < idle_limit_ms
 
     def set_wander(self, on: bool) -> None:
         """开/关自主漫步（设置项 BALL_WANDER）。"""
@@ -417,7 +430,11 @@ class BallWindow:
         if self.pet:
             self._pick_idle_group(force=True)
             self._paint_current()
-            user32.SetTimer(self.hwnd, TIMER_TICK, TICK_MS, None)
+            tid = user32.SetTimer(self.hwnd, TIMER_TICK, TICK_MS, None)
+            if not tid:
+                self.log("[球] SetTimer 失败 err=%s" % ctypes.get_last_error())
+            elif os.environ.get("ZX_BALL_DEBUG") == "1":
+                self.log("[球] 定时器已启动 id=%s hwnd=%s" % (tid, self.hwnd))
         try:
             user32.RegisterHotKey(None, HOTKEY_ID, self.hotkey[0], self.hotkey[1])
         except Exception:              # noqa: BLE001
@@ -622,9 +639,11 @@ class BallWindow:
     def _tick(self) -> None:
         """33ms 心跳：切帧、待机换组、随机漫步。"""
         now = time.monotonic() * 1000.0
+        self._last_tick = now
         if os.environ.get("ZX_BALL_DEBUG") == "1" and now - getattr(self, "_hb", 0) > 3000:
             self._hb = now
-            self.log("[球] 心跳 mode=%s frame=%d" % (self.mode, self._frame_i))
+            self.log("[球] 心跳 mode=%s frame=%d obj=%d tick=%.0f"
+                     % (self.mode, self._frame_i, id(self) & 0xFFFF, self._last_tick))
 
         if self.mode == MODE_CLICK and now >= self._click_until:
             self._apply_mode(self._mode_before_click or MODE_IDLE)

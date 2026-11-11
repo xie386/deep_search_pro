@@ -483,6 +483,58 @@ def _stop_ball() -> None:
     _BALL = None
 
 
+_BALL_WD_STARTED = False
+
+
+def _start_ball_watchdog() -> None:
+    """球的看门狗：卡死/消失就自己拉起来。
+
+    ★ 2026-11-11 真机：同一账号反复「退出→重登」，第 3 次之后球会出现但卡死，
+      而且第 2 次会「出现一下又消失」。这两件事靠外壳自己修一次都比让用户重启省事：
+        · 球在，但心跳停了 / 线程死了 / 窗口没了 → 收掉重开
+        · 已登录但球不在（被误报的登出收走了） → 重新开
+      3 秒判一次，重启最快 5 秒一次，避免抖动时刷屏。
+    """
+    global _BALL_WD_STARTED
+    if _BALL_WD_STARTED:
+        return
+    _BALL_WD_STARTED = True
+
+    def _loop():
+        import time as _t
+        last_fix = 0.0
+        while True:
+            _t.sleep(3.0)
+            try:
+                if not _BALL_CFG.get("enabled") or not _BALL_LOGGED_IN:
+                    continue
+                now = _t.monotonic()
+                if _BALL is None:
+                    if now - last_fix < 5:
+                        continue
+                    log("[球] 看门狗：已登录但球不在，重新拉起")
+                    last_fix = now
+                    _start_ball()
+                    continue
+                if _BALL.healthy():
+                    continue
+                if now - last_fix < 5:
+                    continue
+                last_fix = now
+                import time as _tt
+                _d = _tt.monotonic() * 1000.0 - (getattr(_BALL, "_last_tick", 0.0) or 0.0)
+                log("[球] 看门狗：球心跳停了（窗口=%s 线程活=%s 距上次心跳 %.0fms），收掉重开"
+                    % (_BALL.hwnd, bool(_BALL._thread and _BALL._thread.is_alive()), _d))
+                _stop_ball()
+                _t.sleep(0.3)
+                _start_ball()
+            except Exception as e:  # noqa: BLE001
+                log("[球] 看门狗异常：%s" % e)
+
+    import threading as _th
+    _th.Thread(target=_loop, name="ball-watchdog", daemon=True).start()
+
+
 def _sweep_stale_balls() -> None:
     """收掉上一个账号留下的球窗（线程没退干净时它还会停在屏幕上、点不动）。
 
@@ -499,7 +551,7 @@ def _sweep_stale_balls() -> None:
         def _cb(hwnd, _):
             buf = ctypes.create_unicode_buffer(120)
             u.GetClassNameW(hwnd, buf, 120)
-            if buf.value == "ZxIntelBallWindow":
+            if buf.value.startswith("ZxIntelBallWindow"):
                 found.append(hwnd)
             return True
 
@@ -579,12 +631,64 @@ def _on_auth_state(logged_in: bool, username: str = "") -> None:
                               ("（%s）" % username) if username else ""))
     if logged_in:
         _start_ball()
+        _start_ball_watchdog()
         _refresh_panel()
+        _maybe_start_cycle_test()
         return
     if _PANEL is not None:
         _panel_op(lambda: _PANEL.hide())
         _PANEL_SHOWN = False
     _stop_ball()
+
+
+_CYCLE_STARTED = False
+
+
+def _maybe_start_cycle_test() -> None:
+    """自检钩子：ZX_BALL_CYCLE=N 时反复「退出→登录」N 轮，复现同一账号反复重登的问题。
+
+    只在设了这个环境变量时生效，正常启动完全不走。
+    """
+    global _CYCLE_STARTED
+    if _CYCLE_STARTED:
+        return
+    n = int(os.environ.get("ZX_BALL_CYCLE") or 0)
+    if n <= 0:
+        return
+    _CYCLE_STARTED = True
+
+    def _run():
+        import time as _t
+        for i in range(1, n + 1):
+            _t.sleep(6)
+            # 贴近真机：先把面板开一次、点几个状态，再退出
+            try:
+                _toggle_panel(True)
+                _t.sleep(2.0)
+                if _BALL is not None:
+                    _BALL.set_mode("waitkb")
+                    _t.sleep(0.6)
+                    _BALL.set_mode("idle")
+                _toggle_panel(False)
+                _t.sleep(1.0)
+            except Exception as e:  # noqa: BLE001
+                log("[自检] 面板操作异常：%s" % e)
+            log("[自检] 第 %d 轮：模拟退出登录" % i)
+            _on_auth_state(False, "")
+            _t.sleep(6)
+            log("[自检] 第 %d 轮：模拟重新登录" % i)
+            _on_auth_state(True, "selftest")
+            _t.sleep(3)
+            alive = _BALL is not None and getattr(_BALL, "_thread", None) is not None \
+                and _BALL._thread.is_alive()
+            hwnd = getattr(_BALL, "hwnd", None)
+            import ctypes as _c
+            hung = bool(_c.windll.user32.IsHungAppWindow(_c.c_void_p(hwnd))) if hwnd else None
+            log("[自检] 第 %d 轮结果：球=%s 线程活=%s hwnd=%s 卡窗=%s"
+                % (i, _BALL is not None, alive, hwnd, hung))
+
+    import threading as _th
+    _th.Thread(target=_run, name="ball-cycle-test", daemon=True).start()
 
 
 def _load_ball_cfg() -> dict:
@@ -1363,7 +1467,8 @@ class DesktopApi:
         _toggle_panel(True)
         return True
 
-    def auth_state(self, logged_in: bool = False, username: str = "", token: str = ""):
+    def auth_state(self, logged_in: bool = False, username: str = "", token: str = "",
+                   reason: str = ""):
         """页面回报登录态（登录/登出/启动校验后各调一次）——球据此存在或消失。
 
         ★ 2026-11-11：光看页面里的 token 非空不够。后端重启后旧 token 已失效，页面
@@ -1371,6 +1476,8 @@ class DesktopApi:
           点开就是白板浮窗（面板的接口全 401）。这里拿 token 去后端问一次，问了才算数。
         """
         ok = bool(logged_in)
+        if reason:
+            log("[球] 页面回报登录态：%s（来源 %s）" % ("已登录" if ok else "未登录", reason))
         if ok and token:
             ok = _verify_token(token)
             if not ok:
