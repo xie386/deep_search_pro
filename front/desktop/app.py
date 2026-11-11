@@ -245,8 +245,9 @@ def _capture_for_agent(monitor: int = 0, region=None):
         raw, mon, idx = _grab_once()
         img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
         try:
-            edge = max(320, min(2048, int(_settings.get("SCREEN_SHOT_EDGE", 1456))))
-            quality = max(50, min(95, int(_settings.get("SCREEN_SHOT_QUALITY", 85))))
+            from utils import settings as _st
+            edge = max(320, min(2048, _st.get_int("SCREEN_SHOT_EDGE", 1456)))
+            quality = max(50, min(95, _st.get_int("SCREEN_SHOT_QUALITY", 85)))
         except Exception:               # noqa: BLE001
             edge, quality = 1456, 85
 
@@ -499,8 +500,13 @@ def _start_ball() -> None:
         )
         if ball.start():
             _set_ball(ball)
-            log("[球] 已启动：%d 逻辑像素，倍率 %.2f，快捷键 %s"
-                % (ball.size, ball.scale, _BALL_CFG.get("hotkey")))
+            try:
+                ball.set_wander(bool(_BALL_CFG.get("wander", True)))
+            except Exception:                  # noqa: BLE001
+                pass
+            log("[球] 已启动：%d 逻辑像素，倍率 %.2f，快捷键 %s，漫步 %s，素材组 %d"
+                % (ball.size, ball.scale, _BALL_CFG.get("hotkey"),
+                   "开" if _BALL_CFG.get("wander", True) else "关", len(ball.groups)))
         else:
             log("[球] 启动失败（主窗口不受影响）")
     except Exception as e:  # noqa: BLE001
@@ -510,6 +516,8 @@ def _start_ball() -> None:
 def _on_auth_state(logged_in: bool, username: str = "") -> None:
     """页面回报登录态：登录后按设置起球，退出登录立刻收球并关面板（bug2）。"""
     global _BALL_LOGGED_IN, _PANEL_SHOWN
+    if os.environ.get("ZX_BALL_FAKE_LOGIN") == "1" and not logged_in:
+        return                                   # 自检钩子：忽略页面回报的未登录，别把球收掉
     _BALL_LOGGED_IN = bool(logged_in)
     log("[球] 登录态：%s%s" % ("已登录" if logged_in else "未登录",
                               ("（%s）" % username) if username else ""))
@@ -528,16 +536,23 @@ def _on_auth_state(logged_in: bool, username: str = "") -> None:
 
 def _load_ball_cfg() -> dict:
     """读悬浮球设置（settings 表 → 默认值）。读不到不影响主窗口。"""
-    cfg = {"enabled": False, "size": 64, "opacity": 100, "on_top": True, "hotkey": "Ctrl+Alt+Space"}
+    cfg = {"enabled": False, "size": 80, "opacity": 100, "on_top": True, "hotkey": "Ctrl+Alt+Space",
+           "wander": True}
     try:
         if str(ROOT) not in sys.path:
             sys.path.insert(0, str(ROOT))
         from utils import settings as st
         cfg["enabled"] = st.get_bool("BALL_ENABLED", False)
-        cfg["size"] = max(32, min(96, st.get_int("BALL_SIZE", 64)))
+        _size = st.get_int("BALL_SIZE", 80)
+        if _size == 64:
+            # 2026-11-11 用户反馈 64 太小（桌宠细节看不清）：旧默认值直接抬到 80；
+            # 显式改成别的值（32~63 / 65~128）都按用户的来。
+            _size = 80
+        cfg["size"] = max(32, min(128, _size))
         cfg["opacity"] = max(40, min(100, st.get_int("BALL_OPACITY", 100)))
         cfg["on_top"] = st.get_bool("BALL_ON_TOP", True)
         cfg["hotkey"] = st.get("BALL_HOTKEY", "Ctrl+Alt+Space") or "Ctrl+Alt+Space"
+        cfg["wander"] = st.get_bool("BALL_WANDER", True)
     except Exception as e:  # noqa: BLE001
         log("[球] 读设置失败，用默认值（不启用）：%s" % e)
     # 真机自检用：真实开关在数据库里，测试不该改用户数据，所以留一个环境变量强制入口
@@ -546,7 +561,44 @@ def _load_ball_cfg() -> dict:
         cfg["size"] = int(os.environ.get("ZX_BALL_SIZE", cfg["size"]))
         cfg["opacity"] = int(os.environ.get("ZX_BALL_OPACITY", cfg["opacity"]))
         cfg["hotkey"] = os.environ.get("ZX_BALL_HOTKEY", cfg["hotkey"])
+        if os.environ.get("ZX_BALL_WANDER") is not None:
+            cfg["wander"] = os.environ.get("ZX_BALL_WANDER") == "1"
     return cfg
+
+
+def _panel_show_win32(rect, scale: float) -> bool:
+    """用 Win32 直接显示/移动/置顶面板。
+
+    ★ 为什么不走 pywebview：`_PANEL.show()/resize()/on_top=...` 最终会 marshal 到
+      WinForms 的 UI 线程（Invoke）。从球的窗口线程调用时，调用方握着 GIL 等 Invoke 返回、
+      UI 线程又要 GIL 才能执行回调 —— 两边互等，球线程直接挂死（真机：点一下球，整个进程
+      变「未响应」，窗口还在但再也不刷新）。这里改成纯 ctypes，不碰 pythonnet。
+    """
+    try:
+        import ctypes
+        hwnd = _hwnd_of(_PANEL)
+        u = ctypes.windll.user32
+        px, py = int(rect.x * scale), int(rect.y * scale)
+        pw, ph = int(rect.w * scale), int(rect.h * scale)
+        HWND_TOPMOST = ctypes.c_void_p(-1)
+        SWP_SHOWWINDOW, SWP_NOACTIVATE = 0x0040, 0x0010
+        u.SetWindowPos(ctypes.c_void_p(hwnd), HWND_TOPMOST,
+                       px, py, pw, ph, SWP_SHOWWINDOW | SWP_NOACTIVATE)
+        return True
+    except Exception as e:  # noqa: BLE001
+        log("[球] Win32 显示面板失败，回落 pywebview：%s" % e)
+        return False
+
+
+def _panel_hide_win32() -> bool:
+    try:
+        import ctypes
+        hwnd = _hwnd_of(_PANEL)
+        ctypes.windll.user32.ShowWindow(ctypes.c_void_p(hwnd), 0)   # SW_HIDE
+        return True
+    except Exception as e:  # noqa: BLE001
+        log("[球] Win32 收起面板失败，回落 pywebview：%s" % e)
+        return False
 
 
 def _toggle_panel(show=None) -> None:
@@ -568,17 +620,28 @@ def _toggle_panel(show=None) -> None:
         if want:
             w, h = 380, 560
             rect = _BALL.panel_rect(w, h)[0] if _BALL is not None else None
+            shown = False
             if rect is not None:
-                _PANEL.resize(rect.w, rect.h)
-                _PANEL.move(rect.x, rect.y)
-            _PANEL.show()             # 不做同步刷新：页面每 1.5s 自己比对 token，避免卡 GUI 线程
-            _activate_window(_PANEL)  # v4.1-02：主窗在托盘时也要让面板拿到键盘（输入法上屏）
+                shown = _panel_show_win32(rect, float(getattr(_BALL, "scale", 1.0) or 1.0))
+            if not shown:
+                if rect is not None:
+                    _PANEL.resize(rect.w, rect.h)
+                    _PANEL.move(rect.x, rect.y)
+                _PANEL.show()
             try:
-                _PANEL.on_top = True
-            except Exception:  # noqa: BLE001
+                if _BALL is not None:
+                    _BALL.set_panel_open(True)      # 面板开着时球不乱跑
+            except Exception:              # noqa: BLE001
                 pass
+            _activate_window(_PANEL)  # v4.1-02：主窗在托盘时也要让面板拿到键盘（输入法上屏）
         else:
-            _PANEL.hide()
+            if not _panel_hide_win32():
+                _PANEL.hide()
+            try:
+                if _BALL is not None:
+                    _BALL.set_panel_open(False)
+            except Exception:              # noqa: BLE001
+                pass
         _PANEL_SHOWN = want
         log("[球] 面板%s" % ("展开" if want else "收起"))
     except Exception as e:  # noqa: BLE001
@@ -1197,10 +1260,14 @@ class DesktopApi:
         return True
 
     def ball_state(self, state: str = "idle"):
-        """页面把回答状态回传给球：idle / busy / alert。"""
+        """页面把状态回传给球：idle / think / say / waitkb / click（兼容旧的 busy / alert）。"""
         try:
             if _BALL is not None:
-                _BALL.set_state(state or "idle")
+                name = str(state or "idle").strip().lower()
+                if name in ("think", "say", "waitkb", "click", "idle"):
+                    _BALL.set_mode(name)
+                else:
+                    _BALL.set_state(name)
         except Exception:  # noqa: BLE001
             pass
         return True

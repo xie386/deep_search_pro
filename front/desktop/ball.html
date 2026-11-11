@@ -310,12 +310,18 @@
     }
   }
 
+  // v4.1-04：把「思考 / 说话 / 正在输入 / 待机」回传给外壳，驱动桌宠动作
+  function ballState(s) {
+    try { window.pywebview.api.ball_state(s); } catch (e) {}
+  }
+
   function setBusy(on) {
     busy = on;
     const t = sendBtn.querySelector('.text');
     if (t) t.textContent = on ? '中断' : '发送';
     sendBtn.classList.toggle('stop', on);
     inp.disabled = on;
+    ballState(on ? 'think' : 'idle');
   }
 
   async function send() {
@@ -343,9 +349,13 @@
                           (_cu && _ctl ? '&allow_control=1' : ''), { method: 'POST' });
       bubble.textContent = d.answer || '（没有返回内容）';
       if (d.cancelled) bubble.textContent += '\n\n（已中断）';
+      // 回答到了：播一段「说话」动作，再回待机
+      ballState('say');
+      setTimeout(() => { if (!busy) ballState('idle'); }, 1400);
     } catch (e) {
       bubble.classList.add('err');
       bubble.textContent = '出错了：' + e.message;
+      ballState('idle');
     } finally {
       if (_cu) { try { window.pywebview.api.cu_end(); } catch (e) {} }
       setBusy(false);
@@ -448,12 +458,15 @@
   });
   sessMenu.addEventListener('click', (e) => e.stopPropagation());
   document.addEventListener('click', closeMenu);
+  inp.addEventListener('focus', () => ballState('waitkb'));
+  inp.addEventListener('blur', () => { if (!busy) ballState('idle'); });
   cuBtn.addEventListener('click', toggleCu);
   ctlBtn.addEventListener('click', toggleCtl);
   $('newS').addEventListener('click', () => newSession().catch((e) => addTip('新建失败：' + e.message)));
   $('renS').addEventListener('click', () => renameSession().catch((e) => addTip('重命名失败：' + e.message)));
   $('delS').addEventListener('click', () => delSession().catch((e) => addTip('删除失败：' + e.message)));
   $('close').addEventListener('click', () => {
+    ballState('idle');
     try { window.pywebview.api.ball_hide(); } catch (e) {}
   });
   document.addEventListener('keydown', (e) => {

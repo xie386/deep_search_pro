@@ -13,6 +13,9 @@ from __future__ import annotations
 
 import ctypes
 import json
+import math
+import os
+import random
 import re
 import threading
 import time
@@ -51,7 +54,47 @@ MOD_CONTROL, MOD_ALT = 0x0002, 0x0001
 VK_SPACE = 0x20
 HOTKEY_ID = 0xB411
 CMD_STATE, CMD_TOGGLE, CMD_SHOW, CMD_HIDE = (WM_APP + 1, WM_APP + 2, WM_APP + 3, WM_APP + 4)
-STATES = ("idle", "busy", "alert")
+CMD_MODE = WM_APP + 5
+WM_TIMER = 0x0113
+STATES = ("idle", "busy", "alert")          # 旧三态（保留兼容）
+
+# ── v4.1-04 桌宠 ──────────────────────────────────────────────────────
+PET_DIR = ASSET_DIR / "pet"
+MODE_IDLE = "idle"
+MODE_SAY = "say"
+MODE_THINK = "think"
+MODE_WAITKB = "waitkb"
+MODE_CLICK = "click"
+MODE_DRAG = "drag"
+
+TIMER_TICK = 1                  # 一个 33ms 的定时器同时驱动动画、待机切组、漫步
+TICK_MS = 33
+ANIM_MS = 200                   # 换帧间隔（≈5fps；真机反馈 11fps / 6.7fps 都偏急，先放到 5fps）
+IDLE_SWITCH_MS = 2000           # 待机动作多久换一组（与 meta 一致）
+CLICK_HOLD_MS = 600             # 点击/拖拽这种单帧动作保持多久
+WANDER_SPEED = 90               # 漫步速度：逻辑像素/秒
+WANDER_MIN_GAP = (4000, 9000)   # 两次起步的间隔（毫秒）
+WANDER_DIST = (40, 260)         # 单次移动距离（逻辑像素）
+
+
+def scan_pet_groups() -> dict:
+    """扫描 assets/pet/ 下的帧：`<组>_<NN>.png`，按序号排序。"""
+    out: dict[str, list[Path]] = {}
+    if not PET_DIR.is_dir():
+        return out
+    for p in sorted(PET_DIR.glob("*.png")):
+        if p.name.startswith("_"):          # _preview 之类
+            continue
+        stem = p.stem
+        if "_" not in stem:
+            continue
+        group, _, num = stem.rpartition("_")
+        if not num.isdigit():
+            continue
+        out.setdefault(group, []).append(p)
+    for g in out:
+        out[g].sort(key=lambda x: int(x.stem.rpartition("_")[2]))
+    return out
 
 LRESULT = ctypes.c_ssize_t
 WNDPROC = ctypes.WINFUNCTYPE(LRESULT, w.HWND, w.UINT, w.WPARAM, w.LPARAM)
@@ -257,6 +300,22 @@ class BallWindow:
         self._win_origin = (0, 0)
         self._rect = Rect(0, 0, self.size, self.size)
         self._visible = True
+        # ── 桌宠状态（v4.1-04）──
+        self.groups = scan_pet_groups()
+        self.pet = bool(self.groups)                 # 有素材就走逐帧动画，否则退回旧三态
+        self.mode = MODE_IDLE
+        self._mode_before_click = MODE_IDLE
+        self._frame_i = 0
+        self._frame_at = 0.0
+        self._idle_group = ""
+        self._idle_switch_at = 0.0
+        self._click_until = 0.0
+        self.wander = True
+        self.panel_open = False
+        self._target = None                          # 漫步目标（逻辑坐标）
+        self._next_wander_at = 0.0
+        self._paint_cache: dict = {}
+        self._pending_mode = None
 
     # ── 对外接口 ──────────────────────────────────────────────────────
     def start(self, timeout: float = 3.0) -> bool:
@@ -274,9 +333,28 @@ class BallWindow:
         self.hwnd = None
 
     def set_state(self, state: str) -> None:
-        idx = STATES.index(state) if state in STATES else 0
+        """旧接口：idle / busy / alert。busy = 正在输出（say），alert = 提醒（点一次）。"""
+        mapping = {"idle": MODE_IDLE, "busy": MODE_SAY, "alert": MODE_CLICK}
+        self.set_mode(mapping.get(state, MODE_IDLE))
+
+    def set_mode(self, mode: str) -> None:
+        """设置桌宠动作：idle / say / think / waitkb / click / drag。"""
+        # 模式名没法定死在一个 int 里：先写待处理字段再投递，窗口线程读到后清空
+        self._pending_mode = mode
         if self.hwnd:
-            user32.PostMessageW(self.hwnd, CMD_STATE, idx, 0)
+            user32.PostMessageW(self.hwnd, CMD_MODE, 0, 0)
+
+    def set_wander(self, on: bool) -> None:
+        """开/关自主漫步（设置项 BALL_WANDER）。"""
+        self.wander = bool(on)
+        if not self.wander:
+            self._target = None
+
+    def set_panel_open(self, on: bool) -> None:
+        """面板打开时暂停漫步（否则球在面板旁边乱跑）。"""
+        self.panel_open = bool(on)
+        if self.panel_open:
+            self._target = None
 
     def toggle(self) -> None:
         if self.hwnd:
@@ -328,6 +406,10 @@ class BallWindow:
                             logical_to_physical(rect.y, self.scale), px, px,
                             SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW)
         self._paint()
+        if self.pet:
+            self._pick_idle_group(force=True)
+            self._paint_current()
+            user32.SetTimer(self.hwnd, TIMER_TICK, TICK_MS, None)
         try:
             user32.RegisterHotKey(None, HOTKEY_ID, self.hotkey[0], self.hotkey[1])
         except Exception:              # noqa: BLE001
@@ -371,6 +453,14 @@ class BallWindow:
                 self.state = STATES[int(wparam)] if 0 <= int(wparam) < len(STATES) else "idle"
                 self._paint()
                 return 0
+            if msg == CMD_MODE:
+                pending, self._pending_mode = self._pending_mode, None
+                if pending:
+                    self._apply_mode(str(pending))
+                return 0
+            if msg == WM_TIMER and int(wparam) == TIMER_TICK:
+                self._tick()
+                return 0
             if msg == CMD_TOGGLE:
                 self._visible = not self._visible
                 user32.ShowWindow(hwnd, 5 if self._visible else 0)   # SW_SHOW / SW_HIDE
@@ -387,6 +477,7 @@ class BallWindow:
                 user32.ShowWindow(hwnd, 0)
                 return 0
             if msg == WM_CLOSE:
+                user32.KillTimer(hwnd, TIMER_TICK)
                 user32.DestroyWindow(hwnd)
                 return 0
             if msg == WM_DESTROY:
@@ -398,6 +489,9 @@ class BallWindow:
 
     # ── 绘制 ──────────────────────────────────────────────────────────
     def _paint(self) -> None:
+        if self.pet:
+            self._paint_current()
+            return
         if not self.hwnd:
             return
         asset = ASSET_DIR / ("ball_%s.png" % (self.state if self.state in STATES else "idle"))
@@ -439,10 +533,206 @@ class BallWindow:
         gdi32.DeleteDC(hdc_mem)
         user32.ReleaseDC(None, hdc_screen)
 
+    # ── 桌宠：分组、切帧、漫步（v4.1-04）──────────────────────────────
+    def _idle_groups(self) -> list[str]:
+        return sorted([g for g in self.groups if g.startswith("idle")])
+
+    def _current_frames(self) -> list[Path]:
+        if self.mode == MODE_IDLE:
+            return self.groups.get(self._idle_group) or self.groups.get("idle1") or []
+        if self.mode == MODE_CLICK:
+            return self.groups.get("click") or self.groups.get("drag") or []
+        if self.mode == MODE_DRAG:
+            return self.groups.get("drag") or self.groups.get("click") or []
+        return self.groups.get(self.mode) or self.groups.get("say") or []
+
+    def _pick_idle_group(self, force: bool = False) -> None:
+        import random
+        groups = self._idle_groups()
+        if not groups:
+            return
+        if not force and self._idle_group in groups and len(groups) > 1:
+            others = [g for g in groups if g != self._idle_group]
+            self._idle_group = random.choice(others)
+        else:
+            self._idle_group = random.choice(groups)
+        self._frame_i = 0
+
+    def _apply_mode(self, mode: str, paint: bool = True) -> None:
+        """切模式：click / drag 是「临时态」，结束后回到进入前的模式。
+
+        `paint=False` 时只改状态、不立刻贴图 —— 拖动开始那一刻不要重入 UpdateLayeredWindow
+        （真机：在鼠标按下回调里重绘 + 随后开面板，把进程带崩过）。
+        """
+        now = time.monotonic() * 1000.0
+        if mode == MODE_CLICK:
+            # ★ 点完要回待机：按下时已经切到 drag，若按「原模式」恢复会永久卡在 drag 帧
+            #   （真机表现：点一下球，变成举钱那张图再也不动）
+            self._mode_before_click = (MODE_IDLE if self.mode in (MODE_CLICK, MODE_DRAG)
+                                       else self.mode)
+            self.mode = MODE_CLICK
+            self._frame_i = 0
+            self._click_until = now + CLICK_HOLD_MS
+            self._target = None
+        elif mode == MODE_DRAG:
+            self.mode = MODE_DRAG
+            self._frame_i = 0
+            self._target = None
+        else:
+            self.mode = mode
+            self._frame_i = 0
+            if mode == MODE_IDLE:
+                self._pick_idle_group(force=True)
+                self._idle_switch_at = now + IDLE_SWITCH_MS
+                self._next_wander_at = now + 2500
+        if paint:
+            self._paint_current()
+        if os.environ.get("ZX_BALL_DEBUG") == "1":
+            self.log("[球] 模式 → %s（%s 帧）" % (mode, len(self._current_frames())))
+
+    def _paint_current(self) -> None:
+        """按当前模式/帧号贴图（带缓存：同一帧同一尺寸只算一次预乘 alpha）。"""
+        if not self.hwnd or not user32.IsWindow(self.hwnd):
+            return
+        frames = self._current_frames()
+        if not frames:
+            return
+        idx = max(0, min(self._frame_i, len(frames) - 1))
+        path = frames[idx]
+        px = logical_to_physical(self.size, self.scale)
+        key = (str(path), px, self.opacity)
+        hit = self._paint_cache.get(key)
+        if hit is None:
+            try:
+                hit = _bgra_premultiplied(path, px, self.opacity)
+            except Exception as e:                     # noqa: BLE001
+                self.log("[球] 贴图失败（%s）：%s" % (path.name, e))
+                return
+            self._paint_cache[key] = hit
+        self._blit(*hit)
+
+    def _tick(self) -> None:
+        """33ms 心跳：切帧、待机换组、随机漫步。"""
+        now = time.monotonic() * 1000.0
+        if os.environ.get("ZX_BALL_DEBUG") == "1" and now - getattr(self, "_hb", 0) > 3000:
+            self._hb = now
+            self.log("[球] 心跳 mode=%s frame=%d" % (self.mode, self._frame_i))
+
+        if self.mode == MODE_CLICK and now >= self._click_until:
+            self._apply_mode(self._mode_before_click or MODE_IDLE)
+            return
+        if self.mode == MODE_DRAG:
+            self._blit_current_if_needed(now)
+            return
+
+        # 待机：每 2 秒换一组动作
+        if self.mode == MODE_IDLE and now >= self._idle_switch_at:
+            self._pick_idle_group()
+            self._idle_switch_at = now + IDLE_SWITCH_MS
+            self._frame_at = 0.0
+
+        self._blit_current_if_needed(now)
+        self._maybe_wander(now)
+
+    def _blit_current_if_needed(self, now: float) -> None:
+        if now - self._frame_at < ANIM_MS:
+            return
+        self._frame_at = now
+        frames = self._current_frames()
+        if not frames:
+            return
+        if self.mode != MODE_CLICK and self.mode != MODE_DRAG:
+            self._frame_i = (self._frame_i + 1) % len(frames)
+        elif self.mode == MODE_DRAG and len(frames) > 1:
+            self._frame_i = (self._frame_i + 1) % len(frames)
+        self._paint_current()
+
+    def _maybe_wander(self, now: float) -> None:
+        """随机漫步：只在「待机 + 未拖拽 + 面板关着 + 鼠标不在球上」时动。"""
+        import random
+        if (not self.pet or not self.wander or self.mode != MODE_IDLE
+                or self._dragging or self.panel_open or not self._visible):
+            return
+
+        # 鼠标悬停即停：给用户一个「我在这儿」的稳定目标
+        pt = POINT()
+        user32.GetCursorPos(ctypes.byref(pt))
+        r = self._rect_physical()
+        if r.left <= pt.x <= r.right and r.top <= pt.y <= r.bottom:
+            self._target = None
+            return
+
+        work = _work_area_logical(self.scale)
+        if self._target is None:
+            if now < self._next_wander_at:
+                return
+            ang = random.uniform(0, 6.283)
+            dist = random.uniform(*WANDER_DIST)
+            tx = int(self._rect.x + math.cos(ang) * dist)
+            ty = int(self._rect.y + math.sin(ang) * dist)
+            tx = max(work.x + 8, min(tx, work.right - self.size - 8))
+            ty = max(work.y + 8, min(ty, work.bottom - self.size - 8))
+            self._target = (tx, ty)
+            return
+
+        tx, ty = self._target
+        dx, dy = tx - self._rect.x, ty - self._rect.y
+        dist = math.hypot(dx, dy)
+        if dist < 3:
+            self._target = None
+            self._next_wander_at = now + random.uniform(*WANDER_MIN_GAP)
+            return
+        step = WANDER_SPEED * (TICK_MS / 1000.0)
+        k = min(1.0, step / dist)
+        nx = int(round(self._rect.x + dx * k))
+        ny = int(round(self._rect.y + dy * k))
+        self._rect = Rect(nx, ny, self.size, self.size)
+        user32.SetWindowPos(self.hwnd, None,
+                            logical_to_physical(nx, self.scale),
+                            logical_to_physical(ny, self.scale), 0, 0,
+                            SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE)
+
+    def _blit(self, data: bytes, wpx: int, hpx: int) -> None:
+        if not self.hwnd or not user32.IsWindow(self.hwnd):
+            return
+        bmi = BITMAPINFO()
+        bmi.bmiHeader.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+        bmi.bmiHeader.biWidth = wpx
+        bmi.bmiHeader.biHeight = -hpx
+        bmi.bmiHeader.biPlanes = 1
+        bmi.bmiHeader.biBitCount = 32
+        bits = ctypes.c_void_p()
+        hdc_screen = user32.GetDC(None)
+        hbm = gdi32.CreateDIBSection(hdc_screen, ctypes.byref(bmi), 0,
+                                     ctypes.byref(bits), None, 0)
+        if not hbm:
+            user32.ReleaseDC(None, hdc_screen)
+            return
+        ctypes.memmove(bits, data, len(data))
+        hdc_mem = gdi32.CreateCompatibleDC(hdc_screen)
+        old = gdi32.SelectObject(hdc_mem, hbm)
+        pt_dst = POINT(logical_to_physical(self._rect.x, self.scale),
+                       logical_to_physical(self._rect.y, self.scale))
+        size = SIZE(wpx, hpx)
+        pt_src = POINT(0, 0)
+        blend = BLENDFUNCTION(AC_SRC_OVER, 0, 255, AC_SRC_ALPHA)
+        ok = user32.UpdateLayeredWindow(self.hwnd, hdc_screen, ctypes.byref(pt_dst),
+                                        ctypes.byref(size), hdc_mem, ctypes.byref(pt_src),
+                                        0, ctypes.byref(blend), ULW_ALPHA)
+        if not ok:
+            self.log("[球] UpdateLayeredWindow 失败 err=%s" % ctypes.get_last_error())
+        g2 = gdi32
+        g2.SelectObject(hdc_mem, old)
+        g2.DeleteObject(hbm)
+        g2.DeleteDC(hdc_mem)
+        user32.ReleaseDC(None, hdc_screen)
+
     # ── 拖动 ──────────────────────────────────────────────────────────
     def _begin_drag(self) -> None:
         self._dragging = True
         self._moved = False
+        if self.pet:
+            self._apply_mode(MODE_DRAG, paint=False)   # 交给 33ms 心跳去画
         pt = POINT()
         user32.GetCursorPos(ctypes.byref(pt))
         self._drag_origin = (pt.x, pt.y)
@@ -474,9 +764,21 @@ class BallWindow:
         self._dragging = False
         user32.ReleaseCapture()
         if self._moved:
+            if self.pet:
+                self._apply_mode(MODE_IDLE)      # 放下后回到待机
             self._save_rect()
-        elif self.on_click:
-            self.on_click()
+        else:
+            if self.pet:
+                self.set_mode(MODE_CLICK)        # 点一下：给一个动作反馈
+            if self.on_click:
+                self._safe_click()
+
+    def _safe_click(self) -> None:
+        try:
+            if self.on_click:
+                self.on_click()
+        except Exception as e:                             # noqa: BLE001
+            self.log("[球] 点击回调异常：%s" % e)
 
     # ── 右键菜单 ──────────────────────────────────────────────────────
     def _popup_menu(self) -> None:
@@ -536,3 +838,34 @@ class BallWindow:
         work = _work_area_logical(self.scale)
         r = clamp_rect(self._rect, work)
         return anchor_panel(r, panel_w, panel_h, work, gap)
+
+# ── Win32 签名（v4.1-04）──────────────────────────────────────────────
+# ★ 逐帧贴图后这里被高频调用：不声明 restype/argtypes 时 64 位句柄可能被截成 32 位，
+#   拿到坏句柄再交给 GDI，表现就是「点一下球进程直接没了」（真机踩过）。
+def _declare_win32() -> None:
+    user32.GetDC.argtypes = [w.HWND]
+    user32.GetDC.restype = w.HDC
+    user32.ReleaseDC.argtypes = [w.HWND, w.HDC]
+    user32.UpdateLayeredWindow.argtypes = [
+        w.HWND, w.HDC, ctypes.POINTER(POINT), ctypes.POINTER(SIZE),
+        w.HDC, ctypes.POINTER(POINT), w.COLORREF, ctypes.POINTER(BLENDFUNCTION), w.DWORD]
+    user32.UpdateLayeredWindow.restype = w.BOOL
+    user32.SetWindowPos.argtypes = [w.HWND, w.HWND, ctypes.c_int, ctypes.c_int,
+                                    ctypes.c_int, ctypes.c_int, w.UINT]
+    user32.SetWindowPos.restype = w.BOOL
+    user32.IsWindow.argtypes = [w.HWND]
+    user32.IsWindow.restype = w.BOOL
+    gdi32.CreateDIBSection.argtypes = [w.HDC, ctypes.POINTER(BITMAPINFO), w.UINT,
+                                       ctypes.POINTER(ctypes.c_void_p), w.HANDLE, w.DWORD]
+    gdi32.CreateDIBSection.restype = w.HBITMAP
+    gdi32.CreateCompatibleDC.argtypes = [w.HDC]
+    gdi32.CreateCompatibleDC.restype = w.HDC
+    gdi32.SelectObject.argtypes = [w.HDC, w.HGDIOBJ]
+    gdi32.SelectObject.restype = w.HGDIOBJ
+    gdi32.DeleteObject.argtypes = [w.HGDIOBJ]
+    gdi32.DeleteObject.restype = w.BOOL
+    gdi32.DeleteDC.argtypes = [w.HDC]
+    gdi32.DeleteDC.restype = w.BOOL
+
+
+_declare_win32()
