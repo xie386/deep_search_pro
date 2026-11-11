@@ -483,10 +483,41 @@ def _stop_ball() -> None:
     _BALL = None
 
 
+def _sweep_stale_balls() -> None:
+    """收掉上一个账号留下的球窗（线程没退干净时它还会停在屏幕上、点不动）。
+
+    ★ 2026-11-11 真机：退出「尼古喵喵」再登「药喵」，球出现在上一个账号退出时的原处、
+      帧不动、点着没反应 —— 那就是上一次的球窗没销毁，新球被压在它下面。
+    """
+    try:
+        import ctypes
+        from ctypes import wintypes as _w
+        u = ctypes.windll.user32
+        found = []
+
+        @ctypes.WINFUNCTYPE(_w.BOOL, _w.HWND, _w.LPARAM)
+        def _cb(hwnd, _):
+            buf = ctypes.create_unicode_buffer(120)
+            u.GetClassNameW(hwnd, buf, 120)
+            if buf.value == "ZxIntelBallWindow":
+                found.append(hwnd)
+            return True
+
+        u.EnumWindows(_cb, 0)
+        for hwnd in found:
+            u.ShowWindow(hwnd, 0)                       # SW_HIDE：先让它从屏幕上消失
+            u.PostMessageW(hwnd, 0x0010, 0, 0)           # WM_CLOSE
+        if found:
+            log("[球] 收掉 %d 个残留球窗（上次没退干净）" % len(found))
+    except Exception as e:  # noqa: BLE001
+        log("[球] 清理残留球窗失败：%s" % e)
+
+
 def _start_ball() -> None:
     """只有「设置开启 + 已登录 + 还没起」才启动；重复调用安全。"""
     if not _BALL_CFG.get("enabled") or not _BALL_LOGGED_IN or _BALL is not None:
         return
+    _sweep_stale_balls()
     try:
         from ball_window import BallWindow
         ball = BallWindow(
@@ -551,10 +582,7 @@ def _on_auth_state(logged_in: bool, username: str = "") -> None:
         _refresh_panel()
         return
     if _PANEL is not None:
-        try:
-            _PANEL.hide()
-        except Exception:  # noqa: BLE001
-            pass
+        _panel_op(lambda: _PANEL.hide())
         _PANEL_SHOWN = False
     _stop_ball()
 
@@ -622,6 +650,40 @@ def _panel_show_win32(rect, scale: float) -> bool:
         return False
 
 
+_PANEL_QUEUE = None            # queue.Queue，延迟创建（避免模块顶层多引一个依赖）
+_PANEL_WORKER = None
+
+
+def _panel_op(fn, *args, **kwargs) -> None:
+    """把面板操作丢到一个专门的工作线程里顺序执行。
+
+    ★ 2026-11-11 真机：切换账号后球卡在原地、帧不动、点了没反应。原因是面板的
+      pywebview 调用（show/hide/topmost 都会 marshal 到 WinForms 的 UI 线程）如果被
+      卡住，执行它的那个线程就再也回不来了；这个调用原来落在球的窗口线程上，球就冻住。
+      现在固定由一个工作线程干这些活：它卡住最多是面板不出现，球照常动、照常能点。
+    """
+    global _PANEL_QUEUE, _PANEL_WORKER
+    import queue as _q
+    import threading as _th
+
+    if _PANEL_QUEUE is None:
+        _PANEL_QUEUE = _q.Queue()
+    if _PANEL_WORKER is None or not _PANEL_WORKER.is_alive():
+        def _loop():
+            while True:
+                task = _PANEL_QUEUE.get()
+                if task is None:
+                    return
+                fn_, a_, kw_ = task
+                try:
+                    fn_(*a_, **kw_)
+                except Exception as e:  # noqa: BLE001
+                    log("[球] 面板操作失败：%s" % e)
+        _PANEL_WORKER = _th.Thread(target=_loop, name="panel-ops", daemon=True)
+        _PANEL_WORKER.start()
+    _PANEL_QUEUE.put((fn, args, kwargs))
+
+
 def _panel_topmost() -> None:
     """只做「置顶」：SetWindowPos 不移动不改尺寸，避免走 pywebview 的 on_top 属性。"""
     try:
@@ -668,12 +730,14 @@ def _toggle_panel(show=None) -> None:
             rect = _BALL.panel_rect(w, h)[0] if _BALL is not None else None
             # ★ 显示必须走 pywebview：面板是 hidden=True 创建的，WebView2 要等
             #   Form.Show() 才把浏览器挂上并完成首帧；只用 Win32 SetWindowPos(SWP_SHOWWINDOW)
-            #   看到的是白板（真机踩过）。置顶再用 Win32 补一次，避免 on_top 的 Invoke 死锁。
-            if rect is not None:
-                _PANEL.resize(rect.w, rect.h)
-                _PANEL.move(rect.x, rect.y)
-            _PANEL.show()
-            _panel_topmost()
+            #   看到的是白板（真机踩过）。置顶用 Win32 补一次，绕开 on_top 的 Invoke 死锁。
+            def _do_show(rect=rect):
+                if rect is not None:
+                    _PANEL.resize(rect.w, rect.h)
+                    _PANEL.move(rect.x, rect.y)
+                _PANEL.show()
+                _panel_topmost()
+            _panel_op(_do_show)
             try:
                 if _BALL is not None:
                     _BALL.set_panel_open(True)      # 面板开着时球不乱跑
@@ -681,7 +745,7 @@ def _toggle_panel(show=None) -> None:
                 pass
             _activate_window(_PANEL)  # v4.1-02：主窗在托盘时也要让面板拿到键盘（输入法上屏）
         else:
-            _PANEL.hide()
+            _panel_op(lambda: _PANEL.hide())
             try:
                 if _BALL is not None:
                     _BALL.set_panel_open(False)

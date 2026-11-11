@@ -326,10 +326,18 @@ class BallWindow:
         return self._ready.wait(timeout)
 
     def stop(self) -> None:
-        if self.hwnd:
-            user32.PostMessageW(self.hwnd, WM_CLOSE, 0, 0)
+        hwnd = self.hwnd
+        if hwnd:
+            user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
         if self._thread:
             self._thread.join(timeout=1.5)
+            if self._thread.is_alive() and hwnd:
+                # 线程卡住时至少把窗口从屏幕上撤掉，别让它挡着下一个账号的球
+                try:
+                    self.log("[球] 停止超时，强制隐藏残留窗口")
+                    user32.ShowWindow(hwnd, 0)          # SW_HIDE
+                except Exception:                       # noqa: BLE001
+                    pass
         self.hwnd = None
 
     def set_state(self, state: str) -> None:
