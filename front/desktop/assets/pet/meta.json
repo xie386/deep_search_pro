@@ -1,0 +1,75 @@
+{
+  "canvas": [
+    256,
+    256
+  ],
+  "margin": 10,
+  "model": "birefnet-general",
+  "anchor": "top-center",
+  "fps": {
+    "say": 8,
+    "think": 6,
+    "waitkb": 6,
+    "click": 10
+  },
+  "idle_switch_seconds": 2,
+  "groups": {
+    "idle1": {
+      "frames": [
+        "idle1_00.png",
+        "idle1_01.png"
+      ],
+      "fit_scale": 0.3901,
+      "applied_scale": 0.3121
+    },
+    "idle2": {
+      "frames": [
+        "idle2_00.png",
+        "idle2_01.png",
+        "idle2_02.png"
+      ],
+      "fit_scale": 0.2961,
+      "applied_scale": 0.2961
+    },
+    "idle4": {
+      "frames": [
+        "idle4_00.png",
+        "idle4_01.png"
+      ],
+      "fit_scale": 0.2433,
+      "applied_scale": 0.2433
+    },
+    "say": {
+      "frames": [
+        "say_00.png",
+        "say_01.png",
+        "say_02.png",
+        "say_03.png"
+      ],
+      "fit_scale": 0.2274,
+      "applied_scale": 0.2274
+    },
+    "think": {
+      "frames": [
+        "think_00.png"
+      ],
+      "fit_scale": 0.5075,
+      "applied_scale": 0.5075
+    },
+    "waitkb": {
+      "frames": [
+        "waitkb_00.png"
+      ],
+      "fit_scale": 0.5915,
+      "applied_scale": 0.5915
+    },
+    "click": {
+      "frames": [
+        "click_00.png"
+      ],
+      "fit_scale": 0.2826,
+      "applied_scale": 0.2826
+    }
+  },
+  "note": "idle1..N 为多组待机动作，运行时每 2 秒随机切一组循环播放"
+}
