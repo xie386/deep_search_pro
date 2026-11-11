@@ -5093,7 +5093,7 @@ createApp({
       const n = (left == null) ? 50 : left;
       const a = desktopApi();
       if (a && a.auth_state) {
-        try { a.auth_state(!!token.value, username.value || ''); } catch (e) {}
+        try { a.auth_state(!!token.value, username.value || '', token.value || ''); } catch (e) {}
         return;
       }
       if (n > 0) setTimeout(() => reportAuthWhenReady(n - 1), 300);
@@ -5160,6 +5160,8 @@ createApp({
       } catch (e) {}
       if (ws) { try { ws.close(); } catch (e) {} wsTarget = ''; }
       token.value = ''; username.value = ''; password.value = '';
+      // v4.1-04：会话失效时也要告诉外壳「登出了」，否则球会一直挂在登录页上
+      try { const _a = desktopApi(); if (_a && _a.auth_state) _a.auth_state(false, ''); } catch (e) {}
       resetAccountState();          // ★ 注销/会话失效：清掉上一个账号的**全部**按账号缓存（含技能与工具）
       errMsg.value = msg || '';
       authMode.value = 'login';

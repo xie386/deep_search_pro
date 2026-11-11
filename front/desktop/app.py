@@ -190,6 +190,7 @@ _CU_TIMER = None
 _MAIN = None
 _CU_SRV = None
 _CU_PORT = 0
+_ACTIVE_PORT = 0          # 当前后端端口（登录态校验要用）
 _CU_TOKEN = ""
 
 
@@ -489,7 +490,7 @@ def _start_ball() -> None:
     try:
         from ball_window import BallWindow
         ball = BallWindow(
-            size=int(_BALL_CFG.get("size", 64)), opacity=int(_BALL_CFG.get("opacity", 100)),
+            size=int(_BALL_CFG.get("size", 80)), opacity=int(_BALL_CFG.get("opacity", 100)),
             hotkey=str(_BALL_CFG.get("hotkey", "Ctrl+Alt+Space")),
             on_click=lambda: _toggle_panel(),
             on_hotkey=lambda: _toggle_panel(),
@@ -511,6 +512,30 @@ def _start_ball() -> None:
             log("[球] 启动失败（主窗口不受影响）")
     except Exception as e:  # noqa: BLE001
         log("[球] 启动异常：%s" % e)
+
+
+def _verify_token(token: str) -> bool:
+    """拿 token 问一次后端（本机回环，绕系统代理）。401/异常都按不通过算。"""
+    try:
+        import json as _json
+        import urllib.parse as _up
+        import urllib.request as _ur
+
+        port = globals().get("_ACTIVE_PORT") or os.environ.get("ZX_PORT") or 8000
+        url = ("http://127.0.0.1:%s/api/me/overview?token=%s"
+               % (port, _up.quote(token)))
+        opener = _ur.build_opener(_ur.ProxyHandler({}))     # 本机不认系统代理
+        with opener.open(url, timeout=3) as resp:
+            return resp.status == 200 and _json.loads(resp.read().decode("utf-8") or "{}") is not None
+    except Exception as e:  # noqa: BLE001
+        # 只有「后端明确说这个 token 不认」才按未登录处理；
+        # 网络抖动/后端刚起步不踢登录态（和前端 verifySession 的口径一致）
+        code = getattr(e, "code", None)
+        if code == 401:
+            log("[球] 登录态校验：后端不认这个 token（按未登录处理）")
+            return False
+        log("[球] 登录态校验请求失败，暂按已登录处理：%s" % e)
+        return True
 
 
 def _on_auth_state(logged_in: bool, username: str = "") -> None:
@@ -581,13 +606,34 @@ def _panel_show_win32(rect, scale: float) -> bool:
         px, py = int(rect.x * scale), int(rect.y * scale)
         pw, ph = int(rect.w * scale), int(rect.h * scale)
         HWND_TOPMOST = ctypes.c_void_p(-1)
-        SWP_SHOWWINDOW, SWP_NOACTIVATE = 0x0040, 0x0010
+        SWP_SHOWWINDOW, SWP_NOACTIVATE, SWP_NOZORDER, SWP_FRAMECHANGED = 0x0040, 0x0010, 0x0004, 0x0020
         u.SetWindowPos(ctypes.c_void_p(hwnd), HWND_TOPMOST,
                        px, py, pw, ph, SWP_SHOWWINDOW | SWP_NOACTIVATE)
+        # ★ 把尺寸先缩 1px 再还原：WebView2 只在收到 WM_SIZE 时才重排，
+        #   窗口从隐藏直接 SetWindowPos 显示时子控件可能仍是空白（真机：点开是白板）。
+        u.SetWindowPos(ctypes.c_void_p(hwnd), HWND_TOPMOST,
+                       px, py, pw - 1, ph, SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_NOZORDER)
+        u.SetWindowPos(ctypes.c_void_p(hwnd), HWND_TOPMOST,
+                       px, py, pw, ph, SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_FRAMECHANGED)
+        u.RedrawWindow(ctypes.c_void_p(hwnd), None, None, 0x0085)   # INVALIDATE|ALLCHILDREN|UPDATENOW
         return True
     except Exception as e:  # noqa: BLE001
         log("[球] Win32 显示面板失败，回落 pywebview：%s" % e)
         return False
+
+
+def _panel_topmost() -> None:
+    """只做「置顶」：SetWindowPos 不移动不改尺寸，避免走 pywebview 的 on_top 属性。"""
+    try:
+        import ctypes
+        hwnd = _hwnd_of(_PANEL)
+        HWND_TOPMOST = ctypes.c_void_p(-1)
+        SWP_NOMOVE, SWP_NOSIZE, SWP_NOACTIVATE = 0x0002, 0x0001, 0x0010
+        ctypes.windll.user32.SetWindowPos(
+            ctypes.c_void_p(hwnd), HWND_TOPMOST, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
+    except Exception as e:  # noqa: BLE001
+        log("[球] 面板置顶失败：%s" % e)
 
 
 def _panel_hide_win32() -> bool:
@@ -620,14 +666,14 @@ def _toggle_panel(show=None) -> None:
         if want:
             w, h = 380, 560
             rect = _BALL.panel_rect(w, h)[0] if _BALL is not None else None
-            shown = False
+            # ★ 显示必须走 pywebview：面板是 hidden=True 创建的，WebView2 要等
+            #   Form.Show() 才把浏览器挂上并完成首帧；只用 Win32 SetWindowPos(SWP_SHOWWINDOW)
+            #   看到的是白板（真机踩过）。置顶再用 Win32 补一次，避免 on_top 的 Invoke 死锁。
             if rect is not None:
-                shown = _panel_show_win32(rect, float(getattr(_BALL, "scale", 1.0) or 1.0))
-            if not shown:
-                if rect is not None:
-                    _PANEL.resize(rect.w, rect.h)
-                    _PANEL.move(rect.x, rect.y)
-                _PANEL.show()
+                _PANEL.resize(rect.w, rect.h)
+                _PANEL.move(rect.x, rect.y)
+            _PANEL.show()
+            _panel_topmost()
             try:
                 if _BALL is not None:
                     _BALL.set_panel_open(True)      # 面板开着时球不乱跑
@@ -635,8 +681,7 @@ def _toggle_panel(show=None) -> None:
                 pass
             _activate_window(_PANEL)  # v4.1-02：主窗在托盘时也要让面板拿到键盘（输入法上屏）
         else:
-            if not _panel_hide_win32():
-                _PANEL.hide()
+            _PANEL.hide()
             try:
                 if _BALL is not None:
                     _BALL.set_panel_open(False)
@@ -1254,9 +1299,19 @@ class DesktopApi:
         _toggle_panel(True)
         return True
 
-    def auth_state(self, logged_in: bool = False, username: str = ""):
-        """页面回报登录态（登录/登出/启动校验后各调一次）——球据此存在或消失。"""
-        _on_auth_state(bool(logged_in), username or "")
+    def auth_state(self, logged_in: bool = False, username: str = "", token: str = ""):
+        """页面回报登录态（登录/登出/启动校验后各调一次）——球据此存在或消失。
+
+        ★ 2026-11-11：光看页面里的 token 非空不够。后端重启后旧 token 已失效，页面
+          localStorage 里还留着，`token.value` 为真 → 外壳把球放出来，登录页上却挂着一个球，
+          点开就是白板浮窗（面板的接口全 401）。这里拿 token 去后端问一次，问了才算数。
+        """
+        ok = bool(logged_in)
+        if ok and token:
+            ok = _verify_token(token)
+            if not ok:
+                log("[球] 页面说已登录，但后端不认这个 token → 按未登录处理")
+        _on_auth_state(ok, username or "")
         return True
 
     def ball_state(self, state: str = "idle"):
@@ -1964,6 +2019,8 @@ def main():
     #   「前端改了、网页端可见、桌面端重启也看不到」。换 nonce = 必然缓存未命中。
     #   前端用 /[?&]desktop=1/ 判断，能容忍额外参数；外壳自检也是 indexOf('desktop=1') 子串判断。
     url = "%s?desktop=1&_=%d" % (base_url, int(time.time()))
+    global _ACTIVE_PORT
+    _ACTIVE_PORT = int(port)
     log("[端口] 使用 %d（%s）" % (port, {"new": "本外壳自己起后端", "reuse": "复用已有服务"}.get(mode, mode)))
 
     try:
