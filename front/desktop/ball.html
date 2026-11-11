@@ -458,8 +458,18 @@
   });
   sessMenu.addEventListener('click', (e) => e.stopPropagation());
   document.addEventListener('click', closeMenu);
-  inp.addEventListener('focus', () => ballState('waitkb'));
-  inp.addEventListener('blur', () => { if (!busy) ballState('idle'); });
+  // 「等你打字」只在真在敲的时候摆：面板打开会自动聚焦输入框，
+  // 若一直挂 waitkb 那组（只有 1 帧）看着就像球卡死了。5 秒没输入就回待机。
+  let kbTimer = 0;
+  function kbPose() {
+    if (busy) return;
+    ballState('waitkb');
+    clearTimeout(kbTimer);
+    kbTimer = setTimeout(() => { if (!busy) ballState('idle'); }, 5000);
+  }
+  inp.addEventListener('focus', kbPose);
+  inp.addEventListener('keydown', kbPose);
+  inp.addEventListener('blur', () => { clearTimeout(kbTimer); if (!busy) ballState('idle'); });
   cuBtn.addEventListener('click', toggleCu);
   ctlBtn.addEventListener('click', toggleCtl);
   $('newS').addEventListener('click', () => newSession().catch((e) => addTip('新建失败：' + e.message)));
